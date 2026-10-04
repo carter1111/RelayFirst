@@ -68,6 +68,14 @@ const (
 	TransportGRPC    = a2asdk.TransportProtocolGRPC
 )
 
+// TransportWebSocket is the WebSocket binding identifier (S9-12).
+//
+// A2A's TransportProtocol is an open string, and the spec says a custom binding SHOULD
+// be identified by a URI. RelayFirst does not need a URI here because "WEBSOCKET" is not
+// a custom binding — it is the transport WebSocket, reached over the standard upgrade —
+// and the standard value is clearer to a human reading a card than a URL would be.
+const TransportWebSocket TransportProtocol = "WEBSOCKET"
+
 // WellKnownAgentCardPath is where an A2A agent publishes its card (RFC 8615).
 //
 // RelayFirst already serves /.well-known/relayfirst for its own node document

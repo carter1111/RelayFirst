@@ -154,6 +154,94 @@ func TestValidateCard_RejectsEmptyInterfaceList(t *testing.T) {
 	}
 }
 
+// TestBuild_DeclaresBothBindings is the S9-12 requirement: the card advertises the
+// WebSocket interface alongside the JSON-RPC one (MVP.md §12.1).
+func TestBuild_DeclaresBothBindings(t *testing.T) {
+	spec := testSpec()
+	spec.WebSocketURL = "wss://node.example/ws/messages/agent"
+
+	card, err := Build(spec)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(card.SupportedInterfaces) != 2 {
+		t.Fatalf("a card with a WebSocket URL must declare two interfaces, got %d",
+			len(card.SupportedInterfaces))
+	}
+	// HTTP first: the documented client preference is to take the earlier entry it can
+	// speak, and HTTP is the binding every existing client uses.
+	if card.SupportedInterfaces[0].ProtocolBinding != TransportJSONRPC {
+		t.Errorf("the JSON-RPC binding must be listed first, got %q",
+			card.SupportedInterfaces[0].ProtocolBinding)
+	}
+	if card.SupportedInterfaces[1].ProtocolBinding != TransportWebSocket {
+		t.Errorf("the second binding must be WebSocket, got %q",
+			card.SupportedInterfaces[1].ProtocolBinding)
+	}
+	// Both must declare the negotiated version, or a client could not select either.
+	for i, iface := range card.SupportedInterfaces {
+		if string(iface.ProtocolVersion) != SchemaVersion {
+			t.Errorf("interface[%d] version = %q, want %q", i, iface.ProtocolVersion, SchemaVersion)
+		}
+	}
+}
+
+// TestBuild_OmitsWebSocketWhenUnset is the honesty rule: a card must not advertise a
+// binding the agent does not serve. A client that trusted it would connect to a URL that
+// was never there.
+func TestBuild_OmitsWebSocketWhenUnset(t *testing.T) {
+	card, err := Build(testSpec()) // no WebSocketURL
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(card.SupportedInterfaces) != 1 {
+		t.Fatalf("a card with no WebSocket URL must declare one interface, got %d",
+			len(card.SupportedInterfaces))
+	}
+	for _, iface := range card.SupportedInterfaces {
+		if iface.ProtocolBinding == TransportWebSocket {
+			t.Error("a card must not advertise a WebSocket binding the agent does not serve")
+		}
+	}
+}
+
+// TestSelectInterface_SkipsWebSocketForJSONRPCClients is the practical consequence of the
+// multi-binding card: a client that speaks only JSON-RPC must still find its endpoint.
+func TestSelectInterface_SkipsWebSocketForJSONRPCClients(t *testing.T) {
+	spec := testSpec()
+	spec.WebSocketURL = "wss://node.example/ws/messages/agent"
+	card, err := Build(spec)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	n, err := NewNegotiator(SchemaVersion)
+	if err != nil {
+		t.Fatalf("negotiator: %v", err)
+	}
+	iface, _, err := SelectInterface(card, n.Supported())
+	if err != nil {
+		t.Fatalf("SelectInterface: %v", err)
+	}
+	if iface.ProtocolBinding != TransportJSONRPC {
+		t.Errorf("selection must land on the JSON-RPC binding this client can speak, got %q",
+			iface.ProtocolBinding)
+	}
+}
+
+// TestValidateCard_AcceptsBothBindings keeps the two-interface card valid.
+func TestValidateCard_AcceptsBothBindings(t *testing.T) {
+	spec := testSpec()
+	spec.WebSocketURL = "wss://node.example/ws/messages/agent"
+	card, err := Build(spec)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if err := ValidateCard(card); err != nil {
+		t.Errorf("a two-binding card must validate: %v", err)
+	}
+}
+
 // TestCard_SerializesAsStandardA2A is the compatibility requirement (criterion ⑧).
 //
 // The card must be an ordinary A2A card: standard field names, and the RelayFirst

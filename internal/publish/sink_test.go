@@ -30,6 +30,30 @@ func (r *recordingInner) Save(rec *receipt.Receipt, _ string, _ time.Time) error
 	return nil
 }
 
+// validProbeReceipt builds an unsigned receipt attributed to the given agent.
+//
+// It is separate from testReceipt because the acceptance test needs the EXECUTOR to be
+// the producer: attribution is one of the things criterion ⑧ exercises, and a fixture
+// that always used one key would hide a mismatch.
+func validProbeReceipt(t *testing.T, agentID string) *receipt.Receipt {
+	t.Helper()
+	return &receipt.Receipt{
+		Schema:  receipt.Schema,
+		AgentID: agentID,
+		Epoch:   42,
+		Task: receipt.Task{
+			Type:          receipt.TaskProbe,
+			Spec:          map[string]any{"url": "https://example.com"},
+			SpecHash:      "sha256:" + strings.Repeat("3d", 32),
+			SelfGenerated: false, // produced for an A2A task, not invented by the agent
+		},
+		Work:         receipt.Work{Provider: "local", StartedAt: 1791015800, FinishedAt: 1791015862},
+		Result:       receipt.Result{Value: "200", Hash: "sha256:" + strings.Repeat("c1", 32)},
+		Anchors:      []receipt.Anchor{{URL: "https://example.com", ContentHash: "sha256:" + strings.Repeat("7b", 32), FetchedAt: 1791015810, Status: 200, Bytes: 2048}},
+		Verification: receipt.Verification{Status: receipt.VerificationPending},
+	}
+}
+
 func testReceipt(t *testing.T) *receipt.Receipt {
 	t.Helper()
 

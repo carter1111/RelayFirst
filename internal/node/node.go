@@ -92,7 +92,30 @@ type Config struct {
 // Node is the HTTP handler set for a thin node.
 type Node struct {
 	cfg Config
+
+	// hub fans stored messages out to connected subscribers (S9-12).
+	//
+	// # Why the hub is transport state and not protocol state
+	//
+	// ARCHITECTURE.md §4.4 is explicit that ephemeral signals — presence, typing,
+	// heartbeat — are transport-layer, not protocol objects, and are not signed. A
+	// subscription is the same kind of thing: it answers "who wants to be told, right
+	// now", which is a property of this process rather than of the protocol.
+	//
+	// Consequence worth stating: it is empty on restart, and it is per-node. A client
+	// that needed a durable subscription or a cross-node one would still pull
+	// (GET /messages/{agentId}), which is why that endpoint is kept.
+	hub *hub
 }
+
+// hubFanoutBuffer is how many pending messages one subscriber may accumulate before
+// it is considered too slow.
+//
+// A subscriber that cannot keep up must not be able to consume unbounded memory on a
+// public endpoint, and it must not block the publisher either. So the buffer is
+// bounded and a subscriber that overflows is dropped rather than stalling the node —
+// the client reconnects and pulls, which is the recovery the pull endpoint exists for.
+const hubFanoutBuffer = 64
 
 // New returns a node, validating cfg.
 func New(cfg Config) (*Node, error) {
@@ -111,7 +134,7 @@ func New(cfg Config) (*Node, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Node{cfg: cfg}, nil
+	return &Node{cfg: cfg, hub: newHub()}, nil
 }
 
 // Handler returns the node's routes.
@@ -135,6 +158,11 @@ func (n *Node) Handler() http.Handler {
 	mux.HandleFunc("POST /agents", n.handlePublishCard)
 	mux.HandleFunc("GET /agents", n.handleListCards)
 	mux.HandleFunc("GET /agents/{agentId}", n.handleGetCard)
+
+	// WebSocket push binding (S9-12, MVP.md §12.1). This is ADDED alongside the four
+	// HTTP endpoints, not a replacement for them: a client that needs durability or a
+	// cross-node view still pulls. See ws.go for what a socket does and does not promise.
+	mux.HandleFunc(WSPathPattern, n.handleSubscribe)
 
 	return mux
 }
@@ -188,6 +216,13 @@ func (n *Node) handlePost(w http.ResponseWriter, r *http.Request) {
 		n.cfg.Logger.Error("store message", "id", env.ID, "error", err.Error())
 		writeError(w, http.StatusInternalServerError, "could not store the message")
 		return
+	}
+
+	// Fan out to live subscribers (S9-12). Only on a genuinely new message: a duplicate
+	// was already delivered when it first arrived, and re-sending it would make a retry
+	// look like new activity to every subscriber.
+	if stored {
+		n.hub.publish(env)
 	}
 
 	// A duplicate is an acknowledgement, not a conflict: the sender's job is done
@@ -309,6 +344,10 @@ func (n *Node) handleWellKnown(w http.ResponseWriter, _ *http.Request) {
 		Endpoints: []string{
 			"POST /messages", "GET /messages/{agentId}",
 			"POST /agents", "GET /agents", "GET /agents/{agentId}",
+			// The WebSocket binding is advertised here so a client discovers it from the
+			// same document it already fetches (MVP.md §12.1: a second AgentInterface,
+			// not a replacement).
+			"GET /ws/messages/{agentId}",
 		},
 		MessageKind: []string{KindReceipt, KindEvent},
 		Messages:    n.cfg.Store.Count(),

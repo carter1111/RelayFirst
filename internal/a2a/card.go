@@ -118,6 +118,17 @@ type CardSpec struct {
 	// "https://node.example/a2a".
 	URL string
 
+	// WebSocketURL, when set, declares the agent's push binding in the same card
+	// (S9-12, MVP.md §12.1).
+	//
+	// # Why it is optional rather than always present
+	//
+	// A card must not advertise a binding the agent does not serve: a client that
+	// trusted the card and connected would fail against a URL that was never there.
+	// So the interface is added only when the caller says it exists. An agent with no
+	// push surface is still a valid A2A agent.
+	WebSocketURL string
+
 	// Version is the agent's own version string, not the protocol version.
 	Version string
 
@@ -142,13 +153,23 @@ func Build(spec CardSpec) (*a2asdk.AgentCard, error) {
 	iface := a2asdk.NewAgentInterface(spec.URL, TransportJSONRPC)
 	iface.ProtocolVersion = a2asdk.ProtocolVersion(SchemaVersion)
 
+	// The WebSocket binding is listed AFTER the JSON-RPC one, and that order is the
+	// documented client preference rule: a client should prefer the earlier entry it can
+	// speak. HTTP is the MVP binding (MVP.md §7.3) and the one every existing client
+	// uses, so it comes first and a client that speaks both stays on the proven path
+	// rather than being silently moved to the newer one.
+	interfaces := []*a2asdk.AgentInterface{iface}
+	if ws := strings.TrimSpace(spec.WebSocketURL); ws != "" {
+		wsIface := a2asdk.NewAgentInterface(ws, TransportWebSocket)
+		wsIface.ProtocolVersion = a2asdk.ProtocolVersion(SchemaVersion)
+		interfaces = append(interfaces, wsIface)
+	}
+
 	return &a2asdk.AgentCard{
-		Name:        spec.Name,
-		Description: spec.Description,
-		Version:     spec.Version,
-		SupportedInterfaces: []*a2asdk.AgentInterface{
-			iface,
-		},
+		Name:                spec.Name,
+		Description:         spec.Description,
+		Version:             spec.Version,
+		SupportedInterfaces: interfaces,
 		Capabilities: a2asdk.AgentCapabilities{
 			Extensions: []a2asdk.AgentExtension{identity.Extension()},
 		},

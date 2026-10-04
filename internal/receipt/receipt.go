@@ -222,8 +222,41 @@ type Task struct {
 	SpecHash      string         `json:"specHash"`
 	SelfGenerated bool           `json:"selfGenerated"`
 
-	// A2ATaskID is reserved for future A2A interoperability (MVP.md §16.4).
-	// It stays null for the whole MVP.
+	// A2ATaskID links this receipt to the A2A task it was produced for (S9-10).
+	//
+	// # From reserved to used (MVP.md §16)
+	//
+	// v1.0 carried this field as a placeholder and left it null forever. v2.0 makes
+	// A2A the product's outward identity, so the field becomes real: a receipt
+	// produced while executing an A2A task records which task, which is what lets a
+	// consumer trace a piece of work back to the request that caused it.
+	//
+	// # Why it stays null for self-generated work
+	//
+	// A mining task the agent invented for itself has no A2A task behind it.
+	// Recording a made-up id would be worse than recording nothing: a consumer
+	// following the link would find no task and could not tell that from a task that
+	// was deleted.
+	//
+	// # Why it is a pointer without omitempty
+	//
+	// Every already-signed receipt carries `"a2aTaskId":null` in its canonical bytes,
+	// so the key must keep being emitted for those receipts. Removing it would change
+	// their payload hash and invalidate every signature ever made.
+	//
+	// # Which change is actually dangerous, corrected by measurement
+	//
+	// An earlier version of this comment said adding `omitempty` would strip the key
+	// and break every signature. A mutation test disproved that: the signed bytes come
+	// from the explicit field list in canonical.go, not from struct tags, so editing
+	// the tag alone changes nothing that is signed. The real hazard is
+	// removing `a2aTaskId` from canonical.go's Task case — that mutation does fail the
+	// frozen corpus, exactly as this comment originally claimed.
+	//
+	// The tag is still pinned to match, because a tag that disagreed with the writer
+	// would make any code path using encoding/json directly (an export, a debug dump)
+	// disagree with the signed form, and that difference would be found by a human
+	// comparing two outputs rather than by a test.
 	A2ATaskID *string `json:"a2aTaskId"`
 
 	// Verification declares how this task's result is checked (MVP.md §5.0).
@@ -242,6 +275,65 @@ type Task struct {
 	// verified by re-running. So empty is not an absence of information — it is the
 	// information that this was a recompute task. See VerificationOrDefault.
 	Verification VerificationMode `json:"verification,omitempty"`
+}
+
+// ClearA2ATaskID records that no A2A task backs this work.
+//
+// It sets nil rather than an empty string on purpose: the two are different claims —
+// "there is no task" versus "there is a task whose id is empty" — and only the first
+// is representable, so the second must not be allowed to look like it.
+func (t *Task) ClearA2ATaskID() {
+	t.A2ATaskID = nil
+}
+
+// MaxA2ATaskIDLength bounds an A2A task id.
+//
+// The bound exists only so a hostile peer cannot use the id as an unbounded storage
+// key; it is far above any real id.
+const MaxA2ATaskIDLength = 256
+
+// ValidateA2ATaskID checks the shape of an A2A task id (S9-10).
+//
+// # Why this is deliberately lenient
+//
+// A2A does not specify a task id format — the SDK's TaskID is an opaque string and an
+// agent chooses its own. So this cannot check a grammar, and trying to would reject a
+// newer peer's ids for no reason. What it checks is the two things that matter for
+// interoperability:
+//
+//   - the id is not empty or whitespace, which would make the link meaningless;
+//   - it is not absurdly long, so it cannot be used as unbounded storage.
+//
+// # Why a lenient check is still worth having
+//
+// An interop field that is never validated drifts. Two agents can start writing
+// different things into it — one a task id, another a URL — and nothing fails until a
+// consumer tries to follow the link. A minimal shape rule plus a documented meaning
+// is what keeps that from happening silently.
+func ValidateA2ATaskID(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return invalid("a2aTaskId is empty; set it to null for self-generated work rather than an empty string")
+	}
+	if len(id) > MaxA2ATaskIDLength {
+		return invalid("a2aTaskId is %d bytes, over the %d byte limit", len(id), MaxA2ATaskIDLength)
+	}
+	return nil
+}
+
+// SetA2ATaskID links a receipt to the A2A task it was produced for.
+//
+// # Why a setter rather than direct field assignment
+//
+// The field is inside the signed payload, so setting it after signing invalidates the
+// signature — and that failure surfaces later, at verification, far from the mistake.
+// The setter cannot prevent that, but it can refuse an empty id, which is the value a
+// caller reaches for when it means "no task" and should have meant null.
+func (t *Task) SetA2ATaskID(id string) error {
+	if err := ValidateA2ATaskID(id); err != nil {
+		return err
+	}
+	t.A2ATaskID = &id
+	return nil
 }
 
 // Work records the inference budget consumed.
@@ -564,6 +656,13 @@ func (r Receipt) ValidateStructure() error {
 	}
 	if r.Task.Spec == nil {
 		return invalid("task.spec is nil")
+	}
+	// An a2aTaskId, when present, must be a plausible link (S9-10). Absent is normal:
+	// self-generated work has no A2A task behind it, and null is the honest value.
+	if r.Task.A2ATaskID != nil {
+		if err := ValidateA2ATaskID(*r.Task.A2ATaskID); err != nil {
+			return err
+		}
 	}
 	if strings.TrimSpace(r.Task.SpecHash) == "" {
 		return invalid("task.specHash is empty")
