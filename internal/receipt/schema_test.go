@@ -3,6 +3,8 @@ package receipt
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -569,5 +571,156 @@ func TestTypedData_MalformedSchemaIsRejected(t *testing.T) {
 
 	if _, err := r.TypedData(); err == nil {
 		t.Fatal("a malformed schema must not silently select a signing profile")
+	}
+}
+
+// --- S9-0i: numeric spec values (finding H1) ---------------------------------
+
+// TestCanonicalJSON_NumericSpecRoundTrips is the fix for a high finding.
+//
+// Task.Spec is map[string]any, so any non-string JSON value decodes to float64.
+// The canonical writer had no case for it, so a spec containing a number either
+// crashed export or made a valid signed receipt fail verification — a receipt
+// that verified when signed could stop verifying after a round trip.
+func TestCanonicalJSON_NumericSpecRoundTrips(t *testing.T) {
+	r := validReceipt(t)
+	r.Task.Spec = map[string]any{
+		"url":      "https://example.com/x",
+		"count":    float64(5),
+		"ratio":    float64(0.5),
+		"negative": float64(-3),
+		"big":      float64(1e21),
+		"small":    float64(1e-7),
+	}
+
+	canonical, err := r.MarshalCanonical()
+	if err != nil {
+		t.Fatalf("a spec with numbers must serialize: %v", err)
+	}
+
+	back, err := Unmarshal(canonical)
+	if err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+
+	// The canonical bytes must survive the round trip unchanged: those bytes are
+	// what the signature covers.
+	again, err := back.MarshalCanonical()
+	if err != nil {
+		t.Fatalf("re-marshal: %v", err)
+	}
+	if string(canonical) != string(again) {
+		t.Errorf("canonical form is not stable across a round trip:\n  before: %s\n  after:  %s", canonical, again)
+	}
+}
+
+// TestCanonicalJSON_MatchesEncodingJSONForNumbers is the determinism guard.
+//
+// The structural path and the verbatim-payload path must render a number
+// identically. If they did not, checkPayloadConsistency would reject an honest
+// receipt. Delegating to encoding/json makes them identical by construction, and
+// this test pins that delegation so a future "optimisation" that hand-rolls the
+// formatting fails loudly.
+func TestCanonicalJSON_MatchesEncodingJSONForNumbers(t *testing.T) {
+	values := []float64{
+		0, 1, -1, 5, 0.5, -0.5, 1e6, 1e21, 1e-7, 123456789.123456789,
+		0.1, 0.2, 0.3, 1.0 / 3.0,
+	}
+
+	for _, v := range values {
+		t.Run(fmt.Sprintf("%v", v), func(t *testing.T) {
+			want, err := json.Marshal(v)
+			if err != nil {
+				t.Fatalf("json.Marshal: %v", err)
+			}
+			got, err := formatJSONFloat(v)
+			if err != nil {
+				t.Fatalf("formatJSONFloat: %v", err)
+			}
+			if got != string(want) {
+				t.Errorf("formatJSONFloat(%v) = %q, encoding/json gives %q — the two paths would disagree", v, got, want)
+			}
+		})
+	}
+}
+
+// TestCanonicalJSON_RejectsNonJSONNumbers keeps unrepresentable values out of the
+// signed bytes rather than letting them serialize into something no other
+// implementation can parse.
+func TestCanonicalJSON_RejectsNonJSONNumbers(t *testing.T) {
+	for name, v := range map[string]float64{
+		"NaN":               math.NaN(),
+		"positive infinity": math.Inf(1),
+		"negative infinity": math.Inf(-1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := formatJSONFloat(v); err == nil {
+				t.Errorf("%s must not be serialized into a receipt", name)
+			}
+		})
+	}
+}
+
+// TestCanonicalJSON_ValidatesJSONNumber is the guard against smuggling.
+//
+// json.Number is a string type, so a caller could put arbitrary bytes in it.
+// Emitting that verbatim would let unvalidated content into the canonical form —
+// which is exactly the byte sequence a signature covers.
+func TestCanonicalJSON_ValidatesJSONNumber(t *testing.T) {
+	valid := []string{"0", "1", "-1", "1.5", "1e5", "1E+5", "1e-5", "-0.5", "12345678901234567890"}
+	for _, s := range valid {
+		if !isValidJSONNumber(s) {
+			t.Errorf("isValidJSONNumber(%q) = false, want true", s)
+		}
+	}
+
+	invalid := []string{
+		"", "-", "01", "1.", ".5", "1e", "1e+", "+1", "0x1", "1 ", " 1",
+		`"1"`, "1,2", "NaN", "Infinity", "1e5e5",
+	}
+	for _, s := range invalid {
+		if isValidJSONNumber(s) {
+			t.Errorf("isValidJSONNumber(%q) = true, want false", s)
+		}
+	}
+}
+
+// TestSignedPayload_NumberSpecPathsAgree is the end-to-end form of the same
+// property: a receipt with a numeric spec must verify identically whether it was
+// signed structurally or with a verbatim payload.
+func TestSignedPayload_NumberSpecPathsAgree(t *testing.T) {
+	r := validReceipt(t)
+	r.Task.Spec = map[string]any{"url": "https://example.com/x", "count": float64(5), "ratio": float64(0.25)}
+
+	// Changing a signed field changes the derived id, so re-derive before signing
+	// (S9-0h, finding B2).
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+
+	structural, err := r.SignedPayload()
+	if err != nil {
+		t.Fatalf("structural: %v", err)
+	}
+
+	verbatim := r
+	verbatim.Payload = string(structural)
+	vp, err := verbatim.SignedPayload()
+	if err != nil {
+		t.Fatalf("verbatim: %v", err)
+	}
+
+	if string(structural) != string(vp) {
+		t.Errorf("the two payload paths disagree on a numeric spec:\n structural: %s\n verbatim:   %s", structural, vp)
+	}
+
+	// And it must actually verify.
+	if err := verbatim.Sign(testPrivKey); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if err := verbatim.Validate(nil); err != nil {
+		t.Fatalf("a numeric spec must not break verification: %v", err)
 	}
 }

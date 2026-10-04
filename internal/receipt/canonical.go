@@ -2,7 +2,9 @@ package receipt
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 	"sort"
@@ -90,6 +92,44 @@ func writeCanonical(b *strings.Builder, v any) error {
 			return nil
 		}
 		b.WriteString(t.String())
+		return nil
+
+	// Numbers decoded from JSON (H1, S9-0i).
+	//
+	// Task.Spec is map[string]any, so any non-string JSON value decodes to
+	// float64. Without these cases the type switch fell through to reflection and
+	// errored, which meant a spec containing a number either crashed export or
+	// made a valid signed receipt fail verification.
+	//
+	// The rendering must match encoding/json byte for byte, because the structural
+	// path and the verbatim-payload path have to agree: if they rendered 5
+	// differently, checkPayloadConsistency would reject an honest receipt. See
+	// formatJSONFloat, which mirrors encoding/json's rules exactly.
+	case float64:
+		s, err := formatJSONFloat(t)
+		if err != nil {
+			return err
+		}
+		b.WriteString(s)
+		return nil
+
+	case float32:
+		s, err := formatJSONFloat(float64(t))
+		if err != nil {
+			return err
+		}
+		b.WriteString(s)
+		return nil
+
+	case json.Number:
+		// json.Number carries the original literal, so emit it verbatim — but
+		// validate it first, or a caller could smuggle arbitrary bytes into the
+		// canonical form and change a signed payload.
+		s := t.String()
+		if !isValidJSONNumber(s) {
+			return fmt.Errorf("canonicalJSON: json.Number %q is not a valid JSON number", s)
+		}
+		b.WriteString(s)
 		return nil
 
 	case []Anchor:
@@ -364,4 +404,98 @@ func equalBytes(a, b []byte) bool {
 		}
 	}
 	return true
+}
+
+// formatJSONFloat renders a float64 exactly as encoding/json does.
+//
+// # Why byte-exactness matters here
+//
+// The structural path and the verbatim-payload path must agree. If one rendered
+// 5.0 as "5" and the other as "5.0", checkPayloadConsistency would reject an
+// honest receipt — and worse, a Go/TypeScript disagreement would break
+// cross-language verification (invariant A4).
+//
+// # Why not strconv.FormatFloat alone
+//
+// encoding/json has its own rules: it prefers the shortest representation that
+// round-trips, switches to exponent form outside a specific magnitude range, and
+// normalises the exponent (e+07 becomes e+7). Reimplementing those rules by hand
+// is how the two sides drift. Instead this delegates to encoding/json for the
+// number itself and only rejects the cases JSON cannot represent, so the output
+// is byte-identical by construction rather than by agreement.
+func formatJSONFloat(f float64) (string, error) {
+	// NaN and infinities are not valid JSON. encoding/json rejects them, and so
+	// must this, or a receipt could carry a value that no other implementation
+	// can parse.
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return "", fmt.Errorf("canonicalJSON: %v is not representable in JSON", f)
+	}
+
+	out, err := json.Marshal(f)
+	if err != nil {
+		return "", fmt.Errorf("canonicalJSON: marshal float: %w", err)
+	}
+	return string(out), nil
+}
+
+// isValidJSONNumber reports whether s is a well-formed JSON number.
+//
+// It exists because json.Number is a string type: a caller could construct one
+// holding arbitrary bytes, and emitting that verbatim would let unvalidated
+// content into the canonical form — which is the bytes a signature covers.
+func isValidJSONNumber(s string) bool {
+	if s == "" {
+		return false
+	}
+	// The grammar is small enough to check directly, and doing so avoids a
+	// round-trip through encoding/json just to reject obvious garbage.
+	i, n := 0, len(s)
+
+	if s[i] == '-' {
+		i++
+	}
+	if i >= n {
+		return false
+	}
+
+	// int: 0 | [1-9][0-9]*
+	switch {
+	case s[i] == '0':
+		i++
+	case s[i] >= '1' && s[i] <= '9':
+		for i < n && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	default:
+		return false
+	}
+
+	// frac: .[0-9]+
+	if i < n && s[i] == '.' {
+		i++
+		start := i
+		for i < n && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		if i == start {
+			return false
+		}
+	}
+
+	// exp: [eE][+-]?[0-9]+
+	if i < n && (s[i] == 'e' || s[i] == 'E') {
+		i++
+		if i < n && (s[i] == '+' || s[i] == '-') {
+			i++
+		}
+		start := i
+		for i < n && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		if i == start {
+			return false
+		}
+	}
+
+	return i == n
 }
