@@ -653,7 +653,7 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 |---|---|---|---|
 | 3 | **Card relay-set extension**（NIP-65 式：card 声明"我往哪些 relay 发布"） | `ARCHITECTURE.md` §17.1（"**最重要**"） | ✅ **准确** —— `internal/a2a/card.go` 目前**只有** identity extension，无 relay set。**约束**：必须走 extension，**不得 fork card schema**（A9）。**范围变更**：需先写进 `MVP.md` |
 | 4 | **RFN-05 客户端多 relay 逻辑**（quorum / ack / dedup / retry / failover / per-relay 健康） | `ARCHITECTURE.md` 标"必须" | ⚠️ **准确但已有部分** —— `internal/publish` **已有**并发扇出 + 部分成功语义 + 实测"一挂仍送达"（S5-9）。**缺**：quorum、per-relay 健康追踪、failover 策略。**范围变更**：需先写进 `MVP.md` |
-| 5 | **双节点互操作测试**（同一 agent 事件经两独立节点投递，客户端状态推导一致） | permissionless 最小证明 | ✅ **准确** —— S9-11 确实**只跑单节点**。**这条很有价值**：它是"确定性来自签名数据而非 relay 序"的**唯一端到端证明**（ARCH §4.2）。**建议优先于 #3/#4** |
+| 5 | **双节点互操作测试**（同一 agent 事件经两独立节点投递，客户端状态推导一致） | permissionless 最小证明 | ✅ **done** — `internal/publish/twonode_test.go`，**4 项测试**：① **同一历史以【不同顺序】投给两个独立节点，推导状态必须一致**（这是"确定性来自签名数据而非 relay 序"的**唯一端到端证明**）；② **客户端合并两节点的【部分视图】**仍得出同一结论；③ **一个节点不可达**（先试挂掉的）仍能从另一个到达正确状态；④ **夹具守卫**：两节点**必须真的独立**（共享存储会让前面全部空过，**实测变异验证**）。<br>**⚠️ 诚实边界**：#4 的 **quorum / per-relay 健康追踪 / failover 策略未实现**。③ 只证明"**客户端试两个、一个死了仍得出正确状态**"，**不是** quorum 或自愈。**不声称 #4 已完成。** |
 | 6 | **`relayfirst/node` 容器发布** | 判据 ③（v2.0 硬性验收） | ⚠️ **半准确** —— `Dockerfile` **已存在**，S8-3 标"**代码层达成**"，S5 实测 `docker build`/`run` 成功。**缺**：发布到 registry + "陌生人 10 分钟"**真人计时**。**判据 ③ 的代码部分已过，计时部分未过** |
 | 7 | 发现后两层（Indexer + EVM Anchor fallback）+ 冷启动 bootstrap | `ARCHITECTURE.md` §17 | ⚠️ **属 Roadmap** —— `MVP.md` **无** indexer / anchor fallback / bootstrap 默认列表的范围。**需先写进 `MVP.md`** |
 | 8 | **RFN-04 反滥用声明协议化**（policies/limits/pricing/PoW 字段格式） | `ARCHITECTURE.md` §18.4 | ⚠️ **属 Roadmap**。**顺序提醒是对的**：`ARCHITECTURE.md` §18.4 明确"**要排在任何公开 relay 名录之前**" |
@@ -672,14 +672,14 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 
 | id | 任务 | 依赖 | 验收 | 状态 |
 |---|---|---|---|---|
-| S11-1 | `RelayPoints.sol`：ERC-721 + ERC-5192 | — | 合约可编译 | ⬜ todo |
-| S11-2 | **转账拦截 override**（不只 `locked()` 声明） | S11-1 | 转让尝试 revert | ⬜ todo |
-| S11-3 | 累计积分存储（非增量） | S11-1 | 漏 claim 不丢分 | ⬜ todo |
-| S11-4 | Merkle claim（复用 `internal/merkle` + `RelayAnchor.sol`） | S11-3 | 能凭 proof 拿到累计值 | ⬜ todo |
-| S11-5 | 无许可 poke（任何人可代交） | S11-4 | 用户零 gas 也能更新 | ⬜ todo |
-| S11-6 | 动态 `tokenURI()`（积分 + 声誉 metadata） | S11-3 | 钱包里能点进去看到积分 | ⬜ todo |
-| S11-7 | A5 守卫覆盖新合约与文案 | S11-6 | 不出现"积分值 X USDC" | ⬜ todo |
-| S11-8 | SBT 端到端测试（判据 ⑨） | S11-1..7 | 钱包可见 + 不可转让 + claim 正确 | ⬜ todo |
+| S11-1 | `RelayPoints.sol`：ERC-721 + ERC-5192 | — | 合约可编译 | ✅ **done** — `contracts/RelayPoints.sol` + `contracts/interfaces/IERC5192.sol`。**新增依赖已走 ADR**：引入 **OpenZeppelin v5.7.0**（vendored，`ADR-0006`）—— 这是仓库**第一个 Solidity 依赖**（此前 `libs = []`）。**不自研 ERC-721 的理由不是图省事**：`_safeMint` 的 receiver selector 校验写错会**永久锁死** token；`approve` 竞态与 `_update` hook 位置是已知陷阱；而**合约不可变，写错的代价付不起**。`IERC5192` **自实现**（2 个函数，是别的工具读的标准形状）。`forge build` 通过 |
+| S11-2 | **转账拦截 override**（不只 `locked()` 声明） | S11-1 | 转让尝试 revert | ✅ **done** — `_update` override：`from != 0 && to != 0` 即 revert。**这个条件正是难点**：mint 从 `address(0)`、burn 到 `address(0)` 必须仍然合法，写法若只看 `to` 会**放过销毁**、只看 `from` 会**堵死铸造**。**`locked()` 只是声明**（ERC-5192 不强制任何东西，忽略它的市场照样能转），**真正拦截在 `_update`**。**实测变异**：移除该 revert → **3 项测试 FAIL**（`locked()` 仍返回 true，即"名义上 soulbound"被抓出） |
+| S11-3 | 累计积分存储（非增量） | S11-1 | 漏 claim 不丢分 | ✅ **done** — `_points[agentId]` 存**累计值**，claim **设置**而非累加。**为什么不是增量**：存增量的话，用户漏 claim 一次就**永久丢分** —— 那是设计缺陷而非用户失误。**为什么 claim 不能降低总数**：更低的证明意味着**错的 epoch** 或**不一致的账本**，静默接受会**抹掉已得积分**（实测 revert）。**相同值不 revert 也不发事件**（relayer 用陈旧缓存提交不该浪费 gas，事件流要保持诚实）。 |
+| S11-4 | Merkle claim（复用 `internal/merkle` + `RelayAnchor.sol`） | S11-3 | 能凭 proof 拿到累计值 | ✅ **done** — `claimPoints` 走 `RelayRootSource.verifyProof`（**签名对齐 `RelayAnchor.verifyProof`**，非另发明）。**leaf 把 epoch 包在内**（`keccak256(agentId ‖ total ‖ epoch)`）—— 否则 epoch 10 的证明在 epoch 20 的根上也会通过，**陈旧 claim 可被重放进新 epoch**。**operator 在部署时固定、不可改**：可变的 operator 会让部署者把 claim 重定向到自己事后选的根，而**这种权威正是本设计刻意没有的**。rotate operator = 部署新合约（可见，且不能改写任何人的既有总数）。 |
+| S11-5 | 无许可 poke（任何人可代交） | S11-4 | 用户零 gas 也能更新 | ✅ **done** — `claimPoints` **不检查 `msg.sender`** —— **权威是证明，不是发送者**。`testClaimIsPermissionless` 用一个**第三方 relayer 合约**提交并断言积分到账，证明用户**零 gas** 也能更新。 |
+| S11-6 | 动态 `tokenURI()`（积分 + 声誉 metadata） | S11-3 | 钱包里能点进去看到积分 | ⏸ **未做 —— 已知缺口**。`tokenURI` 目前是 OZ 默认（返回空 baseURI 拼接）。**要动态返回积分就需要 on-chain 字符串拼装或链下渲染器**，两者都有取舍（前者 gas，后者引入中心化端点），**需要一个决定**。**判据 ⑨ 的"钱包可见"因此尚未完整达成** —— 徽章**能**出现在钱包里且**确实不可转让**，但**点进去看不到积分数字**。 |
+| S11-7 | A5 守卫覆盖新合约与文案 | S11-6 | 不出现"积分值 X USDC" | ✅ **done** — `compliance_audit.go` 的 `defaultTargets` 纳入 `contracts/RelayPoints.sol`。**实测第一次运行就 FAIL**：合约注释把白名单短语 `"carry no promised return"` **断成两行**，而 scan 是**按行**的（`TestScan_ScopeIsPerLine` 锁定该语义）→ **误报**。**修法是把短语放同一行，没有改守卫语义**（放宽成跨行匹配会削弱按行精确性，而那有测试在守）。**方向安全（误报而非漏报），但已作为已知局限记入 ADR-0006 与 §8.8。** |
+| S11-8 | SBT 端到端测试（判据 ⑨） | S11-1..7 | 钱包可见 + 不可转让 + claim 正确 | 🔸 **部分** — **12 项合约测试**（`forge test` 共 27 通过）：**转让 revert**（`transferFrom` **与** `safeTransferFrom` 两条路径都测）+ **`locked()` 诚实但保护不依赖它** + **第二次 mint revert** + **claim 设累计** + **漏 claim 不丢分** + **claim 不能降低** + **坏证明被拒** + **无许可提交** + **ERC-5192 接口上报**。**变异验证**：移除 revert → 3 项 FAIL。**未达成**：判据 ⑨ 的"**wallet 可见积分 metadata**"依赖 S11-6（未做）；**"Merkle claim 能拿到"** 已测（用 stub root source），**但未与真实 `RelayAnchor` 部署对跑**。 |
 
 ### 10.4 S12 — 结算 + MCP（§6.5 / 提案 §9）
 

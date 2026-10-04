@@ -654,6 +654,7 @@ docker run -d \
 | **HTTP 服务** | 标准库 `net/http` | ② | 零依赖 |
 | **SQLite 驱动** | **`modernc.org/sqlite`** | ① | 纯 Go，**无 CGO** —— 关键，见 §8.3 |
 | **CLI 框架** | ~~`github.com/spf13/cobra`~~ → **标准库手写** | ② | **修正（ADR-0005）**：实测为手写（`cmd/relayfirst/main.go`，零依赖）。见 §8.7 |
+| **Solidity 库** | **`OpenZeppelin Contracts v5.7.0`**（vendored） | ② | **新增（ADR-0006，S11）**：ERC-721 不自研 —— 合约不可变，写错的代价付不起。见 §8.8 |
 | **X25519 / ChaCha20**（后续） | **`golang.org/x/crypto`** | ① | 标准扩展库，**绝不自研** |
 | **Merkle tree**（后续） | **`github.com/cbergoon/merkletree`** 或自研 | ② | 算法简单，但优先用库 |
 | **Delegation** | **自研** | ③ | 差异化，无现成轮子 |
@@ -779,6 +780,36 @@ testdata/eip712-vectors.json
 届时必须先评估抽公共解析层或改用 cobra，**不得再复制第三次**。
 
 **完整论证见 [`docs/decisions/ADR-0005-cli-framework-handwritten.md`](docs/decisions/ADR-0005-cli-framework-handwritten.md)（accepted）。**
+
+### 8.8 Solidity 依赖：引入 OpenZeppelin（ADR-0006，S11）
+
+**仓库此前零 Solidity 依赖**（`libs = []`，`RelayAnchor.sol` 自包含 197 行）。
+**S11 打破了这一点：`RelayPoints.sol` 使用 `ERC721`。**
+
+**为什么 ERC-721 不自研：**
+
+ERC-721 属于 §8.0 的**类别 ②**（编码/协议），判据是"**优先用库，除非有具体理由**"。
+这里的理由**指向用库**，因为它的风险面不适合手写：
+
+| 风险 | 后果 |
+|---|---|
+| `_safeMint` 的 receiver 回调 | 校验 selector 写错会**永久锁死** token |
+| `approve` 竞态、`safeTransferFrom` 重入面 | 规范本身讨论过的已知陷阱 |
+| `_update` hook 位置随版本变化 | 转账拦截 override 会**悄悄失效** |
+| 钱包依赖标准行为 | "大致对"的实现会让徽章**显示不出来** |
+
+> **关键的不对称性：合约不可变，所以"写错的代价付不起"。**
+> 手写省下 2.5M 仓库体积，赌上的是"一个**不可升级**的合约里有一个你没发现的转账漏洞"。
+
+**具体形态：** `v5.7.0` **vendored 进 `lib/`**（不是 `forge install` 动态拉取）——
+合约是不可变产物，构建必须**可复现**，否则同一 commit 会构建出**不同字节码**。
+`IERC5192` **自实现**（只有 2 个函数，且是别的工具读的标准形状）。
+
+**⚠️ 已知局限（执行中实测）：** A5 合规守卫是**按行**扫描的，
+所以**跨行的白名单短语匹配不上**。新增合约时曾因此**误报一次**（方向安全，是误报而非漏报）。
+**写合约注释时把 A5 白名单短语放在同一行。**
+
+**完整论证见 [`docs/decisions/ADR-0006-vendor-openzeppelin.md`](docs/decisions/ADR-0006-vendor-openzeppelin.md)（accepted）。**
 
 ---
 

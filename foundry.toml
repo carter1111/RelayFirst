@@ -1,7 +1,11 @@
 [profile.default]
 src = "contracts"
 out = "out"
-libs = []
+# OpenZeppelin is vendored under lib/ (ADR-0006). It is the first Solidity dependency this
+# repository has taken: RelayAnchor deliberately needed none, and RelayPoints needs ERC-721.
+# The path mapping below is what makes the bare "openzeppelin-contracts/..." imports resolve.
+libs = ["lib"]
+remappings = ["openzeppelin-contracts/=lib/openzeppelin-contracts/"]
 test = "contracts/test"
 solc_version = "0.8.26"
 optimizer = false

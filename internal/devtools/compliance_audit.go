@@ -29,10 +29,16 @@ import (
 // defaultTargets are the surfaces a user actually reads: the CLI's own output strings and the
 // onboarding guide. Internal design notes are deliberately excluded — MVP.md §6.1 is where the
 // A5 rule is *defined*, so it must be free to discuss value as a subject.
+//
+// The SBT contract is included (S11-7) because it is a user-facing surface in the way that
+// matters most for A5: it is where a points balance could acquire a price. A contract comment
+// promising a return, or a name implying one, would be the exact claim A5 forbids — and it
+// would be on-chain, permanent, and readable by every wallet that displays the badge.
 var defaultTargets = []string{
 	filepath.Join("cmd", "relayfirst", "main.go"),
 	filepath.Join("docs", "getting-started.md"),
 	"README.md",
+	filepath.Join("contracts", "RelayPoints.sol"),
 }
 
 func main() {
