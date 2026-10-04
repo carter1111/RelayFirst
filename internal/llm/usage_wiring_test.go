@@ -73,6 +73,19 @@ func usageTestLoop(t *testing.T, srcURL string, resolver mining.Resolver) *minin
 }
 
 // firstExtract mines until an extract receipt is produced.
+//
+// # Why a failure to produce one is FATAL rather than a skip
+//
+// This used to `t.Skip` when 60 attempts produced no extract task. That reads as "the test does not
+// apply", which is the wrong answer: the test applies, and its own fixture failed to set up the
+// condition it needs. A skip would let a change that stopped the generator emitting extract tasks
+// silently retire this assertion — the test would keep reporting green while checking nothing, and
+// nothing in the output would say so.
+//
+// The probability of 60 misses is not the point. Even if it were negligible, "the input I need did
+// not appear" is a failure of the test, and reporting it as a failure is what makes a broken fixture
+// visible. That is the same reasoning as the CI gate that turns "nothing ran" into a failure rather
+// than a silent pass.
 func firstExtract(t *testing.T, loop *mining.Loop) *receipt.Receipt {
 	t.Helper()
 
@@ -85,7 +98,8 @@ func firstExtract(t *testing.T, loop *mining.Loop) *receipt.Receipt {
 			return res.Receipt
 		}
 	}
-	t.Skip("no extract task was produced in 60 attempts; the generator's randomness is not behaving as expected")
+	t.Fatalf("no extract task was produced in 60 attempts, so this test cannot exercise what it " +
+		"asserts; the fixture or the generator changed and the assertion is now unchecked")
 	return nil
 }
 
@@ -165,7 +179,11 @@ func TestProbeAndComputeRecordNoTokens(t *testing.T) {
 	}
 
 	if len(seen) == 0 {
-		t.Skip("neither probe nor compute was produced in 60 attempts")
+		// Fatal rather than skip, for the reason on firstExtract: the test applies, and failing to
+		// produce the tasks it needs is its own failure. A skip here would quietly retire the
+		// "probe and compute record no tokens" guard if the generator ever stopped emitting them.
+		t.Fatalf("neither probe nor compute was produced in 60 attempts, so the zero-token guard is " +
+			"unchecked; the fixture or the generator changed")
 	}
 }
 
@@ -340,7 +358,11 @@ func TestUsageRecorderResetPerIteration(t *testing.T) {
 		}
 	}
 	if len(extracts) < 2 {
-		t.Skip("fewer than two extract tasks were produced in 60 attempts")
+		// Fatal rather than skip: "cost leaked across iterations" can only be seen with two extracts,
+		// so failing to produce them means this assertion is unchecked. Reporting that as a skip would
+		// hide the gap rather than reveal it.
+		t.Fatalf("fewer than two extract tasks were produced in 60 attempts, so the cross-iteration " +
+			"cost-leak assertion is unchecked; the fixture or the generator changed")
 	}
 
 	// Each extract made exactly one call, so each receipt must report exactly one
