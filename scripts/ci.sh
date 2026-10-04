@@ -155,7 +155,7 @@ fi
 # like success: `go test -run` with no matches exits zero. The count check below
 # turns "nothing ran" into a failure, so a rename cannot quietly retire the gate.
 step "Version compatibility matrix (S9-0g: G2 cross-version, G3 unknown fields, G4 negotiation)"
-version_pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_|TestEvent_|TestEventHash_|TestDecodeEvent_|TestSignedBytes_|TestValidateChain_|TestValidateEvent_|TestDerive|TestDeriveSession_|TestSessionEvent_|TestSessionIDFor_|TestTimeoutCoverage_|TestA2ATaskState_|TestVerification_|TestVerify_(Recompute|Empty|Evaluator|Dispute|ModeRefusal)|TestEvaluate_|TestDesignateEvaluator_|TestA2ATaskID_|TestSetA2ATaskID_|TestValidateA2ATaskID_|TestWS_|TestHTTPEndpointsSurviveWebSocket|TestBuild_(DeclaresBothBindings|OmitsWebSocketWhenUnset)|TestSelectInterface_SkipsWebSocket|TestAcceptance_|TestObservations_|TestEvidence_|TestTasks_|TestAssert_|TestAssertion_|TestRunner_|TestCheck_|TestCriterion10_|TestNode_(PublishesNodeID|OmitsNodeID|HasNoKeyField|NoteIsAccurate)'
+version_pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_|TestEvent_|TestEventHash_|TestDecodeEvent_|TestSignedBytes_|TestValidateChain_|TestValidateEvent_|TestDerive|TestDeriveSession_|TestSessionEvent_|TestSessionIDFor_|TestTimeoutCoverage_|TestA2ATaskState_|TestVerification_|TestVerify_(Recompute|Empty|Evaluator|Dispute|ModeRefusal)|TestEvaluate_|TestDesignateEvaluator_|TestA2ATaskID_|TestSetA2ATaskID_|TestValidateA2ATaskID_|TestWS_|TestHTTPEndpointsSurviveWebSocket|TestBuild_(DeclaresBothBindings|OmitsWebSocketWhenUnset)|TestSelectInterface_SkipsWebSocket|TestAcceptance_|TestRoundTrip|TestCiphertext|TestThirdParty|TestTampered|TestRecipient|TestTwoSeals|TestSharedSecret|TestUnsupportedAlgorithm|TestUnmarshalSealed|TestSeal|TestKeyPair|TestSealedPayload|TestNoAlgorithm|TestObservations_|TestEvidence_|TestTasks_|TestAssert_|TestAssertion_|TestRunner_|TestCheck_|TestCriterion10_|TestNode_(PublishesNodeID|OmitsNodeID|HasNoKeyField|NoteIsAccurate)'
 version_out=$(CGO_ENABLED=0 go test ./internal/receipt/ ./internal/protocol/ ./internal/a2a/ \
   -run "$version_pattern" -count=1 -v 2>&1) && version_status=0 || version_status=$?
 version_pass=$(printf '%s' "$version_out" | grep -c '^--- PASS' || true)
@@ -192,8 +192,11 @@ fi
 step "Import-graph separation (MVP.md §7.1: node cannot verify; §8.5: mining core stays A2A-free)"
 separation_ok=1
 
+# e2ee is included because §7.1 and the S13 plan §9 require the same thing of it: a node that
+# cannot verify signatures also cannot decrypt, and both follow from the node being unable to reach
+# the code. "The relay only sees ciphertext" is therefore enforced rather than promised.
 node_forbidden=$(CGO_ENABLED=0 go list -deps ./cmd/relayfirst-node 2>/dev/null \
-  | grep -E 'relayfirst/internal/(eip712|receipt|publish|store)$' || true)
+  | grep -E 'relayfirst/internal/(eip712|receipt|publish|store|e2ee)$' || true)
 if [ -n "$node_forbidden" ]; then
   fail "the node binary links signing/verification code, so it could forge:"
   printf '%s\n' "$node_forbidden" | sed 's/^/      /'
