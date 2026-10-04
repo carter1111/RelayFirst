@@ -513,10 +513,83 @@ func (r Receipt) checkPayloadConsistency() error {
 		return invalid("cannot rebuild payload for consistency check: %v", err)
 	}
 
-	if string(rebuilt) != r.Payload {
-		return invalid(
-			"payload does not match the structured fields: the signed bytes and the rendered fields disagree, " +
-				"so the receipt is internally inconsistent (a tampered field, or a payload from a different schema)")
+	if string(rebuilt) == r.Payload {
+		return nil
+	}
+
+	// Byte equality failed. That is the expected outcome once the payload carries
+	// a field this build does not know about (A9 §④): the rebuild cannot produce a
+	// field it has no representation for.
+	//
+	// Falling back to a subset comparison keeps the check meaningful in that case
+	// without weakening it. Every field this build *does* know must still match
+	// the payload exactly, so a tampered field is still caught; what is tolerated
+	// is only the presence of additional fields, which are themselves inside the
+	// signed bytes and therefore already authenticated.
+	//
+	// Without this fallback the A9 promise is unreachable in practice: a v1.1
+	// receipt would be rejected by a v1 verifier even though the verifier is
+	// perfectly capable of checking the signature over the payload it was handed.
+	if err := r.checkKnownFieldsAgainstPayload(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkKnownFieldsAgainstPayload compares each known field individually against
+// the signed payload.
+//
+// It is the tolerant counterpart to the byte comparison above, used only when the
+// byte comparison fails because the payload contains fields this build does not
+// know. Each known field is decoded from the payload and compared, so a tampered
+// field is still rejected; unknown fields are ignored because they are part of
+// the signed bytes and need no separate trust.
+func (r Receipt) checkKnownFieldsAgainstPayload() error {
+	var signed struct {
+		AgentID string   `json:"agentId"`
+		Epoch   uint64   `json:"epoch"`
+		Task    Task     `json:"task"`
+		Work    Work     `json:"work"`
+		Result  Result   `json:"result"`
+		Anchors []Anchor `json:"anchors"`
+	}
+
+	// Tolerant decode: the whole point is that the payload may carry fields this
+	// build does not know.
+	if err := json.Unmarshal([]byte(r.Payload), &signed); err != nil {
+		return invalid("payload is not a decodable signed payload: %v", err)
+	}
+
+	// Compare each known field by its canonical rendering. Re-marshalling both
+	// sides avoids hand-writing an equality for every struct and keeps the
+	// comparison consistent with how the bytes were produced.
+	checks := []struct {
+		name       string
+		fromStruct any
+		fromSigned any
+	}{
+		{"agentId", r.AgentID, signed.AgentID},
+		{"epoch", r.Epoch, signed.Epoch},
+		{"task", r.Task, signed.Task},
+		{"work", r.Work, signed.Work},
+		{"result", r.Result, signed.Result},
+		{"anchors", r.Anchors, signed.Anchors},
+	}
+
+	for _, c := range checks {
+		a, err := canonicalJSON(c.fromStruct)
+		if err != nil {
+			return invalid("cannot render %s for consistency check: %v", c.name, err)
+		}
+		b, err := canonicalJSON(c.fromSigned)
+		if err != nil {
+			return invalid("cannot render signed %s for consistency check: %v", c.name, err)
+		}
+		if string(a) != string(b) {
+			return invalid(
+				"field %s disagrees with the signed payload: the rendered value is %s but the signed bytes say %s",
+				c.name, a, b)
+		}
 	}
 	return nil
 }
@@ -607,11 +680,51 @@ func DeriveAgentID(privKeyHex string, chainID uint64) (string, error) {
 // order), matching the byte-level output the TypeScript side must reproduce.
 func (r Receipt) MarshalCanonical() ([]byte, error) { return canonicalJSON(r) }
 
-// Unmarshal parses a receipt and rejects unknown fields, so that a future
-// schema change cannot silently pass through the verifier.
+// Unmarshal parses a receipt.
+//
+// # Why unknown fields are tolerated (S9-0b, A9 §④)
+//
+// This used to set DisallowUnknownFields, on the reasoning that "a future schema
+// change cannot silently pass through the verifier". The reasoning was wrong in
+// one specific way that matters once other people run this code: a receipt is not
+// only parsed by the version that produced it. A verifier that rejects unknown
+// fields cannot verify a receipt from a *newer* version at all, even though the
+// signature over the payload is perfectly checkable — and a verifier already
+// deployed to someone's machine can never be taught otherwise.
+//
+// So the first public release must tolerate unknown fields, or the A9 promise
+// ("a receipt stays verifiable forever") fails for every receipt that carries an
+// addition.
+//
+// # Why this is not a weakening
+//
+// Tolerating a field is not trusting it. Fields outside the signed payload were
+// never authenticated and are ignored. Fields inside the signed payload are part
+// of the bytes the signature covers, so they are authenticated by construction —
+// and the consistency check in Validate still requires every field this build
+// knows to match the signed bytes exactly.
+//
+// StrictDecode remains available for red-team and KAT tests, so the tolerance
+// itself is testable rather than asserted.
 func Unmarshal(data []byte) (*Receipt, error) {
+	return decode(data, false)
+}
+
+// UnmarshalStrict parses a receipt and rejects unknown fields.
+//
+// It exists so the tolerant behaviour above is testable: a test can assert that
+// the same bytes are accepted by Unmarshal and rejected by UnmarshalStrict, which
+// is what makes "we tolerate unknown fields" a checked claim rather than a
+// comment. Production paths use Unmarshal.
+func UnmarshalStrict(data []byte) (*Receipt, error) {
+	return decode(data, true)
+}
+
+func decode(data []byte, strict bool) (*Receipt, error) {
 	dec := json.NewDecoder(strings.NewReader(string(data)))
-	dec.DisallowUnknownFields()
+	if strict {
+		dec.DisallowUnknownFields()
+	}
 
 	var r Receipt
 	if err := dec.Decode(&r); err != nil {

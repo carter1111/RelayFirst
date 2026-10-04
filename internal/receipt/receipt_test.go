@@ -307,7 +307,19 @@ func TestCanonicalJSON_MultibytePreserved(t *testing.T) {
 	}
 }
 
-func TestUnmarshal_RejectsUnknownFields(t *testing.T) {
+// TestUnmarshal_ToleratesUnknownFieldsButStrictRejectsThem covers S9-0b (A9 §④).
+//
+// The old behaviour — rejecting unknown fields outright — is the one-way door the
+// security review flagged (finding B4): a verifier already deployed to a user's
+// machine can never be taught to accept a field it does not know, so the promise
+// that a receipt stays verifiable forever fails for any receipt carrying an
+// addition.
+//
+// Tolerance is not trust, though, so this test asserts both halves: the
+// production path accepts, and a strict path still rejects. That makes "we
+// tolerate unknown fields" a checked claim rather than a comment, and keeps a
+// strict decoder available for red-team and KAT work.
+func TestUnmarshal_ToleratesUnknownFieldsButStrictRejectsThem(t *testing.T) {
 	r := validReceipt(t)
 	raw, err := json.Marshal(r)
 	if err != nil {
@@ -318,10 +330,21 @@ func TestUnmarshal_RejectsUnknownFields(t *testing.T) {
 		t.Fatalf("valid receipt should unmarshal: %v", err)
 	}
 
-	// Splice an unknown field into the object.
-	injected := strings.Replace(string(raw), `{"schema":`, `{"evilField":1,"schema":`, 1)
-	if _, err := Unmarshal([]byte(injected)); err == nil {
-		t.Error("unknown fields must be rejected so schema drift cannot pass silently")
+	// Splice an unknown field into the object, simulating a newer version's
+	// addition that this build does not know about.
+	injected := strings.Replace(string(raw), `{"schema":`, `{"newMetaField":1,"schema":`, 1)
+
+	// The production path must accept it: refusing would make the receipt
+	// unverifiable by an older node, which is precisely what A9 forbids.
+	if _, err := Unmarshal([]byte(injected)); err != nil {
+		t.Errorf("the production decode path must tolerate unknown fields, or older nodes "+
+			"can never verify newer receipts: %v", err)
+	}
+
+	// The strict path must still reject it, so the tolerance is deliberate and
+	// observable rather than accidental.
+	if _, err := UnmarshalStrict([]byte(injected)); err == nil {
+		t.Error("the strict decode path must reject unknown fields, so the tolerance is testable")
 	}
 }
 

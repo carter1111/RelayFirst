@@ -443,7 +443,7 @@ race 门禁补覆盖时**找到一个真实 bug**：
 | id | 任务 | 依赖 | 验收 | 状态 |
 |---|---|---|---|---|
 | S9-0a | 回执 schema 语法 `v<major>[.<minor>]` + **`unsupported` / `invalid` 区分** | — | 缺省 minor=0；major 不在支持集 → `unsupported`（非 `invalid`） | ✅ **done** — `internal/receipt/schema.go`（`ParseSchema` / `CheckSchema` / `UnsupportedError`）；`ValidateStructure` 改用它。**区分由两个错误类型承载，不由字符串** —— 合并会让"验证器太旧"看起来像"抓到伪造"。错误信息**指明方向**（"newer than this build"）。18 条子测试覆盖语法 + 两种错误类型 |
-| S9-0b | **未知字段容忍**（生产容忍 / `--strict` 拒绝） | S9-0a | 载荷外未知字段 → 接受；`--strict` → 拒绝 | ⏸ **待安全审查** — 改的是**生产解码行为**（守卫判 `POL-PROD-1`），需 `security-review` 后再动。**这是 S9-0 里唯一改生产语义的一项** |
+| S9-0b | **未知字段容忍**（生产容忍 / `--strict` 拒绝） | S9-0a | 载荷外未知字段 → 接受；`--strict` → 拒绝 | ✅ **done** — `Unmarshal` 改为**容忍**（移除 `DisallowUnknownFields`）；新增 `UnmarshalStrict` 供红队/KAT。**容忍不是信任**：载荷外字段本就不被签名（忽略即可）；载荷内字段属于签名覆盖的字节（**天然已认证**）。**同时把一致性检查改为「子集语义」**（B4 的核心）：字节比对失败时回退到**逐字段比对** —— 本 build 认识的每个字段仍必须**精确匹配**，只有「额外字段的存在」被容忍。**这同时解决 B4**：旧验证器现在能验证带增量字段的新回执，且**篡改已知字段仍被抓到**（两条测试分别锁定）。**非空转**：恢复严格字节比对 → 增量字段测试 FAIL |
 | S9-0b2 | **签名载荷改为逐字 blob**（可选字段，旧路径保留） | S9-0a | 验证者只做 keccak256，**不重新序列化** | ✅ **done** — `Receipt.Payload`（`omitempty`，旧回执字节不变）；`SignedPayload` 双路径：有 payload 逐字哈希，无则结构性重建。**8 条测试**：两路径一致 / 逐字不被重建 / 有 payload 可签可验 / 无 payload 仍可验 / 空 payload 被省略 |
 | S9-0c | domain **多版本验证**（try-all + 只增不减版本表） | S9-0b2 | 旧回执永久可验 | ⬜ todo |
 | S9-0d | 采用 A2A 的 `A2A-Version` / `AgentInterface`，**不自研协商** | S9-1 | 无交集时用 `ErrVersionNotSupported` 显式失败 | ⬜ todo |
@@ -459,23 +459,25 @@ race 门禁补覆盖时**找到一个真实 bug**：
 | id | 任务 | 严重度 | 状态 |
 |---|---|---|---|
 | **S9-0h** | **把 `receiptId` 与 schema 绑进签名载荷** | **critical（B2+B3）** | ✅ **done** — ①**`receiptId`**：`Validate` 重算 `DerivedReceiptID()`（= `sha256(SignedPayload())`）并比对；**不改签名字节**，故对 v1 回执同样生效（`checkReceiptID`）。②**schema**：引入**版本 profile** —— v1 的 domain `Version` 与消息字段**逐字节冻结**（3 字段），v2 起绑定 `receiptId` + `schemaMajor`（5 字段，domain `Version="2"`）。**改标 v1→v2 会换 digest → 签名失败**。**实测**：`TestTypedData_V1ProfileIsFrozen` 锁定 v1 形状；`TestTypedData_ProfilesDiffer` 证明两 profile digest 不同；`TestReceiptID_TamperedIDIsRejected` 断言重发被拒。**非空转**：禁用 `checkReceiptID` → 测试 FAIL |
-| **S9-0i** | **`canonicalJSON` 加数字分支**（`float64` / `json.Number`） | **high（H1）** | ⬜ todo — `Task.Spec` 含数字会让**导出崩**或让**合法回执验证失败** |
+| **S9-0i** | **`canonicalJSON` 加数字分支**（`float64` / `json.Number`） | **high（H1）** | ✅ **done** — 加 `float64` / `float32` / `json.Number` 分支。**浮点渲染委托给 `encoding/json`**（不手写格式化规则）—— 保证结构性路径与逐字 payload 路径**按构造一致**；手写是 Go/TS 漂移的根源（正是 A4 要防的）。`json.Number` **先校验 JSON 数字语法**再输出（它是字符串类型，不校验会把任意字节塞进签名字节）。**非空转**：移除 `float64` 分支 → 往返测试 FAIL |
 | **S9-0j** | **生产调用方区分 `UnsupportedError`** | **high（H2）** | ⬜ todo — 类型只在测试里被 `errors.As`；CLI/verdict/miner 都映射为 `false` → **"我验不了"被报成"这是伪造"** |
 | **S9-0k** | **语料 SHA-256 清单 + 生成器拒绝覆盖** | medium（M1） | ⬜ todo — 否则"重新生成"可**悄悄重写绊线**，append-only 失效 |
 
 **发布门槛（来自审查）：**
 
 ```text
-首发前必修：  B1（✅ 已修）· B2（✅ 已修）· B3（✅ 已修）· H1（⬜）· 并解决 B4（⬜）
-声称 A9 合规前：H2 · M1 · M2 · L2
+首发前必修：  B1 ✅ · B2 ✅ · B3 ✅ · H1 ✅ · B4 ✅
+声称 A9 合规前：H2（⬜）· M1（⬜）· M2（⬜）· L2（⬜）
 可后置：      M3 · L1 · L3
 ```
 
-> **⚠️ B2/B3 已修，但 A9 仍不应声称合规** —— H1（数字分支）与 B4（严格解码）未解决。
-> **实现 B2/B3 时发现：全仓库有 ~15 处测试夹具用了自由设定的 `receiptId`**，
-> 它们**全部**在检查生效后失败 —— 这本身就是 B2 真实性的证据（生产代码一直正确派生 id，
-> 但**没有任何东西强制它**）。夹具已改为派生，并**顺带修正了两处错误断言**
-> （`All()` 的顺序契约、replay 必须逐字节复制而非重建）。
+> **✅ 五个发布前阻断项已全部解决。** B4 的解决方式是把一致性检查改为**子集语义**
+> （见 S9-0b），并让 `Unmarshal` 容忍未知字段 —— 这样旧验证器**能验证**带增量字段的新回执，
+> 而**篡改已知字段仍被抓到**。
+>
+> **⚠️ 但 A9 仍不应声称完全合规** —— 剩下四项（H2/M1/M2/L2）是"声称合规前必修"：
+> H2 让"我验不了"被误报成"这是伪造"；M1 让语料绊线可被重新生成悄悄重写；
+> M2 使语料只用当前规则验证（G2 无法表达）；L2 缺结构性路径的语料样本。
 
 > **⚠️ 实现中发现并修复了一个真实安全缺陷（值得记住）：**
 > S9-0b2 初版**只哈希 payload 字节，不比对结构化字段**。于是两者可**不一致** ——

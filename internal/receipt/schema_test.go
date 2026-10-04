@@ -311,8 +311,11 @@ func TestPayloadConsistency_TamperedFieldIsRejected(t *testing.T) {
 		t.Fatal("a field that disagrees with the signed payload must be rejected; " +
 			"otherwise the structured fields are unauthenticated and consumers read forged values")
 	}
-	if !strings.Contains(err.Error(), "payload does not match") {
-		t.Errorf("expected a payload-consistency failure, got: %v", err)
+	// The message names the offending field. The tolerant path reports per-field
+	// mismatches rather than a blanket byte difference, which is what makes the
+	// failure actionable when the payload legitimately carries extra fields.
+	if !strings.Contains(err.Error(), "disagrees with the signed payload") {
+		t.Errorf("expected a payload-consistency failure naming the field, got: %v", err)
 	}
 }
 
@@ -722,5 +725,100 @@ func TestSignedPayload_NumberSpecPathsAgree(t *testing.T) {
 	}
 	if err := verbatim.Validate(nil); err != nil {
 		t.Fatalf("a numeric spec must not break verification: %v", err)
+	}
+}
+
+// --- S9-0b: additive fields inside the signed payload (finding B4) -----------
+
+// TestValidate_AdditiveFieldInsidePayloadIsAccepted is the end-to-end form of the
+// A9 §④ promise.
+//
+// It simulates a newer version that added a field inside the signed payload. An
+// older verifier must still be able to verify the receipt: the signature covers
+// the payload bytes, and every field the older verifier knows still matches. Only
+// the presence of the extra field is new.
+//
+// Before the tolerant consistency check, this failed — which made "adding a field
+// is additive" untrue in practice, and made the A9 promise unreachable for any
+// receipt carrying an addition.
+func TestValidate_AdditiveFieldInsidePayloadIsAccepted(t *testing.T) {
+	r := validReceipt(t)
+
+	// Build a payload with one extra field, as a newer version would.
+	base, err := r.SignedPayload()
+	if err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(base, &m); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	m["futureField"] = "added by a newer version"
+
+	extended, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal extended payload: %v", err)
+	}
+	r.Payload = string(extended)
+
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+
+	if err := r.Sign(testPrivKey); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	if err := r.Validate(nil); err != nil {
+		t.Fatalf("a receipt carrying an additive field must still verify; "+
+			"otherwise A9's promise is unreachable: %v", err)
+	}
+}
+
+// TestValidate_AdditiveFieldStillCatchesTampering is the other half, and the
+// reason tolerance does not weaken anything.
+//
+// The tolerant path compares field by field instead of byte for byte. A tampered
+// field must still be caught even when an extra field is present, or tolerating
+// additions would have opened the hole the consistency check was added to close.
+func TestValidate_AdditiveFieldStillCatchesTampering(t *testing.T) {
+	r := validReceipt(t)
+
+	base, err := r.SignedPayload()
+	if err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(base, &m); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	m["futureField"] = "added by a newer version"
+
+	extended, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	r.Payload = string(extended)
+
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+	if err := r.Sign(testPrivKey); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	// Now tamper a known field while the additive field is still present.
+	r.Result.Value = "999"
+
+	err = r.Validate(nil)
+	if err == nil {
+		t.Fatal("tolerating additive fields must not tolerate a tampered known field")
+	}
+	if !strings.Contains(err.Error(), "disagrees with the signed payload") {
+		t.Errorf("expected a field-level mismatch, got: %v", err)
 	}
 }
