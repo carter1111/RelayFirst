@@ -1,0 +1,5 @@
+# SHA-256 of each frozen receipt. Append-only: never rewrite an existing entry.
+# Regenerate with: go run internal/devtools/gen_frozen_receipts.go (refuses to overwrite)
+52c1761fb5928f0ac6b209e4f0454dc1573eaec0b2eec48dea267bb81d68a246  compute-structural.json
+7d4b05d33d554e15b8c17c24ffeccd5222a67519b49ed5cdebce4717cc9b0875  extract-verbatim-payload.json
+c4f0be8f9680456efb4a711bb139eea23b9ef1ada67516ad1926f9b030a64019  probe-basic.json

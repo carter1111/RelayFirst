@@ -33,10 +33,13 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/relayfirst/relayfirst/internal/receipt"
@@ -51,16 +54,27 @@ func agentID() (string, error) {
 	return receipt.DeriveAgentID(frozenKey, 8453)
 }
 
-// case_ is one corpus entry: a name and the receipt to sign.
+// case_ is one corpus entry: a name, whether to sign verbatim, and the receipt.
 type case_ struct {
 	name string
+
+	// verbatim controls whether the payload is frozen before signing.
+	//
+	// Both paths must be represented. A verbatim receipt exercises S9-0b2; a
+	// structural one exercises the rebuild path that every pre-existing receipt
+	// uses. Without a structural entry the legacy path is pinned only by
+	// same-build unit tests, which is the blind spot the corpus exists to cover
+	// (finding L2).
+	verbatim bool
+
 	make func(agentID string) receipt.Receipt
 }
 
 func cases() []case_ {
 	return []case_{
 		{
-			name: "probe-basic",
+			name:     "probe-basic",
+			verbatim: true,
 			make: func(a string) receipt.Receipt {
 				return receipt.Receipt{
 					Schema:  receipt.Schema,
@@ -93,7 +107,8 @@ func cases() []case_ {
 			// The verbatim-payload form (S9-0b2). Its presence in the corpus
 			// means the newer signing path is itself pinned by a permanent
 			// fixture, not just by a unit test.
-			name: "extract-verbatim-payload",
+			name:     "extract-verbatim-payload",
+			verbatim: true,
 			make: func(a string) receipt.Receipt {
 				return receipt.Receipt{
 					Schema:  receipt.Schema,
@@ -122,6 +137,42 @@ func cases() []case_ {
 				}
 			},
 		},
+		{
+			// The structural path (finding L2). No payload is frozen, so the
+			// verifier must rebuild the signed bytes from the structured fields —
+			// which is what every receipt signed before the payload field existed
+			// requires. Without this entry that path is pinned only by same-build
+			// unit tests, and a regression in the rebuild would go unnoticed until
+			// a user exported an old receipt.
+			name:     "compute-structural",
+			verbatim: false,
+			make: func(a string) receipt.Receipt {
+				return receipt.Receipt{
+					Schema:  receipt.Schema,
+					AgentID: a,
+					Epoch:   44,
+					Task: receipt.Task{
+						Type:          receipt.TaskCompute,
+						Spec:          map[string]any{"op": "sortjson", "input": `{"b":1,"a":2}`},
+						SpecHash:      sha32("7a"),
+						SelfGenerated: true,
+					},
+					Work: receipt.Work{
+						Provider:   "none",
+						StartedAt:  1791188600,
+						FinishedAt: 1791188601,
+					},
+					Result: receipt.Result{Value: `{"a":2,"b":1}`, Hash: sha32("e4")},
+					Anchors: []receipt.Anchor{{
+						URL:         "inline",
+						ContentHash: sha32("6c"),
+						FetchedAt:   1791188601,
+						Bytes:       13,
+					}},
+					Verification: receipt.Verification{Status: receipt.VerificationPending, Stake: 50},
+				}
+			},
+		},
 	}
 }
 
@@ -145,17 +196,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	manifest := make(map[string]string, len(cases()))
+
 	for _, c := range cases() {
 		r := c.make(a)
 
-		// Freeze the payload verbatim before signing. This is what a signer does
-		// under the newer path, and it is what makes later additive fields safe.
-		payload, err := r.SignedPayload()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: payload: %v\n", c.name, err)
-			os.Exit(1)
+		if c.verbatim {
+			// Freeze the payload verbatim before signing. This is what a signer
+			// does under the newer path, and it is what makes later additive
+			// fields safe.
+			payload, err := r.SignedPayload()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: payload: %v\n", c.name, err)
+				os.Exit(1)
+			}
+			r.Payload = string(payload)
 		}
-		r.Payload = string(payload)
 
 		// Derive the id from the signed payload. Validate rejects a free-standing
 		// id (S9-0h, finding B2), so the corpus must carry the derived one.
@@ -187,10 +243,58 @@ func main() {
 		raw = append(raw, '\n')
 
 		path := filepath.Join(dir, c.name+".json")
+
+		// Refuse to overwrite (finding M1).
+		//
+		// The corpus is append-only by design: these are historical artifacts, and
+		// regenerating one would silently rewrite the very thing the compatibility
+		// gate exists to protect. A developer who changed the canonical writer
+		// could otherwise regenerate the corpus and make the gate pass while
+		// history had been rewritten.
+		//
+		// Adding a schema major means adding a new v<major> directory, never
+		// editing an existing file.
+		if _, err := os.Stat(path); err == nil {
+			fmt.Fprintf(os.Stderr,
+				"%s already exists and the corpus is append-only.\n"+
+					"If this is a deliberate new case, give it a new name.\n"+
+					"If you are trying to make a failing compatibility test pass, that is the bug.\n",
+				path)
+			os.Exit(1)
+		}
+
 		if err := os.WriteFile(path, raw, 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: write: %v\n", c.name, err)
 			os.Exit(1)
 		}
+
+		sum := sha256.Sum256(raw)
+		manifest[c.name+".json"] = hex.EncodeToString(sum[:])
 		fmt.Printf("wrote %s\n", path)
 	}
+
+	// The manifest (finding M1).
+	//
+	// The compatibility test asserts these hashes. Without them the gate only
+	// checks that the current files verify — so a rewrite that also happened to
+	// verify would pass, and the historical record would be gone without a trace.
+	manifestPath := filepath.Join(dir, "MANIFEST.sha256")
+	names := make([]string, 0, len(manifest))
+	for name := range manifest {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var b strings.Builder
+	b.WriteString("# SHA-256 of each frozen receipt. Append-only: never rewrite an existing entry.\n")
+	b.WriteString("# Regenerate with: go run internal/devtools/gen_frozen_receipts.go (refuses to overwrite)\n")
+	for _, name := range names {
+		fmt.Fprintf(&b, "%s  %s\n", manifest[name], name)
+	}
+
+	if err := os.WriteFile(manifestPath, []byte(b.String()), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "write manifest: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("wrote %s\n", manifestPath)
 }

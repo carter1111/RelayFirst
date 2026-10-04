@@ -1,0 +1,45 @@
+{
+  "schema": "relayfirst.receipt.v1",
+  "receiptId": "0xcdc19c4838731d1b1cf42d468829a84f33f2b107ed358d1009b99b1864d8c73f",
+  "agentId": "agent:eip155:8453:0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+  "epoch": 44,
+  "task": {
+    "type": "compute",
+    "spec": {
+      "input": "{\"b\":1,\"a\":2}",
+      "op": "sortjson"
+    },
+    "specHash": "sha256:7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+    "selfGenerated": true,
+    "a2aTaskId": null
+  },
+  "work": {
+    "provider": "none",
+    "model": "",
+    "tokensIn": 0,
+    "tokensOut": 0,
+    "startedAt": 1791188600,
+    "finishedAt": 1791188601
+  },
+  "result": {
+    "value": "{\"a\":2,\"b\":1}",
+    "hash": "sha256:e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4"
+  },
+  "anchors": [
+    {
+      "url": "inline",
+      "contentHash": "sha256:6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c",
+      "fetchedAt": 1791188601,
+      "status": 0,
+      "bytes": 13
+    }
+  ],
+  "verification": {
+    "status": "pending",
+    "verifierId": null,
+    "verifiedAt": null,
+    "stake": 50,
+    "recomputedHash": null
+  },
+  "signature": "0xfd76017fb30efe584c69f2bafd18d140bdeea69ba713d40d2fb45c4348ec3a09449858503b038576f230cd985bdb4f9650163a2c2dadc87a8b2637f15ce21dd81c"
+}

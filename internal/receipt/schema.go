@@ -47,6 +47,62 @@ const schemaPrefix = "relayfirst.receipt.v"
 // do not subtract from it.
 var supportedMajors = []int{1}
 
+// ValidateForMajor verifies the structure and signature using the rules of a
+// specific schema major (S9-0, finding M2).
+//
+// # Why a per-major entry point is needed
+//
+// The corpus test used to validate every entry with the current build's rules.
+// That pins the wrong property: "a v1 receipt verifies under today's rules"
+// rather than "under v1 rules". Those differ the moment v2 changes anything, and
+// the difference is exactly what the corpus exists to detect — so validating only
+// under current rules makes the gate unable to express cross-version
+// compatibility at all.
+//
+// Passing the major explicitly lets a test say which ruleset it expects, so a
+// change that silently applied v2 rules to v1 artifacts would fail.
+//
+// # What it does not do
+//
+// It does not override the receipt's own schema. A caller cannot use this to
+// validate a v1 receipt under v2 rules and call it compatible: the major must
+// match what the receipt declares, or the check fails. Otherwise this would
+// reintroduce the relabel confusion that S9-0h closed.
+func (r Receipt) ValidateForMajor(major int, expectedAgent []byte) error {
+	declared, _, ok := ParseSchema(r.Schema)
+	if !ok {
+		return invalid("schema %q is malformed", r.Schema)
+	}
+	if declared != major {
+		return invalid(
+			"receipt declares schema major v%d but was validated as v%d; "+
+				"validating under a different major's rules would not establish compatibility",
+			declared, major)
+	}
+	return r.Validate(expectedAgent)
+}
+
+// SupportedMajors returns the schema majors this build can validate.
+//
+// It is exported so a test or an operator can assert coverage without reaching
+// into the package, and so the corpus test can check that every directory it
+// finds corresponds to a major this build actually supports.
+func SupportedMajors() []int {
+	out := make([]int, len(supportedMajors))
+	copy(out, supportedMajors)
+	return out
+}
+
+// IsSupportedMajor reports whether this build can validate the given major.
+func IsSupportedMajor(major int) bool {
+	for _, m := range supportedMajors {
+		if m == major {
+			return true
+		}
+	}
+	return false
+}
+
 // UnsupportedError means "this is a version I do not know how to check", as
 // opposed to ValidationError which means "I checked and it is broken".
 //

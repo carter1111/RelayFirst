@@ -822,3 +822,29 @@ func TestValidate_AdditiveFieldStillCatchesTampering(t *testing.T) {
 		t.Errorf("expected a field-level mismatch, got: %v", err)
 	}
 }
+
+// TestValidateForMajor_RejectsMismatchedMajor guards the per-major entry point
+// against being used to launder a version mismatch.
+//
+// If a caller could validate a v1 receipt under v2 rules and treat that as
+// compatibility, the relabel confusion closed by S9-0h would be reintroduced
+// through the test API.
+func TestValidateForMajor_RejectsMismatchedMajor(t *testing.T) {
+	r := validReceipt(t) // declares v1
+	if err := r.Sign(testPrivKey); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	if err := r.ValidateForMajor(1, nil); err != nil {
+		t.Fatalf("validating a v1 receipt as v1 must work: %v", err)
+	}
+
+	err := r.ValidateForMajor(2, nil)
+	if err == nil {
+		t.Fatal("validating a v1 receipt under v2 rules must be refused, " +
+			"or the test API could launder a version mismatch into a pass")
+	}
+	if !strings.Contains(err.Error(), "validated as") {
+		t.Errorf("expected a major-mismatch error, got: %v", err)
+	}
+}
