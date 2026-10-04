@@ -47,6 +47,49 @@ type Envelope struct {
 	// Payload is the opaque body, base64 in JSON. encoding/json handles the
 	// conversion for []byte.
 	Payload []byte `json:"payload"`
+
+	// Sequence and PreviousEventHash reserve the positions a message chain will
+	// occupy (S9-0e, invariant A9 §⑥).
+	//
+	// # Why reserve them before anything uses them
+	//
+	// These are message-layer fields, not receipt fields: they order *deliveries*
+	// relative to an agent, whereas a receipt's own ordering is inside its signed
+	// payload. Keeping them out here means adding a chain later does not touch the
+	// signed bytes of any receipt, which is the whole reason A9 can promise old
+	// receipts stay verifiable.
+	//
+	// Reserving now rather than when the chain ships is the cheap half of that
+	// promise. The JSON keys, their types and their zero-value semantics are
+	// decided here, in one place, so a node or client written against this struct
+	// does not have to be revisited to introduce the chain — it stays additive.
+	//
+	// # Both are zero for now, and that is the contract
+	//
+	// `omitempty` is load-bearing, not cosmetic. With it, an envelope that does not
+	// participate in a chain serializes to exactly the bytes it did before these
+	// fields existed, so no stored or in-flight message changes shape. A chain, when
+	// it arrives, is opted into by setting them; nothing is reinterpreted.
+	//
+	// A forwarder must never require these. A node is payload-agnostic (the header
+	// of this file), and a message with no chain is a complete, valid message — not
+	// a truncated one.
+	Sequence uint64 `json:"sequence,omitempty"`
+
+	// PreviousEventHash links this message to the one before it in the same
+	// agent's stream, forming an append-only chain a reader can check for gaps.
+	//
+	// Empty means "no predecessor claimed", which is the only honest value for a
+	// first message. It is a hash of the predecessor envelope's canonical bytes,
+	// not of a receipt payload: the chain orders deliveries, and a delivery is the
+	// envelope.
+	//
+	// It is not signed here, and it does not need to be for the chain to be useful:
+	// the value a reader cares about is that consecutive messages agree, which is
+	// checkable from the bytes the node stored. What it deliberately does not
+	// provide is proof against a node that drops messages — a chain can only show
+	// that what is present is consistent, never that nothing was withheld.
+	PreviousEventHash string `json:"previousEventHash,omitempty"`
 }
 
 // KindReceipt is the envelope kind used for a mined receipt.
