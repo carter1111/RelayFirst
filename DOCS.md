@@ -69,6 +69,8 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/archive/mvp-1.0.md`](docs/archive/mvp-1.0.md) | 884 | **归档** | **MVP 1.0 原文逐字副本**（SHA-256 `259469ad…`）—— 仓库无 git 历史，故显式归档 | 不再更新 |
 | [`docs/decisions/ADR-0001-*.md`](docs/decisions/ADR-0001-eip712-in-house-thin-layer.md) | — | **决策** | EIP-712 用自研薄层而非 `apitypes`（S1-4） | 已 accepted |
 | [`docs/decisions/ADR-0002-*.md`](docs/decisions/ADR-0002-semantic-extract-as-inference-cost.md) | — | **决策** | 语义化 extract 作为推理成本载体 | 已 accepted |
+| [`docs/decisions/ADR-0003-*.md`](docs/decisions/ADR-0003-dedup-ledger-scope.md) | — | **决策** | 去重账本"全局"的作用域（A6 vs NET-2）—— **待裁定** | **proposed** |
+| [`docs/decisions/ADR-0004-*.md`](docs/decisions/ADR-0004-node-identity-crypto.md) | — | **决策** | 节点身份引入密码学 vs「节点不能验签」—— **待裁定** | **proposed** |
 | [`docs/stages/S1-report.md`](docs/stages/S1-report.md) | — | **报告** | S1（回执 + 签名 + KAT + verifier）验收证据 | 已归档 |
 | [`docs/stages/S2-report.md`](docs/stages/S2-report.md) | — | **报告** | S2（executor + 生成器 + 主循环）验收证据 | 已归档 |
 | [`docs/stages/S2b-report.md`](docs/stages/S2b-report.md) | 172 | **报告** | S2 补完（S2-6/7/8/9）验收证据 | 已归档 |
