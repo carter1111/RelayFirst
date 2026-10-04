@@ -315,6 +315,29 @@ artifactKey = sha256(task.type + task.spec.url + contentHash)
   artifactKey → firstSeenAt, firstAgentId, seenCount
 ```
 
+> **⚠️ 「全局」的作用域（ADR-0003，已裁定）：**
+>
+> **「全局」= 单个发行域（issuance domain）内全局。多发行方互不认。**
+>
+> ```text
+> 发行域 = 一个积分体系（= 一个 RelayFirst 部署 / 一个 operator 的账本）
+>
+> 域内：artifactKey 账本【全局】   ← 满足 A6，刷量收益为零
+> 域间：互不认对方账本           ← 满足 NET-2，无全网 canonical DB
+> ```
+>
+> **为什么这不违反 NET-2：** NET-2 禁止的是**全网唯一的 canonical database**（会成为权威单点），
+> 它约束的是**跨节点共识**。**同一发行方内部的账本不是"全网 canonical DB"** —— 它是该发行方的
+> 内部状态，正如每个 operator 都有自己的一份。
+>
+> **为什么这不削弱 A6：** A6 要防的是**同一积分体系内**的刷量。积分**只在同一发行域内可比**
+> （A5：不可转让、不定价），所以防御的作用域**本来就只有域内**。
+>
+> **跨域情形是允许的，且不是漏洞：** 同一 artifact 在两个发行域各自计分**是正常的** ——
+> 因为**两域的积分不可兑换**。若未来出现兑换，**必须先修订本 ADR**。
+>
+> **完整论证与备选方案见 [`docs/decisions/ADR-0003-dedup-ledger-scope.md`](docs/decisions/ADR-0003-dedup-ledger-scope.md)（accepted）。**
+
 **计分规则：**
 
 | 情况 | novelty 系数 |

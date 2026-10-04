@@ -100,6 +100,27 @@ type Config struct {
 	// Version is reported in the well-known document.
 	Version string
 
+	// NodeID, when set, is this node's own identity (ADR-0004).
+	//
+	// # Why the node takes a STRING and not a key
+	//
+	// This is the structural point of ADR-0004. The minimal node is given an
+	// identity to publish, but never a private key, so it cannot sign anything —
+	// not a conclusion, and not a work receipt. A caller who wants attributable
+	// verdicts runs the verifier binary, which holds the key and signs.
+	//
+	// If this field were a key, the node could forge and the import-graph gate
+	// that proves otherwise would become a lie.
+	NodeID string
+
+	// Asserts reports whether this node makes verification claims (ADR-0004).
+	//
+	// It is separate from NodeID because a node can have an identity for other
+	// purposes (addressing, attribution of messages) without asserting anything
+	// about receipts. Defaulting to false means the honest answer is the one a
+	// caller gets when nothing is configured.
+	Asserts bool
+
 	// MaxPayloadBytes overrides the default cap.
 	MaxPayloadBytes int64
 
@@ -379,12 +400,28 @@ type wellKnown struct {
 	// fetches first.
 	Verifies bool   `json:"verifies"`
 	Note     string `json:"note"`
+
+	// NodeID is this node's own identity, when it has one (ADR-0004).
+	//
+	// # Why it is optional and why the field is omitted when absent
+	//
+	// ADR-0004 ruled that a node carries no key by default: the minimal node
+	// cannot forge, and that is a structural property the import graph enforces.
+	// A node that also wants to assert conclusions runs the separate verifier
+	// binary, which publishes its own identity here.
+	//
+	// Omitting the field rather than sending an empty string matters: a client
+	// reading an empty nodeId could not tell "no identity" from "identity not
+	// published", and the two differ for exactly the trust question this field
+	// answers.
+	NodeID string `json:"nodeId,omitempty"`
 }
 
 func (n *Node) handleWellKnown(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, wellKnown{
 		Name:      "relayfirst-node",
 		Version:   n.cfg.Version,
+		NodeID:    n.cfg.NodeID,
 		PublicURL: n.cfg.PublicURL,
 		Protocol:  "relayfirst.store-and-forward.v1",
 		Endpoints: []string{
@@ -403,10 +440,36 @@ func (n *Node) handleWellKnown(w http.ResponseWriter, _ *http.Request) {
 		AgentCards:   n.cfg.Cards.Count(),
 		Observations: n.cfg.Observations.Count(),
 		Tasks:        n.cfg.Tasks.Count(),
-		Verifies:     false,
-		Note: "store-and-forward only: this node does not verify signatures and does not read any chain; " +
-			"validate receipts on the client (MVP.md §5.4)",
+		Verifies:     n.cfg.Asserts,
+		// The note must stay accurate whether or not an identity is configured, so it is
+		// built rather than fixed. A node that asserts says what its assertions are worth,
+		// and a node that does not keeps the original honest wording (ADR-0004).
+		Note: n.wellKnownNote(),
 	})
+}
+
+// wellKnownNote describes this node's trust position.
+//
+// # Why it is generated rather than a constant
+//
+// The document is the first thing a client fetches, so the wording is where an
+// assumption gets made. A fixed string would have to be accurate for both a node
+// that asserts and one that does not, and the only way to be accurate for both is
+// to be vague — which is exactly the failure this note exists to prevent.
+//
+// The two cases say genuinely different things: a node without a key asserts
+// nothing and cannot, while a node that asserts wants its verdicts treated as
+// attributable claims rather than as facts.
+func (n *Node) wellKnownNote() string {
+	const base = "store-and-forward: this node does not read any chain; " +
+		"validate receipts on the client (MVP.md §5.4)"
+
+	if !n.cfg.Asserts {
+		return base + ". This node holds no key and makes no verification claims; " +
+			"it cannot sign anything, by design (ADR-0004)."
+	}
+	return base + ". This node also asserts verification conclusions, signed with its own " +
+		"identity: treat them as attributable claims and verify independently (ADR-0004)."
 }
 
 // ---------------------------------------------------------------- helpers

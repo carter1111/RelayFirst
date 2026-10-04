@@ -155,7 +155,7 @@ fi
 # like success: `go test -run` with no matches exits zero. The count check below
 # turns "nothing ran" into a failure, so a rename cannot quietly retire the gate.
 step "Version compatibility matrix (S9-0g: G2 cross-version, G3 unknown fields, G4 negotiation)"
-version_pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_|TestEvent_|TestEventHash_|TestDecodeEvent_|TestSignedBytes_|TestValidateChain_|TestValidateEvent_|TestDerive|TestDeriveSession_|TestSessionEvent_|TestSessionIDFor_|TestTimeoutCoverage_|TestA2ATaskState_|TestVerification_|TestVerify_(Recompute|Empty|Evaluator|Dispute|ModeRefusal)|TestEvaluate_|TestDesignateEvaluator_|TestA2ATaskID_|TestSetA2ATaskID_|TestValidateA2ATaskID_|TestWS_|TestHTTPEndpointsSurviveWebSocket|TestBuild_(DeclaresBothBindings|OmitsWebSocketWhenUnset)|TestSelectInterface_SkipsWebSocket|TestAcceptance_|TestObservations_|TestEvidence_|TestTasks_|TestAssert_|TestAssertion_|TestRunner_|TestCheck_'
+version_pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_|TestEvent_|TestEventHash_|TestDecodeEvent_|TestSignedBytes_|TestValidateChain_|TestValidateEvent_|TestDerive|TestDeriveSession_|TestSessionEvent_|TestSessionIDFor_|TestTimeoutCoverage_|TestA2ATaskState_|TestVerification_|TestVerify_(Recompute|Empty|Evaluator|Dispute|ModeRefusal)|TestEvaluate_|TestDesignateEvaluator_|TestA2ATaskID_|TestSetA2ATaskID_|TestValidateA2ATaskID_|TestWS_|TestHTTPEndpointsSurviveWebSocket|TestBuild_(DeclaresBothBindings|OmitsWebSocketWhenUnset)|TestSelectInterface_SkipsWebSocket|TestAcceptance_|TestObservations_|TestEvidence_|TestTasks_|TestAssert_|TestAssertion_|TestRunner_|TestCheck_|TestCriterion10_|TestNode_(PublishesNodeID|OmitsNodeID|HasNoKeyField|NoteIsAccurate)'
 version_out=$(CGO_ENABLED=0 go test ./internal/receipt/ ./internal/protocol/ ./internal/a2a/ \
   -run "$version_pattern" -count=1 -v 2>&1) && version_status=0 || version_status=$?
 version_pass=$(printf '%s' "$version_out" | grep -c '^--- PASS' || true)
@@ -205,6 +205,33 @@ mining_a2a=$(CGO_ENABLED=0 go list -deps ./internal/mining 2>/dev/null \
 if [ -n "$mining_a2a" ]; then
   fail "the mining core depends on the A2A wire layer (MVP.md §8.5 forbids this):"
   printf '%s\n' "$mining_a2a" | sed 's/^/      /'
+  separation_ok=0
+fi
+
+# The verifier boundary (ADR-0004).
+#
+# ADR-0004 split the roles so two properties hold at once: a keyless node that cannot forge,
+# and a keyed verifier whose conclusions are attributable. The node half is checked above; this
+# is the verifier half. It signs ASSERTIONS -- "I checked receipt X" -- and must never be able
+# to sign a RECEIPT, which claims work was performed and is what points are earned for.
+#
+# The enforcement is the same shape as the node's: the verifier must not link internal/mining
+# or internal/scoring, so it cannot even construct a receipt, let alone submit one. Without
+# this check the split would be a naming convention rather than a property.
+verifier_forbidden=$(CGO_ENABLED=0 go list -deps ./cmd/relayfirst-verifier 2>/dev/null \
+  | grep -E 'relayfirst/internal/(mining|scoring)$' || true)
+if [ -n "$verifier_forbidden" ]; then
+  fail "the verifier binary links the mining or scoring path, so it could sign work claims:"
+  printf '%s\n' "$verifier_forbidden" | sed 's/^/      /'
+  separation_ok=0
+fi
+
+# And it MUST reach the assertion machinery, or the check above would pass vacuously for a
+# binary that had simply lost the ability to assert at all.
+verifier_assertion=$(CGO_ENABLED=0 go list -deps ./cmd/relayfirst-verifier 2>/dev/null \
+  | grep -E 'relayfirst/internal/assertion$' || true)
+if [ -z "$verifier_assertion" ]; then
+  fail "the verifier binary does not link internal/assertion, so it cannot assert anything and the check above is vacuous"
   separation_ok=0
 fi
 
