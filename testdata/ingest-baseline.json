@@ -1,5 +1,5 @@
 {
-  "measuredAt": "2026-10-04T17:43:33Z",
+  "measuredAt": "2026-10-04T18:38:07Z",
   "environment": {
     "cpu": "Apple M4",
     "numCPU": 10,
@@ -13,13 +13,14 @@
     "operations": 20000,
     "duplicatePercent": 10,
     "payloadBytes": 2048,
-    "maxOpenConns": 1
+    "maxOpenConns": 1,
+    "batchSize": 1
   },
   "results": {
-    "writesPerSecond": 10782.78140768133,
-    "p50Millis": 0.051875,
-    "p99Millis": 0.178583,
-    "maxMillis": 15.715,
+    "writesPerSecond": 10103.151280230288,
+    "p50Millis": 0.053208,
+    "p99Millis": 0.412917,
+    "maxMillis": 13.936417,
     "stored": 18001,
     "duplicates": 1999
   }

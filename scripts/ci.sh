@@ -169,22 +169,49 @@ else
   else
     # The benchmark prints its own comparison; this parses the delta it computed so the gate and the
     # tool cannot disagree about what the number means.
-    bench_delta=$(printf '%s\n' "$bench_out" | grep -E '^change ' | grep -oE '[-+][0-9.]+' | head -1)
+    #
+    # The `|| true` is load-bearing. Under `set -euo pipefail`, a pipeline whose last command matches
+    # nothing exits nonzero, and a command substitution that does so KILLS THE SCRIPT — silently, with
+    # no FAIL line, because the failure happens inside an assignment rather than at a gate. Measured:
+    # deleting batchSize from the baseline made this whole step exit 1 with no output at all, which is
+    # the least debuggable outcome available.
+    bench_delta=$(printf '%s\n' "$bench_out" | grep -E '^change ' | grep -oE '[-+][0-9.]+' | head -1 || true)
     if [ -z "$bench_delta" ]; then
       # No delta line means the workload or the machine differed, and the tool said so rather than
       # printing a misleading figure. That is not a regression, so it is reported and not failed.
+      # `|| true` for the same reason as above.
       printf '  \033[33mSKIP\033[0m no comparable baseline (workload or machine differs)\n'
-      printf '%s\n' "$bench_out" | grep -E '^baseline|^change|differs' | sed 's/^/      /'
+      printf '%s\n' "$bench_out" | grep -E '^baseline|^change|differs' | sed 's/^/      /' || true
     else
       # Compare with awk rather than bc, which is not present everywhere.
-      regression=$(awk -v d="$bench_delta" 'BEGIN { print (d < -20) ? "yes" : "no" }')
-      throughput=$(printf '%s\n' "$bench_out" | grep -E '^  throughput' | sed 's/^ *//')
-      if [ "$regression" = "yes" ]; then
-        fail "ingest throughput regressed by ${bench_delta}% (threshold -20%): $throughput"
+      #
+      # The `+0` forces a numeric context. Without it awk compares an empty or
+      # malformed string against -20 in a way that is not arithmetic: measured,
+      # `awk -v d="" 'BEGIN{print (d < -20) ? "yes":"no"}'` prints "yes", because an
+      # empty string does not behave as the number zero in that comparison. That
+      # would turn a parsing failure into a reported regression.
+      #
+      # The pattern check below is separate from the comparison on purpose. A
+      # legitimately unchanged run reports "+0.0%", so "the delta is zero" cannot be
+      # the test for "the delta failed to parse" — the two need different checks.
+      case "$bench_delta" in
+        [+-][0-9]*.[0-9]*) delta_is_numeric=yes ;;
+        *) delta_is_numeric=no ;;
+      esac
+      if [ "$delta_is_numeric" = "no" ]; then
+        fail "the ingest benchmark printed a delta that is not a number ('$bench_delta'); the gate cannot compare"
         printf '%s\n' "$bench_out" | sed 's/^/      /'
         failures=$((failures + 1))
       else
-        pass "ingest benchmark (${bench_delta}% vs baseline; $throughput)"
+        regression=$(awk -v d="$bench_delta" 'BEGIN { print (d + 0 < -20) ? "yes" : "no" }')
+        throughput=$(printf '%s\n' "$bench_out" | grep -E '^  throughput' | sed 's/^ *//')
+        if [ "$regression" = "yes" ]; then
+          fail "ingest throughput regressed by ${bench_delta}% (threshold -20%): $throughput"
+          printf '%s\n' "$bench_out" | sed 's/^/      /'
+          failures=$((failures + 1))
+        else
+          pass "ingest benchmark (${bench_delta}% vs baseline; $throughput)"
+        fi
       fi
     fi
   fi
@@ -213,7 +240,7 @@ fi
 # like success: `go test -run` with no matches exits zero. The count check below
 # turns "nothing ran" into a failure, so a rename cannot quietly retire the gate.
 step "Version compatibility matrix (S9-0g: G2 cross-version, G3 unknown fields, G4 negotiation)"
-version_pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_|TestEvent_|TestEventHash_|TestDecodeEvent_|TestSignedBytes_|TestValidateChain_|TestValidateEvent_|TestDerive|TestDeriveSession_|TestSessionEvent_|TestSessionIDFor_|TestTimeoutCoverage_|TestA2ATaskState_|TestVerification_|TestVerify_(Recompute|Empty|Evaluator|Dispute|ModeRefusal)|TestEvaluate_|TestDesignateEvaluator_|TestA2ATaskID_|TestSetA2ATaskID_|TestValidateA2ATaskID_|TestWS_|TestHTTPEndpointsSurviveWebSocket|TestBuild_(DeclaresBothBindings|OmitsWebSocketWhenUnset)|TestSelectInterface_SkipsWebSocket|TestAcceptance_|TestRoundTrip|TestCiphertext|TestThirdParty|TestTampered|TestRecipient|TestTwoSeals|TestSharedSecret|TestUnsupportedAlgorithm|TestUnmarshalSealed|TestSeal|TestKeyPair|TestSealedPayload|TestNoAlgorithm|TestNoScopeCoversReceipts|TestInitialize_|TestPrivateReceipt_|TestSessionKey_|TestSessionSealed_|TestToolsList_|TestListTasks_|TestRelayMessage_|TestUnknownToolIsReported|TestToolFailureIs|TestNotificationProducesNoResponse|TestParseErrorIsReported|TestMethodNotFoundIsReported|TestPingIsAnswered|TestUnreachableRelay|TestResponseSizeIsBounded|TestAuthorizeEvent_|TestAllows_|TestIsRevokedBy_|TestScopesHash_|TestSignAndVerify|TestVerify_|TestSign_|TestScopeValid_|TestAllScopes_|TestObservations_|TestEvidence_|TestTasks_|TestAssert_|TestAssertion_|TestRunner_|TestCheck_|TestCriterion10_|TestNode_(PublishesNodeID|OmitsNodeID|HasNoKeyField|NoteIsAccurate)'
+version_pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_|TestEvent_|TestEventHash_|TestDecodeEvent_|TestSignedBytes_|TestValidateChain_|TestValidateEvent_|TestDerive|TestDeriveSession_|TestSessionEvent_|TestSessionIDFor_|TestTimeoutCoverage_|TestA2ATaskState_|TestVerification_|TestVerify_(Recompute|Empty|Evaluator|Dispute|ModeRefusal)|TestEvaluate_|TestDesignateEvaluator_|TestA2ATaskID_|TestSetA2ATaskID_|TestValidateA2ATaskID_|TestWS_|TestHTTPEndpointsSurviveWebSocket|TestBuild_(DeclaresBothBindings|OmitsWebSocketWhenUnset)|TestSelectInterface_SkipsWebSocket|TestAcceptance_|TestRoundTrip|TestCiphertext|TestThirdParty|TestTampered|TestRecipient|TestTwoSeals|TestSharedSecret|TestUnsupportedAlgorithm|TestUnmarshalSealed|TestSeal|TestKeyPair|TestSealedPayload|TestNoAlgorithm|TestNoScopeCoversReceipts|TestInitialize_|TestPrivateReceipt_|TestSessionKey_|TestSessionSealed_|TestToolsList_|TestListTasks_|TestRelayMessage_|TestUnknownToolIsReported|TestToolFailureIs|TestNotificationProducesNoResponse|TestParseErrorIsReported|TestMethodNotFoundIsReported|TestPingIsAnswered|TestUnreachableRelay|TestResponseSizeIsBounded|TestBatch_|TestAuthorizeEvent_|TestAllows_|TestIsRevokedBy_|TestScopesHash_|TestSignAndVerify|TestVerify_|TestSign_|TestScopeValid_|TestAllScopes_|TestObservations_|TestEvidence_|TestTasks_|TestAssert_|TestAssertion_|TestRunner_|TestCheck_|TestCriterion10_|TestNode_(PublishesNodeID|OmitsNodeID|HasNoKeyField|NoteIsAccurate)'
 version_out=$(CGO_ENABLED=0 go test ./internal/receipt/ ./internal/protocol/ ./internal/a2a/ \
   -run "$version_pattern" -count=1 -v 2>&1) && version_status=0 || version_status=$?
 version_pass=$(printf '%s' "$version_out" | grep -c '^--- PASS' || true)

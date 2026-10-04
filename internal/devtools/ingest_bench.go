@@ -86,6 +86,11 @@ type baseline struct {
 		DuplicatePct int `json:"duplicatePercent"`
 		PayloadBytes int `json:"payloadBytes"`
 		MaxOpenConns int `json:"maxOpenConns"`
+
+		// BatchSize is how many inserts share one transaction. It is part of the recorded config
+		// because a comparison across different batch sizes is not a regression test, and the
+		// before/after figures this file exists to produce differ exactly here.
+		BatchSize int `json:"batchSize"`
 	} `json:"config"`
 
 	// Results are the measured figures.
@@ -104,9 +109,10 @@ func main() {
 	ops := flag.Int("ops", 20000, "number of ingest operations")
 	dupPct := flag.Int("dup-pct", 10, "percentage of operations that repeat an earlier id")
 	payload := flag.Int("payload", 2048, "payload size in bytes")
+	batchSize := flag.Int("batch", 1, "inserts per transaction; 1 measures the row-at-a-time path")
 	flag.Parse()
 
-	result, err := run(*ops, *dupPct, *payload)
+	result, err := run(*ops, *dupPct, *payload, *batchSize)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ingest_bench: %v\n", err)
 		os.Exit(2)
@@ -125,12 +131,15 @@ func main() {
 }
 
 // run performs the measurement.
-func run(ops, dupPct, payloadBytes int) (baseline, error) {
+func run(ops, dupPct, payloadBytes, batchSize int) (baseline, error) {
 	if ops <= 0 {
 		return baseline{}, fmt.Errorf("-ops must be positive")
 	}
 	if dupPct < 0 || dupPct > 90 {
 		return baseline{}, fmt.Errorf("-dup-pct must be between 0 and 90")
+	}
+	if batchSize < 1 {
+		return baseline{}, fmt.Errorf("-batch must be at least 1")
 	}
 
 	dir, err := os.MkdirTemp("", "relayfirst-ingest-")
@@ -178,25 +187,56 @@ func run(ops, dupPct, payloadBytes int) (baseline, error) {
 	stored, duplicates := 0, 0
 
 	start := time.Now()
-	for i := 0; i < ops; i++ {
-		agentID := fmt.Sprintf("agent:eip155:8453:0x%040x", i%64)
+	if batchSize <= 1 {
+		for i := 0; i < ops; i++ {
+			agentID := fmt.Sprintf("agent:eip155:8453:0x%040x", i%64)
 
-		t0 := time.Now()
-		wasStored, err := store.Put(sqlite.Message{
-			ID:         ids[i],
-			AgentID:    agentID,
-			Kind:       "receipt",
-			Payload:    body,
-			ReceivedAt: time.Now(),
-		})
-		latencies = append(latencies, time.Since(t0))
-		if err != nil {
-			return baseline{}, fmt.Errorf("put %d: %w", i, err)
+			t0 := time.Now()
+			wasStored, err := store.Put(sqlite.Message{
+				ID:         ids[i],
+				AgentID:    agentID,
+				Kind:       "receipt",
+				Payload:    body,
+				ReceivedAt: time.Now(),
+			})
+			latencies = append(latencies, time.Since(t0))
+			if err != nil {
+				return baseline{}, fmt.Errorf("put %d: %w", i, err)
+			}
+			if wasStored {
+				stored++
+			} else {
+				duplicates++
+			}
 		}
-		if wasStored {
-			stored++
-		} else {
-			duplicates++
+	} else {
+		// Latency here is PER MESSAGE as observed by the caller, which includes its share of the
+		// commit rather than only its own insert. Reporting the per-insert time instead would show a
+		// number that no caller experiences and would flatter the batched path.
+		batcher := store.NewBatcher(batchSize)
+		for i := 0; i < ops; i++ {
+			agentID := fmt.Sprintf("agent:eip155:8453:0x%040x", i%64)
+
+			t0 := time.Now()
+			res, err := batcher.Add(sqlite.Message{
+				ID:         ids[i],
+				AgentID:    agentID,
+				Kind:       "receipt",
+				Payload:    body,
+				ReceivedAt: time.Now(),
+			})
+			latencies = append(latencies, time.Since(t0))
+			if err != nil {
+				return baseline{}, fmt.Errorf("add %d: %w", i, err)
+			}
+			if res.Stored {
+				stored++
+			} else {
+				duplicates++
+			}
+		}
+		if err := batcher.Flush(); err != nil {
+			return baseline{}, fmt.Errorf("final flush: %w", err)
 		}
 	}
 	elapsed := time.Since(start)
@@ -216,6 +256,7 @@ func run(ops, dupPct, payloadBytes int) (baseline, error) {
 	b.Config.DuplicatePct = dupPct
 	b.Config.PayloadBytes = payloadBytes
 	b.Config.MaxOpenConns = 1
+	b.Config.BatchSize = batchSize
 	b.Results.WritesPerSecond = float64(ops) / elapsed.Seconds()
 	b.Results.P50Millis = millis(percentile(latencies, 0.50))
 	b.Results.P99Millis = millis(percentile(latencies, 0.99))
@@ -260,8 +301,9 @@ func compare(result baseline) {
 	fmt.Printf("  machine      %s (%d cpus)\n", result.Environment.CPU, result.Environment.NumCPU)
 	fmt.Printf("  go           %s\n", result.Environment.GoVersion)
 	fmt.Printf("  sqlite       %s, journal=%s\n", result.Environment.SQLite, result.Environment.JournalMode)
-	fmt.Printf("  workload     %d ops, %d%% duplicates, %d-byte payloads\n",
-		result.Config.Operations, result.Config.DuplicatePct, result.Config.PayloadBytes)
+	fmt.Printf("  workload     %d ops, %d%% duplicates, %d-byte payloads, batch=%d\n",
+		result.Config.Operations, result.Config.DuplicatePct, result.Config.PayloadBytes,
+		result.Config.BatchSize)
 	fmt.Printf("  stored %d, duplicates %d\n", result.Results.Stored, result.Results.Duplicates)
 	fmt.Printf("  throughput   %.0f writes/s\n", result.Results.WritesPerSecond)
 	fmt.Printf("  latency      p50=%.3fms p99=%.3fms max=%.3fms\n",
@@ -276,9 +318,10 @@ func compare(result baseline) {
 	// A comparison across different workloads or machines is not a regression test, and saying so
 	// is better than printing a misleading delta.
 	if base.Config != result.Config {
-		fmt.Printf("\nbaseline workload differs; not comparing (baseline %d ops / %d%% dups, this run %d / %d%%)\n",
-			base.Config.Operations, base.Config.DuplicatePct,
-			result.Config.Operations, result.Config.DuplicatePct)
+		fmt.Printf("\nbaseline workload differs; not comparing (baseline %d ops / %d%% dups / batch=%d, "+
+			"this run %d / %d%% / batch=%d)\n",
+			base.Config.Operations, base.Config.DuplicatePct, base.Config.BatchSize,
+			result.Config.Operations, result.Config.DuplicatePct, result.Config.BatchSize)
 		return
 	}
 	if base.Environment.CPU != result.Environment.CPU || base.Environment.NumCPU != result.Environment.NumCPU {

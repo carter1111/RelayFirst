@@ -59,6 +59,32 @@ func NewMessageStore(db *DB) *MessageStore { return &MessageStore{db: db} }
 // expected outcome rather than an error: senders retry, and a retry must not be
 // treated as a failure.
 func (s *MessageStore) Put(m Message) (stored bool, err error) {
+	res, err := s.putOne(s.db.handle, m)
+	if err != nil {
+		return false, err
+	}
+	return res, nil
+}
+
+// execer is the subset of *sql.DB and *sql.Tx that putOne needs.
+//
+// # Why an interface rather than two methods
+//
+// The single and batched paths must run the SAME statement, or the two would eventually diverge
+// and the divergence would be a dedup difference — the one thing A6 depends on. Taking the
+// statement through one function guarantees they cannot.
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+// putOne runs the dedup insert against an executor.
+//
+// # Why it takes an executor rather than being two methods
+//
+// It is the same statement `Put` has always used, so the batched path cannot behave differently
+// from the single one. Two copies of this SQL would eventually diverge, and the divergence would be
+// a dedup difference — the one thing A6 depends on.
+func (s *MessageStore) putOne(e execer, m Message) (stored bool, err error) {
 	if m.ID == "" {
 		return false, fmt.Errorf("store: message id is empty")
 	}
@@ -77,7 +103,7 @@ func (s *MessageStore) Put(m Message) (stored bool, err error) {
 		at = time.Now()
 	}
 
-	res, err := s.db.handle.Exec(`
+	res, err := e.Exec(`
 		INSERT INTO messages (receipt_id, agent_id, kind, payload, received_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(receipt_id) DO NOTHING
