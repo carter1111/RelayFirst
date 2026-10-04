@@ -130,6 +130,46 @@ else
   run "go test ./internal/receipt/ -run FrozenCorpus" env CGO_ENABLED=0 go test ./internal/receipt/ -run FrozenCorpus -count=1
 fi
 
+# The cross-version compatibility matrix (S9-0g: G2 + G3 + G4).
+#
+# The frozen corpus above pins one property: a historical receipt still verifies.
+# It does not exercise the paths that break when a NEW version is being added,
+# which are the paths that are hardest to notice because everything green today
+# stays green tomorrow. Three of those paths are named in the plan and gated here:
+#
+#   G2  cross-version rules     a v1 artifact must verify under v1 rules AND be
+#                               refused under v2 rules; profiles must not collide
+#   G3  unknown-field injection additive fields must be tolerated in the receipt
+#                               payload and on the envelope
+#   G4  negotiation no-overlap  two sides sharing no A2A version must fail with
+#                               ErrVersionNotSupported, never fall back
+#
+# # Why this is a pattern and not a package
+#
+# The three concerns live in three packages (receipt, protocol, a2a) and will
+# gain cases as versions are added. Naming a pattern keeps the gate pointed at
+# the behaviour rather than at three specific test functions that someone must
+# remember to extend.
+#
+# It is logged as a real gate because an empty selection would otherwise look
+# like success: `go test -run` with no matches exits zero. The count check below
+# turns "nothing ran" into a failure, so a rename cannot quietly retire the gate.
+step "Version compatibility matrix (S9-0g: G2 cross-version, G3 unknown fields, G4 negotiation)"
+version_pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_'
+version_out=$(CGO_ENABLED=0 go test ./internal/receipt/ ./internal/protocol/ ./internal/a2a/ \
+  -run "$version_pattern" -count=1 -v 2>&1) && version_status=0 || version_status=$?
+version_pass=$(printf '%s' "$version_out" | grep -c '^--- PASS' || true)
+if [ "$version_status" -ne 0 ]; then
+  fail "cross-version matrix:"
+  printf '%s\n' "$version_out" | grep -E '^(--- FAIL|    )' | sed 's/^/      /' | head -30
+  failures=$((failures + 1))
+elif [ "$version_pass" -lt 30 ]; then
+  fail "cross-version matrix ran only $version_pass tests — the selection has gone stale (renamed tests?), so this gate is no longer checking anything"
+  failures=$((failures + 1))
+else
+  pass "cross-version matrix ($version_pass tests across receipt/protocol/a2a)"
+fi
+
 # The Merkle corpus is the S7 cross-language gate. It is checked by regeneration
 # rather than by presence: a stale corpus would still pass every test on both sides
 # while the two implementations quietly diverged, which is exactly the failure
