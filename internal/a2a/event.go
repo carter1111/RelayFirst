@@ -1,6 +1,7 @@
 package a2a
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -231,18 +232,214 @@ func EventHash(h Hasher, e Event) (string, error) {
 //     fields and survive a re-serializing intermediary (A9 §④).
 //   - Otherwise the event was built in memory and CanonicalBytes reconstructs it.
 //
-// Raw is deliberately NOT part of the struct's JSON: it is transport state, not
-// protocol state. If it were serialized, an event's own bytes would contain its
-// own bytes, and two builds would disagree about the encoding of the wrapper.
+// # Why Raw must have its signature removed, which an earlier version got wrong
+//
+// This function first returned Raw verbatim, copying the receipt layer's rule that a received payload
+// is hashed as-is. For a receipt that is right: its `Payload` field holds the bytes of the SIGNED
+// OBJECT, and the signature lives outside it.
+//
+// An event's Raw is the whole event INCLUDING its signature, so returning it verbatim signs one set of
+// bytes and verifies a different set. Measured: Raw was 160 bytes where the sign-time bytes were 139,
+// the 21-byte difference being the signature. Signing then never verified — the producer signed bytes
+// without a signature field and the verifier hashed bytes with one, so every produced event failed its
+// own check and the chain broke.
+//
+// So Raw is the authoritative bytes MINUS the signature, exactly as CanonicalBytes already did for the
+// reconstruction path. The two paths then cover the same thing, which is what lets a signed event
+// verify whether it is checked in memory or after a round trip.
+//
+// # Why the signature is removed structurally rather than textually
+//
+// A newer build could add a field, and a caller's Raw could carry it; only the signature must be
+// excluded, and only one key must be. Decoding and re-marshalling to drop it would reintroduce the
+// re-serialization fragility the Raw path exists to avoid, so the removal is a targeted edit of the
+// `"signature"` member rather than a re-encode.
 func (e Event) SignedBytes() ([]byte, error) {
 	if len(e.Raw) > 0 {
-		return e.Raw, nil
+		stripped, err := stripSignatureMember(e.Raw)
+		if err != nil {
+			// A Raw that cannot be parsed is a programming error: DecodeEvent produced it from valid
+			// JSON. Falling back to the reconstruction would silently change what is hashed, so it
+			// fails loudly instead.
+			return nil, fmt.Errorf("a2a: received event bytes are not usable as signed bytes: %w", err)
+		}
+		return stripped, nil
 	}
 	raw, err := e.CanonicalBytes()
 	if err != nil {
 		return nil, fmt.Errorf("a2a: canonicalize event: %w", err)
 	}
 	return raw, nil
+}
+
+// stripSignatureMember removes the `signature` member from raw JSON bytes.
+//
+// # Why this is a targeted edit rather than a round trip
+//
+// Decoding into a struct and re-marshalling would drop the signature but also re-order and re-format
+// everything else, which is exactly the re-serialization fragility the Raw path exists to avoid: a
+// field order or number format difference would change the hash and break a valid signature. So the
+// member is removed from the bytes directly, leaving every other byte untouched.
+//
+// # How it finds the member
+//
+// It walks the top level of the object tracking string literals so a brace inside a string value
+// cannot confuse the scan, and it removes the `"signature"` key together with its value and the
+// separating comma. A malformed or non-object input is an error rather than a partial answer.
+func stripSignatureMember(raw []byte) ([]byte, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil, fmt.Errorf("event bytes are not a JSON object")
+	}
+
+	const key = `"signature"`
+	offset := 0
+	for {
+		// Find the key at the top level, skipping string literals so a value containing the text
+		// `"signature"` is not mistaken for the member.
+		idx := indexTopLevelKey(trimmed[offset:], key)
+		if idx < 0 {
+			// No signature member: the bytes are already the signed form. That happens for a
+			// received unsigned event, and returning them unchanged is correct.
+			return raw, nil
+		}
+		start := offset + idx
+
+		// Expect `:"..."` or `: <value>`; find the colon.
+		colon := start + len(key)
+		for colon < len(trimmed) && (trimmed[colon] == ' ' || trimmed[colon] == '\t' || trimmed[colon] == '\n' || trimmed[colon] == '\r') {
+			colon++
+		}
+		if colon >= len(trimmed) || trimmed[colon] != ':' {
+			return nil, fmt.Errorf("malformed signature member: expected a colon after the key")
+		}
+
+		end, err := endOfJSONValue(trimmed, colon+1)
+		if err != nil {
+			return nil, err
+		}
+
+		// Remove the member AND one adjacent comma so the object stays valid.
+		removeFrom, removeTo := start, end
+		switch {
+		case end < len(trimmed) && trimmed[end] == ',':
+			// A following comma belongs to this member's removal.
+			removeTo = end + 1
+		case start > 0 && trimmed[start-1] == ',':
+			// It was the last member; the preceding comma must go instead.
+			removeFrom = start - 1
+		}
+
+		out := make([]byte, 0, len(trimmed))
+		out = append(out, trimmed[:removeFrom]...)
+		out = append(out, trimmed[removeTo:]...)
+		return out, nil
+	}
+}
+
+// indexTopLevelKey finds `key` at the top level of an object body, ignoring string literals.
+//
+// It returns the index relative to s, or -1. It deliberately does not descend into nested objects: a
+// nested `signature` (inside a payload, say) is not the event's signature and must not be removed.
+func indexTopLevelKey(s []byte, key string) int {
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			// A key at depth 1 is the object's own member.
+			if depth == 1 && bytes.HasPrefix(s[i:], []byte(key)) {
+				return i
+			}
+			inString = true
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+		}
+	}
+	return -1
+}
+
+// endOfJSONValue returns the index just past the JSON value starting at s[i].
+func endOfJSONValue(s []byte, i int) (int, error) {
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r') {
+		i++
+	}
+	if i >= len(s) {
+		return 0, fmt.Errorf("malformed JSON: a member has no value")
+	}
+
+	switch s[i] {
+	case '"':
+		// A string: scan for the closing quote, honouring escapes.
+		escaped := false
+		for j := i + 1; j < len(s); j++ {
+			switch {
+			case escaped:
+				escaped = false
+			case s[j] == '\\':
+				escaped = true
+			case s[j] == '"':
+				return j + 1, nil
+			}
+		}
+		return 0, fmt.Errorf("malformed JSON: unterminated string value")
+	case '{', '[':
+		// A container: scan to its matching close.
+		depth := 0
+		inString := false
+		escaped := false
+		for j := i; j < len(s); j++ {
+			c := s[j]
+			if inString {
+				switch {
+				case escaped:
+					escaped = false
+				case c == '\\':
+					escaped = true
+				case c == '"':
+					inString = false
+				}
+				continue
+			}
+			switch c {
+			case '"':
+				inString = true
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+				if depth == 0 {
+					return j + 1, nil
+				}
+			}
+		}
+		return 0, fmt.Errorf("malformed JSON: unterminated container value")
+	default:
+		// A literal: null, true, false or a number. Ends at a comma, brace or whitespace.
+		for j := i; j < len(s); j++ {
+			switch s[j] {
+			case ',', '}', ']', ' ', '\t', '\n', '\r':
+				return j, nil
+			}
+		}
+		return len(s), nil
+	}
 }
 
 // WithRaw attaches the received bytes to a decoded event.

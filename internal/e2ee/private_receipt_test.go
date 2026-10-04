@@ -1,6 +1,7 @@
 package e2ee_test
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -180,28 +181,60 @@ func TestPrivateReceipt_TamperedCiphertextStillFailsValidation(t *testing.T) {
 
 	r := privateReceipt(t, recipient, []byte("private"), salt)
 
-	// Swap one character of the ciphertext for a different one. A semantic change is not needed: any
-	// change to the signed bytes must invalidate the signature.
+	// # Why the mutation is a byte edit of the original string, not a re-marshal
+	//
+	// Two earlier versions of this test were wrong, and both mistakes are worth naming.
+	//
+	// The first swapped the first 'A' for a 'B' in the whole value and FAILED ONE RUN IN FIFTEEN: the
+	// ciphertext is random, so sometimes neither character appears, the swap never happened, and the
+	// fixture assertion failed. Measured across 15 runs, 1 failed.
+	//
+	// The second decoded the value as base64, which it is not — it is the JSON of a Sealed payload
+	// carrying alg, epk, nonce and ct — and failed 20 runs out of 20.
+	//
+	// A third attempt is what this replaced: unmarshalling to a map, flipping a byte of ct, and
+	// re-marshalling. That appeared to work, and it was VACUOUS, because Go re-marshals a map in key
+	// order while the struct that produced the value used field order. So the bytes differed whether or
+	// not the tampering happened, and the test passed for a reason unrelated to what it asserts —
+	// removing the tampering entirely still passed.
+	//
+	// So the edit is done on the original bytes, replacing the base64 of ct with a byte-flipped
+	// version at the same offset. The rest of the string is untouched, which means the only difference
+	// between what is validated and what was signed is the one byte this test changes.
 	original := r.Result.Value
-	mutated := []byte(original)
-	swapped := false
-	for i := range mutated {
-		switch mutated[i] {
-		case 'A':
-			mutated[i] = 'B'
-			swapped = true
-		case 'B':
-			mutated[i] = 'A'
-			swapped = true
-		}
-		if swapped {
-			break
-		}
+
+	const ctKey = `"ct":"`
+	start := strings.Index(original, ctKey)
+	if start < 0 {
+		t.Fatalf("the sealed payload must carry a ct field, got %q", original)
 	}
-	if !swapped {
-		t.Fatal("the fixture must contain a mutable base64 character")
+	valueStart := start + len(ctKey)
+	valueEnd := strings.Index(original[valueStart:], `"`)
+	if valueEnd < 0 {
+		t.Fatalf("the ct field must be a closed string, got %q", original)
 	}
-	r.Result.Value = string(mutated)
+	ctB64 := original[valueStart : valueStart+valueEnd]
+
+	raw, err := base64.StdEncoding.DecodeString(ctB64)
+	if err != nil {
+		t.Fatalf("ct must be base64: %v", err)
+	}
+	if len(raw) == 0 {
+		t.Fatal("ct must not be empty")
+	}
+	raw[len(raw)/2] ^= 0x01
+	flipped := base64.StdEncoding.EncodeToString(raw)
+
+	mutated := original[:valueStart] + flipped + original[valueStart+valueEnd:]
+	r.Result.Value = mutated
+
+	if r.Result.Value == original {
+		t.Fatal("the mutation must have changed the payload")
+	}
+	// And nothing else may change, or this test would be measuring the wrong difference.
+	if strings.Count(mutated, `"alg"`) != 1 || !strings.Contains(mutated, `"encrypted":true`) {
+		t.Fatalf("the mutation must change only ct; got %q", mutated)
+	}
 
 	if err := r.Validate(nil); err == nil {
 		t.Fatal("tampering with the ciphertext must break the receipt: the ciphertext is inside the " +

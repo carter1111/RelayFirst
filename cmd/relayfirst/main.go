@@ -183,6 +183,9 @@ func run(args []string) error {
 	case "card":
 		return runCard(args[1:])
 
+	case "session":
+		return runSession(args[1:])
+
 	case "version", "--version", "-v":
 		fmt.Println(version)
 		return nil

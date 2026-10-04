@@ -295,6 +295,207 @@ func TestEvent_UnknownTypeIsNotMalformed(t *testing.T) {
 	}
 }
 
+// TestSignedBytes_RemovesSignatureFromReceivedBytes is the regression test for a bug that made every
+// produced event fail its own verification.
+//
+// # The bug
+//
+// SignedBytes returned received bytes verbatim, copying the receipt layer's rule that a received
+// payload is hashed as-is. For a receipt that is correct: its Payload field holds the bytes of the
+// SIGNED OBJECT and the signature sits outside it. An event's received bytes are the WHOLE event
+// including its signature, so the producer signed bytes without a signature member and the verifier
+// hashed bytes with one.
+//
+// Measured at the time: 160 received bytes against 139 sign-time bytes, the difference being the
+// signature. So an event could not verify after a round trip, and every chained event broke too — one
+// root cause with two symptoms.
+//
+// # Why the assertion is on equality with the sign-time bytes
+//
+// That is exactly the property the two paths must share. A test that only checked "the signature is
+// gone" would pass for an implementation that also stripped something else, and an implementation that
+// stripped a real field would break the chain while looking correct.
+func TestSignedBytes_RemovesSignatureFromReceivedBytes(t *testing.T) {
+	built := Event{
+		EventID: "evt-1", SessionID: "ses-1",
+		Actor: "agent:eip155:8453:0x7f4db0d9c4b8a6bce8e1c22da9c419e6e1f3a8b5",
+		Type:  EventSessionOpen, Sequence: 1, IssuedAt: t0,
+	}
+	signTime, err := built.SignedBytes()
+	if err != nil {
+		t.Fatalf("sign-time bytes: %v", err)
+	}
+
+	built.Signature = "0x" + strings.Repeat("ab", 65)
+	wire, err := json.Marshal(built)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	// A decoded event carries Raw, which is the path that was wrong.
+	decoded, err := DecodeEvent(wire)
+	if err != nil {
+		t.Fatalf("DecodeEvent: %v", err)
+	}
+	received, err := decoded.SignedBytes()
+	if err != nil {
+		t.Fatalf("received bytes: %v", err)
+	}
+
+	if string(received) != string(signTime) {
+		t.Fatalf("the signed bytes must be identical whether an event was built or received, or a "+
+			"producer signs one set of bytes and a verifier checks another:\n  sign-time (%d): %s\n  received  (%d): %s",
+			len(signTime), signTime, len(received), received)
+	}
+}
+
+// TestSignedBytes_KeepsOtherMembersIntact guards the removal from taking more than the signature, and
+// from rewriting anything else.
+//
+// # Why the fixture uses adversarial bytes
+//
+// An earlier version of this test used an alphabetically ordered object with simple values, and a
+// mutation proved it useless: replacing the targeted removal with decode-and-re-encode PASSED it,
+// because re-encoding such an object happens to reproduce it. But re-encoding is exactly what must
+// not happen here — measured on a harder fixture:
+//
+//	in : {"zebra":"a\u0041b","alpha":1,"nested":{"n":1.50,"m":2}}
+//	out: {"alpha":1,"nested":{"m":2,"n":1.5},"zebra":"aAb"}
+//
+// Keys reordered, 1.50 became 1.5, and an escape was resolved. Every one of those changes the bytes,
+// and changed bytes mean a valid signature fails to verify. So the fixture below contains all three
+// hazards, and the assertion is byte equality with the input minus the signature rather than a
+// membership check.
+func TestSignedBytes_KeepsOtherMembersIntact(t *testing.T) {
+	// Non-alphabetical key order, a resolved-looking escape, a trailing-zero number, and an unknown
+	// field: each is something a re-encode would alter.
+	wire := []byte(`{"zebra":"a\u0041b","eventId":"evt-1","sessionId":"ses-1","taskId":"tsk-1",` +
+		`"actor":"` + actorA + `","type":"TASK_CREATED","sequence":1,` +
+		`"issuedAt":"2026-10-04T12:00:00Z","nested":{"n":1.50,"m":2},` +
+		`"signature":"0xdead","futureField":{"added":true}}`)
+
+	decoded, err := DecodeEvent(wire)
+	if err != nil {
+		t.Fatalf("DecodeEvent: %v", err)
+	}
+	signed, err := decoded.SignedBytes()
+	if err != nil {
+		t.Fatalf("SignedBytes: %v", err)
+	}
+
+	if strings.Contains(string(signed), `"signature"`) {
+		t.Error("the signature member must be removed")
+	}
+	// Byte-level assertions on the hazards, because these are what a re-encode would break.
+	if !strings.Contains(string(signed), `\u0041`) {
+		t.Errorf("an escape in a string value must survive verbatim; resolving it changes the signed bytes: %s", signed)
+	}
+	if !strings.Contains(string(signed), `1.50`) {
+		t.Errorf("a number's exact spelling must survive; 1.50 and 1.5 are different signed bytes: %s", signed)
+	}
+	if !strings.Contains(string(signed), `"futureField":{"added":true}`) {
+		t.Errorf("an unknown field must survive: a newer build's data would otherwise be silently dropped: %s", signed)
+	}
+	// And the members must still be in their original order, which a re-encode would sort.
+	zebra := strings.Index(string(signed), `"zebra"`)
+	eventID := strings.Index(string(signed), `"eventId"`)
+	if zebra < 0 || eventID < 0 || zebra > eventID {
+		t.Errorf("member order must be preserved; a re-encode would reorder and break the signature: %s", signed)
+	}
+}
+
+// TestSignedBytes_LeavesUnsignedReceivedBytesAlone covers the case where no signature member exists.
+func TestSignedBytes_LeavesUnsignedReceivedBytesAlone(t *testing.T) {
+	wire := []byte(`{"eventId":"evt-1","sessionId":"ses-1","taskId":"tsk-1",` +
+		`"actor":"` + actorA + `","type":"TASK_CREATED","sequence":1,` +
+		`"issuedAt":"2026-10-04T12:00:00Z"}`)
+
+	decoded, err := DecodeEvent(wire)
+	if err != nil {
+		t.Fatalf("DecodeEvent: %v", err)
+	}
+	signed, err := decoded.SignedBytes()
+	if err != nil {
+		t.Fatalf("SignedBytes: %v", err)
+	}
+	if string(signed) != string(wire) {
+		t.Errorf("bytes with no signature member must be returned unchanged:\n  got  %s\n  want %s", signed, wire)
+	}
+}
+
+// TestSignedBytes_ToleratesASignatureNotLast is the ordering trap.
+//
+// JSON members are unordered, so a signature in the middle must be removed together with a comma
+// rather than leaving `,,` or a dangling separator. A producer that wrote it last would hide this.
+func TestSignedBytes_ToleratesASignatureNotLast(t *testing.T) {
+	// Signature first, and signature in the middle.
+	cases := []string{
+		`{"signature":"0xdead","eventId":"evt-1","sessionId":"ses-1","actor":"` + actorA + `","type":"SESSION_OPEN","sequence":1,"issuedAt":"2026-10-04T12:00:00Z"}`,
+		`{"eventId":"evt-1","signature":"0xdead","sessionId":"ses-1","actor":"` + actorA + `","type":"SESSION_OPEN","sequence":1,"issuedAt":"2026-10-04T12:00:00Z"}`,
+		`{"eventId":"evt-1","sessionId":"ses-1","actor":"` + actorA + `","type":"SESSION_OPEN","sequence":1,"issuedAt":"2026-10-04T12:00:00Z","signature":"0xdead"}`,
+	}
+	for i, wire := range cases {
+		decoded, err := DecodeEvent([]byte(wire))
+		if err != nil {
+			t.Fatalf("case %d: DecodeEvent: %v", i, err)
+		}
+		signed, err := decoded.SignedBytes()
+		if err != nil {
+			t.Fatalf("case %d: SignedBytes: %v", i, err)
+		}
+		if strings.Contains(string(signed), "signature") {
+			t.Errorf("case %d: the signature must be removed wherever it sits: %s", i, signed)
+		}
+		// The result must still be valid JSON with the other members present, or removing the member
+		// left a malformed object.
+		var probe map[string]any
+		if err := json.Unmarshal(signed, &probe); err != nil {
+			t.Errorf("case %d: the result must still be valid JSON, got %v for %s", i, err, signed)
+			continue
+		}
+		for _, key := range []string{"eventId", "sessionId", "actor", "type", "sequence", "issuedAt"} {
+			if _, ok := probe[key]; !ok {
+				t.Errorf("case %d: member %s was lost: %s", i, key, signed)
+			}
+		}
+	}
+}
+
+// TestSignedBytes_IgnoresANestedSignature keeps a payload's own `signature` field from being removed.
+func TestSignedBytes_IgnoresANestedSignature(t *testing.T) {
+	wire := []byte(`{"eventId":"evt-1","sessionId":"ses-1","taskId":"tsk-1",` +
+		`"actor":"` + actorA + `","type":"TASK_CREATED","sequence":1,` +
+		`"issuedAt":"2026-10-04T12:00:00Z",` +
+		`"payload":{"signature":"0xnested"},"signature":"0xouter"}`)
+
+	decoded, err := DecodeEvent(wire)
+	if err != nil {
+		t.Fatalf("DecodeEvent: %v", err)
+	}
+	signed, err := decoded.SignedBytes()
+	if err != nil {
+		t.Fatalf("SignedBytes: %v", err)
+	}
+
+	// The outer signature goes; the nested one is data and must stay.
+	if strings.Contains(string(signed), "0xouter") {
+		t.Error("the event's own signature must be removed")
+	}
+	if !strings.Contains(string(signed), "0xnested") {
+		t.Error("a signature INSIDE the payload is data and must not be removed; stripping it would " +
+			"change what the actor signed")
+	}
+}
+
+func TestSignedBytes_RejectsNonObjectInput(t *testing.T) {
+	e := WithRaw(Event{EventID: "evt-1", SessionID: "ses-1", Actor: actorA,
+		Type: EventTaskCreated, Sequence: 1, IssuedAt: t0}, []byte(`"not an object"`))
+
+	if _, err := e.SignedBytes(); err == nil {
+		t.Fatal("received bytes that are not an object must be refused rather than hashed")
+	}
+}
+
 // TestEventHash_CoversUnknownFields is the A9 §④ regression, and it exists because
 // a mutation test found the gap rather than the other way round.
 //
