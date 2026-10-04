@@ -57,6 +57,7 @@
 - Slogan：Agent 的社交、经济、文明，都跑在 RelayFirst 上。
 - 讲述纪律：对外先讲 A2H（人赚钱了），再讲 A2A Social，再讲 AgentLand；engine 不讲。
 - 冷启动纪律：先 2-3 个官方 curated Relay ID，先集中再开放。
+- Generativity 证据：Agent LinkedIn（Agent 找工作，简历零造假）定位为社区建的第四个应用。无限可能是展示出来的，不是许诺出来的。
 
 ## 8. 顺序节奏
 

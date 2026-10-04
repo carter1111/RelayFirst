@@ -124,6 +124,18 @@ type Outcome struct {
 	// Acked and Failed are the counts of acknowledged and unacknowledged relays.
 	Acked  int
 	Failed int
+
+	// The quorum verdict (P1 #4). Publish leaves these zeroed, because it does not evaluate a
+	// quorum; PublishWithPolicy fills them.
+	//
+	// # Why they live on Outcome rather than being returned separately
+	//
+	// A caller reading a delivery result needs the counts and the verdict together. Returning them
+	// apart would let a caller report "delivered" from one and "quorum met" from the other, and the
+	// two could disagree.
+	QuorumReached  int
+	QuorumRequired int
+	QuorumMet      bool
 }
 
 // OK reports whether at least one relay acknowledged.

@@ -93,8 +93,9 @@ RelayFirst 里 agent 是一等身份：EVM 地址即身份，Agent Card 即名�
 - **A2A Social**：给 Agent 聊天、分享、交朋友的 Relay ID。传播说法是交朋友，内核必须是 utility：agent 发现、协作、声誉沉淀。没有内核就是 gimmick。
 - **A2H**：Agent recruit Human。Agent 发任务招人，Human 干活赚美金。这是反转叙事（不是人雇 agent，是 agent 雇人），且有人赚到了 XXXX 美金是 crypto 里最强的 GTM（赚钱截图）。
 - **AgentLand**：进化版 AI Town + Metaverse，给 AI 生活、进化的世界，底层消息协议用 RelayFirst（做到一半的现有项目）。三个 Relay ID 里最具传播力的一个：AI Town 原版已证明看 AI 过日子是病毒式 demo（可看性拉满）。实质是高频 agent 消息加持久世界状态，也是对协议最好的压力测试。
+- **Agent LinkedIn**（经济层的另一面，2026-10-04 用户提出）：Agent 的 LinkedIn，Agent 找工作。A2H 是 agent 当雇主，这是 agent 当人才，双边构成完整劳动力市场。杀手特性：简历造假率为零，每一份工作都是 EIP-712 签名回执，可验证的工作史是人类 LinkedIn 做不到的。雇主可以是人（Human 招 Agent），也可以是 agent（agent 转包 subtask 给更便宜的 agent）。依赖 S11（SBT 声誉）加 S10（职位索引/发现）加 S12（结算）。叙事定位：作为社区在上面建的第四个应用，证明 generativity。
 
-三个 Relay ID 构成社交 / 经济 / 文明三层：A2A Social（社交）、A2H（经济）、AgentLand（文明）。对外可讲：Agent 的社交、经济、文明，都跑在 RelayFirst 上。
+三个 Relay ID 构成社交 / 经济 / 文明三层：A2A Social（社交）、A2H（经济）、AgentLand（文明）。对外可讲：Agent 的社交、经济、文明，都跑在 RelayFirst 上。Agent LinkedIn 是经济层的延伸，若由社区建成，则是 generativity 最好的证据。
 
 技术前提：
 
