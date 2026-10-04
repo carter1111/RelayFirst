@@ -194,10 +194,9 @@ func TestHashHex_FormatMatchesReceiptValidator(t *testing.T) {
 		Status:      200,
 	}
 	r := receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: "0x01",
-		AgentID:   "agent:eip155:8453:0x0000000000000000000000000000000000000001",
-		Epoch:     1,
+		Schema:  receipt.Schema,
+		AgentID: "agent:eip155:8453:0x0000000000000000000000000000000000000001",
+		Epoch:   1,
 		Task: receipt.Task{
 			Type:          receipt.TaskProbe,
 			Spec:          map[string]any{"url": "https://example.com"},
@@ -207,6 +206,12 @@ func TestHashHex_FormatMatchesReceiptValidator(t *testing.T) {
 		Result:  receipt.Result{Value: "200", Hash: h},
 		Anchors: []receipt.Anchor{a},
 	}
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+
 	if err := r.ValidateStructure(); err != nil {
 		t.Errorf("anchor produced here must satisfy the receipt validator: %v", err)
 	}

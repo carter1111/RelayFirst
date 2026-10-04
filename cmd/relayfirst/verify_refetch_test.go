@@ -33,10 +33,9 @@ func writeSignedReceipt(t *testing.T, url, contentHash string) string {
 	}
 
 	r := &receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: "0x4f1a4e0d3c2b1a09f8e7d6c5b4a39281706958473a2b1c0d9e8f7a6b5c4d3e2f",
-		AgentID:   agentID,
-		Epoch:     42,
+		Schema:  receipt.Schema,
+		AgentID: agentID,
+		Epoch:   42,
 		Task: receipt.Task{
 			Type:          receipt.TaskProbe,
 			Spec:          map[string]any{"url": url},
@@ -61,6 +60,14 @@ func writeSignedReceipt(t *testing.T, url, contentHash string) string {
 		}},
 		Verification: receipt.Verification{Status: receipt.VerificationPending, Stake: 50},
 	}
+	// Derive the id from the signed payload; Validate rejects a free-standing one
+	// (S9-0h, finding B2).
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+
 	if err := r.Sign(refetchTestKey); err != nil {
 		t.Fatalf("Sign: %v", err)
 	}

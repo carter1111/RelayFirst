@@ -142,10 +142,9 @@ func mkReceipt(t *testing.T, key, id, url, value, valueSeed, cHash string) *rece
 	t.Helper()
 
 	r := &receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: id,
-		AgentID:   agentOf(t, key),
-		Epoch:     scoring.EpochOf(time.Unix(1791015900, 0)),
+		Schema:  receipt.Schema,
+		AgentID: agentOf(t, key),
+		Epoch:   scoring.EpochOf(time.Unix(1791015900, 0)),
 		Task: receipt.Task{
 			Type:          receipt.TaskProbe,
 			Spec:          map[string]any{"url": url},
@@ -157,6 +156,16 @@ func mkReceipt(t *testing.T, key, id, url, value, valueSeed, cHash string) *rece
 		Anchors:      []receipt.Anchor{{URL: url, ContentHash: cHash, FetchedAt: 1791015810, Status: 200, Bytes: 32}},
 		Verification: receipt.Verification{Status: receipt.VerificationPending},
 	}
+
+	// Derive the id from the signed payload; Validate rejects a free-standing one
+	// (S9-0h, finding B2). The `id` argument still distinguishes fixtures through
+	// SpecHash above, so derived ids stay distinct.
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+
 	if err := r.Sign(key); err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -364,10 +373,9 @@ func TestRedTeamC_ReplayOfAnotherAgentsReceiptEarnsNothing(t *testing.T) {
 	}
 
 	original := &receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: "0x" + strings.Repeat("c1", 32),
-		AgentID:   honestAgent,
-		Epoch:     scoring.EpochOf(time.Unix(1791015900, 0)),
+		Schema:  receipt.Schema,
+		AgentID: honestAgent,
+		Epoch:   scoring.EpochOf(time.Unix(1791015900, 0)),
 		Task: receipt.Task{
 			Type:          receipt.TaskProbe,
 			Spec:          spec,
@@ -379,6 +387,13 @@ func TestRedTeamC_ReplayOfAnotherAgentsReceiptEarnsNothing(t *testing.T) {
 		Anchors:      anchors,
 		Verification: receipt.Verification{Status: receipt.VerificationPending},
 	}
+	// Derive the id from the signed payload (S9-0h, finding B2).
+	origID, err := original.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	original.ReceiptID = origID
+
 	if err := original.Sign(keyHonest); err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -398,11 +413,13 @@ func TestRedTeamC_ReplayOfAnotherAgentsReceiptEarnsNothing(t *testing.T) {
 	t.Run("resubmitted unchanged", func(t *testing.T) {
 		// The replay carries the original's identity, so it cannot be attributed to the
 		// attacker.
-		replayed := mkReceipt(t, keyHonest, "0x"+strings.Repeat("c1", 32), srv.URL,
-			"200", "honest-c", hash32("content-c"))
+		// A replay is the *same* receipt resubmitted, so copy it verbatim rather
+		// than rebuilding it. Rebuilding produces a different payload (and now a
+		// different derived id), which would test a different scenario.
+		replayed := *original
 
 		attackerBefore := s.ledgers.Points.Balance(attackerAgent)
-		s.score(t, replayed, source)
+		s.score(t, &replayed, source)
 
 		if got := s.ledgers.Points.Balance(attackerAgent); got > attackerBefore {
 			t.Errorf("a replay credited the resubmitter: %v -> %v", attackerBefore, got)

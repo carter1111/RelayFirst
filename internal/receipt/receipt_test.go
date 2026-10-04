@@ -27,11 +27,10 @@ func sha32(ch string) string { return "sha256:" + strings.Repeat(ch, 32) }
 
 func validReceipt(t *testing.T) Receipt {
 	t.Helper()
-	return Receipt{
-		Schema:    Schema,
-		ReceiptID: "0x" + strings.Repeat("9a", 32),
-		AgentID:   testAgentID(t),
-		Epoch:     42,
+	r := Receipt{
+		Schema:  Schema,
+		AgentID: testAgentID(t),
+		Epoch:   42,
 		Task: Task{
 			Type:          TaskProbe,
 			Spec:          map[string]any{"url": "https://api.example.com/health"},
@@ -59,6 +58,17 @@ func validReceipt(t *testing.T) Receipt {
 			Stake:  50,
 		},
 	}
+
+	// Derive the id from the signed payload rather than hard-coding it, because
+	// Validate now rejects a free-standing id (S9-0h, finding B2). A fixture with
+	// an arbitrary id would be exercising the check rather than the code under
+	// test.
+	id, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("derive receipt id: %v", err)
+	}
+	r.ReceiptID = id
+	return r
 }
 
 func TestValidateStructure_AcceptsValid(t *testing.T) {

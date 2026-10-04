@@ -23,10 +23,9 @@ func demoReceipt(t *testing.T) *receipt.Receipt {
 	}
 
 	r := &receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: "0x4f1a4e0d3c2b1a09f8e7d6c5b4a39281706958473a2b1c0d9e8f7a6b5c4d3e2f",
-		AgentID:   agentID,
-		Epoch:     42,
+		Schema:  receipt.Schema,
+		AgentID: agentID,
+		Epoch:   42,
 		Task: receipt.Task{
 			Type:          receipt.TaskProbe,
 			Spec:          map[string]any{"url": "https://api.example.com/health"},
@@ -54,6 +53,14 @@ func demoReceipt(t *testing.T) *receipt.Receipt {
 		}},
 		Verification: receipt.Verification{Status: receipt.VerificationPending, Stake: 50},
 	}
+
+	// Derive the id from the signed payload: Validate rejects a free-standing id
+	// (S9-0h, finding B2).
+	id, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("derive receipt id: %v", err)
+	}
+	r.ReceiptID = id
 
 	if err := r.Sign(demoPrivKey); err != nil {
 		t.Fatalf("Sign: %v", err)

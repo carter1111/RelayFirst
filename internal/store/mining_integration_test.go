@@ -65,6 +65,15 @@ func mkProbe(t *testing.T, key, url, cHash, id string) *receipt.Receipt {
 		Verification: receipt.Verification{Status: receipt.VerificationPending},
 	}
 
+	// The id is derived from the signed payload, not chosen (S9-0h, finding B2).
+	// The `id` parameter is ignored so this fixture cannot accidentally exercise
+	// the id guard instead of the dedup behaviour under test.
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+
 	if err := r.Sign(key); err != nil {
 		t.Fatalf("Sign: %v", err)
 	}

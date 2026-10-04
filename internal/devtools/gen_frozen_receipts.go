@@ -63,10 +63,9 @@ func cases() []case_ {
 			name: "probe-basic",
 			make: func(a string) receipt.Receipt {
 				return receipt.Receipt{
-					Schema:    receipt.Schema,
-					ReceiptID: "0x" + strings.Repeat("9a", 32),
-					AgentID:   a,
-					Epoch:     42,
+					Schema:  receipt.Schema,
+					AgentID: a,
+					Epoch:   42,
 					Task: receipt.Task{
 						Type:          receipt.TaskProbe,
 						Spec:          map[string]any{"url": "https://api.example.com/health"},
@@ -97,10 +96,9 @@ func cases() []case_ {
 			name: "extract-verbatim-payload",
 			make: func(a string) receipt.Receipt {
 				return receipt.Receipt{
-					Schema:    receipt.Schema,
-					ReceiptID: "0x" + strings.Repeat("8b", 32),
-					AgentID:   a,
-					Epoch:     43,
+					Schema:  receipt.Schema,
+					AgentID: a,
+					Epoch:   43,
 					Task: receipt.Task{
 						Type:          receipt.TaskExtract,
 						Spec:          map[string]any{"url": "https://api.example.com/ticker", "field": "price"},
@@ -158,6 +156,15 @@ func main() {
 			os.Exit(1)
 		}
 		r.Payload = string(payload)
+
+		// Derive the id from the signed payload. Validate rejects a free-standing
+		// id (S9-0h, finding B2), so the corpus must carry the derived one.
+		id, err := r.DerivedReceiptID()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s: derive receipt id: %v\n", c.name, err)
+			os.Exit(1)
+		}
+		r.ReceiptID = id
 
 		if err := r.Sign(frozenKey); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: sign: %v\n", c.name, err)

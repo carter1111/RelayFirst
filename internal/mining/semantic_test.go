@@ -395,10 +395,9 @@ func TestExtract_SemanticResultIsVerifiableShape(t *testing.T) {
 
 	// The receipt validator accepts the shape.
 	rec := receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: "0x01",
-		AgentID:   "agent:eip155:8453:0x0000000000000000000000000000000000000001",
-		Epoch:     1,
+		Schema:  receipt.Schema,
+		AgentID: "agent:eip155:8453:0x0000000000000000000000000000000000000001",
+		Epoch:   1,
 		Task: receipt.Task{
 			Type:          receipt.TaskExtract,
 			Spec:          map[string]any{"url": srv.URL},
@@ -409,6 +408,12 @@ func TestExtract_SemanticResultIsVerifiableShape(t *testing.T) {
 		Result:  res,
 		Anchors: anchors,
 	}
+	derived, err := rec.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	rec.ReceiptID = derived
+
 	if err := rec.ValidateStructure(); err != nil {
 		t.Errorf("semantic extract produced a receipt the validator rejects: %v", err)
 	}

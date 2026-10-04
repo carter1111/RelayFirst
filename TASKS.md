@@ -458,21 +458,24 @@ race 门禁补覆盖时**找到一个真实 bug**：
 
 | id | 任务 | 严重度 | 状态 |
 |---|---|---|---|
-| **S9-0h** | **把 `receiptId` 与 schema 绑进签名载荷** | **critical（B2+B3）** | ⬜ todo — `receiptId` 未签名却是去重/积分/verdict 的键；`schema` 未签名且 major 被忽略 → **跨版本签名混淆**（v1 回执可改标为 v2 而仍通过）。**这两条使 A6 与 A9 §② 名不副实** |
+| **S9-0h** | **把 `receiptId` 与 schema 绑进签名载荷** | **critical（B2+B3）** | ✅ **done** — ①**`receiptId`**：`Validate` 重算 `DerivedReceiptID()`（= `sha256(SignedPayload())`）并比对；**不改签名字节**，故对 v1 回执同样生效（`checkReceiptID`）。②**schema**：引入**版本 profile** —— v1 的 domain `Version` 与消息字段**逐字节冻结**（3 字段），v2 起绑定 `receiptId` + `schemaMajor`（5 字段，domain `Version="2"`）。**改标 v1→v2 会换 digest → 签名失败**。**实测**：`TestTypedData_V1ProfileIsFrozen` 锁定 v1 形状；`TestTypedData_ProfilesDiffer` 证明两 profile digest 不同；`TestReceiptID_TamperedIDIsRejected` 断言重发被拒。**非空转**：禁用 `checkReceiptID` → 测试 FAIL |
 | **S9-0i** | **`canonicalJSON` 加数字分支**（`float64` / `json.Number`） | **high（H1）** | ⬜ todo — `Task.Spec` 含数字会让**导出崩**或让**合法回执验证失败** |
-| **S9-0j** | **生产调用方区分 `UnsupportedError`** | **high（H2）** | ⬜ todo — 类型只在测试里被 `errors.As`；CLI/verdict/miner 都映射为 `false` → **"我验不了"被报成"这是伪造"**，正是 S9-0a 要避免的 |
+| **S9-0j** | **生产调用方区分 `UnsupportedError`** | **high（H2）** | ⬜ todo — 类型只在测试里被 `errors.As`；CLI/verdict/miner 都映射为 `false` → **"我验不了"被报成"这是伪造"** |
 | **S9-0k** | **语料 SHA-256 清单 + 生成器拒绝覆盖** | medium（M1） | ⬜ todo — 否则"重新生成"可**悄悄重写绊线**，append-only 失效 |
 
 **发布门槛（来自审查）：**
 
 ```text
-首发前必修：  B1（✅ 已修）· B2 · B3 · H1 · 并解决 B4
+首发前必修：  B1（✅ 已修）· B2（✅ 已修）· B3（✅ 已修）· H1（⬜）· 并解决 B4（⬜）
 声称 A9 合规前：H2 · M1 · M2 · L2
 可后置：      M3 · L1 · L3
 ```
 
-> **⚠️ 在 B2/B3 修好之前，不应声称满足 A9。**
-> 当前状态是"版本化地基已开始，但**签名字节与信封字段之间仍有未绑定的信任输入**"。
+> **⚠️ B2/B3 已修，但 A9 仍不应声称合规** —— H1（数字分支）与 B4（严格解码）未解决。
+> **实现 B2/B3 时发现：全仓库有 ~15 处测试夹具用了自由设定的 `receiptId`**，
+> 它们**全部**在检查生效后失败 —— 这本身就是 B2 真实性的证据（生产代码一直正确派生 id，
+> 但**没有任何东西强制它**）。夹具已改为派生，并**顺带修正了两处错误断言**
+> （`All()` 的顺序契约、replay 必须逐字节复制而非重建）。
 
 > **⚠️ 实现中发现并修复了一个真实安全缺陷（值得记住）：**
 > S9-0b2 初版**只哈希 payload 字节，不比对结构化字段**。于是两者可**不一致** ——

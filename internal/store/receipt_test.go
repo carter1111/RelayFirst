@@ -8,23 +8,41 @@ import (
 	"github.com/relayfirst/relayfirst/internal/receipt"
 )
 
-func mkReceipt(id, agentID string, epoch uint64) *receipt.Receipt {
-	return &receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: id,
-		AgentID:   agentID,
-		Epoch:     epoch,
+// mkReceipt builds a valid receipt whose id is derived from its signed payload.
+//
+// It returns the receipt and its derived id. Callers must use the returned id for
+// lookups rather than assuming the label they passed in: Validate rejects a
+// free-standing id (S9-0h, finding B2), so the derived value is the only one that
+// will match.
+//
+// `variant` distinguishes otherwise-identical fixtures. Since the id is a hash of
+// the payload, two receipts built with the same agent and epoch would collapse to
+// the same id and the second save would be a no-op — which silently broke a test
+// that needed two distinct rows. The variant feeds a signed field, so the ids
+// genuinely differ.
+func mkReceipt(agentID string, epoch uint64, variant string) (*receipt.Receipt, string) {
+	r := &receipt.Receipt{
+		Schema:  receipt.Schema,
+		AgentID: agentID,
+		Epoch:   epoch,
 		Task: receipt.Task{
 			Type:          receipt.TaskProbe,
-			Spec:          map[string]any{"url": "https://example.com"},
+			Spec:          map[string]any{"url": "https://example.com/" + variant},
 			SpecHash:      "sha256:" + strings.Repeat("3d", 32),
 			SelfGenerated: true,
 		},
 		Work:         receipt.Work{Provider: "local", StartedAt: 1, FinishedAt: 2},
 		Result:       receipt.Result{Value: "200", Hash: "sha256:" + strings.Repeat("c1", 32)},
-		Anchors:      []receipt.Anchor{{URL: "https://example.com", ContentHash: "sha256:" + strings.Repeat("7b", 32), FetchedAt: 1, Status: 200, Bytes: 10}},
+		Anchors:      []receipt.Anchor{{URL: "https://example.com/" + variant, ContentHash: "sha256:" + strings.Repeat("7b", 32), FetchedAt: 1, Status: 200, Bytes: 10}},
 		Verification: receipt.Verification{Status: receipt.VerificationPending},
 	}
+
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		panic(err)
+	}
+	r.ReceiptID = derived
+	return r, derived
 }
 
 func TestReceiptStore_SaveAndLoad(t *testing.T) {
@@ -32,12 +50,12 @@ func TestReceiptStore_SaveAndLoad(t *testing.T) {
 	s := NewReceiptStore(db)
 	at := time.Unix(1791015800, 0)
 
-	r := mkReceipt("0xaaa", agentA, 42)
+	r, id := mkReceipt(agentA, 42, "a")
 	if err := s.Save(r, "sha256:key1", at); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	got, ok, err := s.Load("0xaaa")
+	got, ok, err := s.Load(id)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -60,7 +78,7 @@ func TestReceiptStore_RoundTripPreservesSignature(t *testing.T) {
 	s := NewReceiptStore(db)
 	at := time.Unix(1791015800, 0)
 
-	r := mkReceipt("0xbbb", agentA, 42)
+	r, id := mkReceipt(agentA, 42, "b")
 	if err := r.ValidateStructure(); err != nil {
 		t.Fatalf("the fixture itself should be valid: %v", err)
 	}
@@ -68,7 +86,7 @@ func TestReceiptStore_RoundTripPreservesSignature(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	got, ok, err := s.Load("0xbbb")
+	got, ok, err := s.Load(id)
 	if err != nil || !ok {
 		t.Fatalf("Load: ok=%v err=%v", ok, err)
 	}
@@ -104,18 +122,21 @@ func TestReceiptStore_SaveIsIdempotent(t *testing.T) {
 	s := NewReceiptStore(db)
 	at := time.Unix(1791015800, 0)
 
-	r := mkReceipt("0xccc", agentA, 1)
+	r, id := mkReceipt(agentA, 1, "c")
 	if err := s.Save(r, "", at); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
 	// A different receipt claiming the same id must not overwrite the original.
-	impostor := mkReceipt("0xccc", agentB, 99)
+	// A different receipt must not be able to overwrite by reusing an id: the id
+	// is derived from the payload, so an impostor necessarily has a different one.
+	impostor, _ := mkReceipt(agentB, 99, "d")
+	impostor.ReceiptID = id
 	if err := s.Save(impostor, "", at); err != nil {
 		t.Fatalf("Save impostor: %v", err)
 	}
 
-	got, _, err := s.Load("0xccc")
+	got, _, err := s.Load(id)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -132,7 +153,8 @@ func TestReceiptStore_SurvivesReopen(t *testing.T) {
 	s := NewReceiptStore(db)
 	at := time.Unix(1791015800, 0)
 
-	if err := s.Save(mkReceipt("0xddd", agentA, 7), "sha256:k", at); err != nil {
+	rD, idD := mkReceipt(agentA, 7, "e")
+	if err := s.Save(rD, "sha256:k", at); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	db.Close()
@@ -143,7 +165,7 @@ func TestReceiptStore_SurvivesReopen(t *testing.T) {
 	}
 	defer db2.Close()
 
-	got, ok, err := NewReceiptStore(db2).Load("0xddd")
+	got, ok, err := NewReceiptStore(db2).Load(idD)
 	if err != nil || !ok {
 		t.Fatalf("Load after reopen: ok=%v err=%v", ok, err)
 	}
@@ -158,16 +180,19 @@ func TestReceiptStore_Queries(t *testing.T) {
 	at := time.Unix(1791015800, 0)
 
 	// Two for agentA in epoch 42, one for agentA in epoch 43, one for agentB.
-	mustSave := func(id, agent string, epoch uint64, key string) {
+	mustSave := func(agent string, epoch uint64, variant, key string) {
 		t.Helper()
-		if err := s.Save(mkReceipt(id, agent, epoch), key, at); err != nil {
-			t.Fatalf("Save %s: %v", id, err)
+		r, _ := mkReceipt(agent, epoch, variant)
+		if err := s.Save(r, key, at); err != nil {
+			t.Fatalf("Save: %v", err)
 		}
 	}
-	mustSave("0x1", agentA, 42, "sha256:k1")
-	mustSave("0x2", agentA, 42, "sha256:k1")
-	mustSave("0x3", agentA, 43, "sha256:k3")
-	mustSave("0x4", agentB, 42, "sha256:k4")
+	// Two for agentA in epoch 42 with the same artifact key, one for agentA in
+	// epoch 43, one for agentB.
+	mustSave(agentA, 42, "q1", "sha256:k1")
+	mustSave(agentA, 42, "q2", "sha256:k1")
+	mustSave(agentA, 43, "q3", "sha256:k3")
+	mustSave(agentB, 42, "q4", "sha256:k4")
 
 	byAgent, err := s.ByAgent(agentA, 42)
 	if err != nil {
@@ -195,7 +220,8 @@ func TestReceiptStore_RejectsBadInput(t *testing.T) {
 		t.Error("a nil receipt must be rejected")
 	}
 
-	noID := mkReceipt("", agentA, 1)
+	noID, _ := mkReceipt(agentA, 1, "z")
+	noID.ReceiptID = ""
 	if err := s.Save(noID, "", at); err == nil {
 		t.Error("a receipt with no id must be rejected")
 	}

@@ -35,10 +35,24 @@ func (s *stubFetcher) Capture(_ context.Context, url string) (receipt.Anchor, []
 }
 
 func anchorReceipt(id, url, cHash string) *receipt.Receipt {
-	return &receipt.Receipt{
-		ReceiptID: id,
-		Anchors:   []receipt.Anchor{{URL: url, ContentHash: cHash, Status: 200, Bytes: 4}},
+	r := &receipt.Receipt{
+		AgentID: "agent:eip155:8453:0x0000000000000000000000000000000000000001",
+		Epoch:   1,
+		Anchors: []receipt.Anchor{{URL: url, ContentHash: cHash, Status: 200, Bytes: 4}},
 	}
+	// Derive the id from the payload (S9-0h, finding B2). `id` still distinguishes
+	// fixtures via the anchor URL above.
+	r.ReceiptID = derivedID(r)
+	return r
+}
+
+// derivedID derives a receipt id, panicking on an impossible error.
+func derivedID(r *receipt.Receipt) string {
+	id, err := r.DerivedReceiptID()
+	if err != nil {
+		panic(err)
+	}
+	return id
 }
 
 // TestAnchorConsistency_AcceptsMatchingEvidence is the honest case.

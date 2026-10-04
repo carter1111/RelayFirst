@@ -13,8 +13,11 @@
 package receipt
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -201,7 +204,44 @@ func (r Receipt) SignedPayload() ([]byte, error) {
 //
 // The domain is chain-agnostic (MVP.md §8, ARCHITECTURE.md §3.6): signing an
 // offchain receipt must never require chain knowledge.
+//
+// # Version profiles (S9-0h)
+//
+// The profile is chosen by the receipt's declared schema major, and each major's
+// bytes are frozen:
+//
+//	v1  domain Version "1", message {agentId, epoch, payloadHash}
+//	v2  domain Version "2", message {agentId, epoch, payloadHash, receiptId, schemaMajor}
+//
+// # Why v1 is not changed
+//
+// The obvious fix for "schema is unauthenticated" is to add the schema to the
+// signed message. Doing that unconditionally would change the digest of every
+// receipt already in existence and invalidate all of them — the exact outcome A9
+// forbids. So the binding is introduced as a *new* profile: v1 keeps the bytes it
+// was signed with, and v2 onwards carries the binding.
+//
+// That is what closes the relabel attack: presenting a v1-signed receipt as v2
+// makes the verifier apply the v2 profile, whose digest differs, so the signature
+// fails.
 func (r Receipt) TypedData() (eip712.TypedData, error) {
+	major, _, ok := ParseSchema(r.Schema)
+	if !ok {
+		// A malformed schema is caught by ValidateStructure before signing, so
+		// reaching here means the caller skipped it. Fail loudly rather than
+		// guessing a profile, because guessing is how a receipt gets signed under
+		// the wrong rules.
+		return eip712.TypedData{}, invalid("cannot select a signing profile for malformed schema %q", r.Schema)
+	}
+	return r.typedDataForMajor(major)
+}
+
+// typedDataForMajor builds the typed data for a specific profile.
+//
+// It is separate from TypedData so verification can ask for a profile
+// independently of what the receipt claims, which is what makes the relabel
+// attack detectable.
+func (r Receipt) typedDataForMajor(major int) (eip712.TypedData, error) {
 	payload, err := r.SignedPayload()
 	if err != nil {
 		return eip712.TypedData{}, err
@@ -219,19 +259,71 @@ func (r Receipt) TypedData() (eip712.TypedData, error) {
 	// EIP-712 has no uint64; encode epoch as uint256.
 	types["RelayReceipt"][1].Type = "uint256"
 
+	message := map[string]any{
+		"agentId":     r.AgentID,
+		"epoch":       fmt.Sprintf("%d", r.Epoch),
+		"payloadHash": "0x" + toHex(payloadHash),
+	}
+
+	// v1 is frozen: it must keep exactly the bytes it was signed with.
+	version := "1"
+
+	if major >= 2 {
+		// Bind the two fields that were previously free-standing metadata:
+		// receiptId (the key every consumer dedups on) and the schema major
+		// (the version selector itself). Without these, an intermediary can
+		// relabel a v1 receipt as v2, or re-emit a valid receipt under a fresh
+		// id, and the signature would not notice.
+		version = strconv.Itoa(major)
+		types["RelayReceipt"] = append(types["RelayReceipt"],
+			eip712.Field{Name: "receiptId", Type: "string"},
+			eip712.Field{Name: "schemaMajor", Type: "uint256"},
+		)
+		message["receiptId"] = r.ReceiptID
+		message["schemaMajor"] = fmt.Sprintf("%d", major)
+	}
+
 	return eip712.TypedData{
 		Types:       types,
 		PrimaryType: "RelayReceipt",
 		Domain: eip712.Domain{
 			Name:    "RelayFirst",
-			Version: "1",
+			Version: version,
 		},
-		Message: map[string]any{
-			"agentId":     r.AgentID,
-			"epoch":       fmt.Sprintf("%d", r.Epoch),
-			"payloadHash": "0x" + toHex(payloadHash),
-		},
+		Message: message,
 	}, nil
+}
+
+// ReceiptIDFromPayload is the canonical derivation of a receipt id.
+//
+// # Why this is a correctness function, not a convenience
+//
+// receiptId is not inside the signed payload, so nothing about the signature
+// covers it — yet it is the key that the store, the dedup ledger, points
+// idempotency and verdict lookup all use. An attacker holding one valid receipt
+// could re-emit it under arbitrary fresh ids and defeat every one of those
+// checks, because each new id looks like a new receipt.
+//
+// The id is deterministic from the signed payload, so the fix does not need a
+// signature change: recompute it and reject any receipt whose id does not match.
+// A tampered id then fails even though the signature still verifies, and the
+// check applies to v1 receipts too, which is what makes it a fix rather than a
+// new-version-only mitigation.
+func ReceiptIDFromPayload(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return "0x" + hex.EncodeToString(sum[:])
+}
+
+// DerivedReceiptID returns the canonical id for this receipt's signed payload.
+//
+// Named "derived" rather than "receiptId" to avoid colliding with the ReceiptID
+// field, which is what the receipt *claims*; this is what it must equal.
+func (r Receipt) DerivedReceiptID() (string, error) {
+	payload, err := r.SignedPayload()
+	if err != nil {
+		return "", err
+	}
+	return ReceiptIDFromPayload(payload), nil
 }
 
 // Digest returns the EIP-712 signing digest.
@@ -353,6 +445,46 @@ func (r Receipt) ValidateStructure() error {
 		}
 	}
 
+	// receiptId is outside the signed payload, so the signature does not cover it
+	// — but it is the key the store, the dedup ledger, points idempotency and
+	// verdict lookup all use (S9-0h, finding B2).
+	//
+	// Without this check an attacker holding one valid receipt can re-emit it
+	// under arbitrary fresh ids. Each new id defeats the store conflict, the
+	// mailbox dedup and the points idempotency guard, because each looks like a
+	// different receipt — which breaks the global-dedup invariant (A6).
+	//
+	// The id is deterministic from the signed payload, so no signature change is
+	// needed: recompute and compare. This applies to v1 receipts as well, which
+	// is what makes it a fix rather than a new-version-only mitigation.
+	if err := r.checkReceiptID(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// checkReceiptID recomputes the receipt id from the signed payload and rejects a
+// mismatch.
+//
+// The recomputation is over SignedPayload, so it is a function of signed bytes
+// only. A receipt whose id was swapped fails here even though its signature still
+// verifies.
+func (r Receipt) checkReceiptID() error {
+	if strings.TrimSpace(r.ReceiptID) == "" {
+		// Reported by the structural checks above; nothing to recompute against.
+		return nil
+	}
+
+	want, err := r.DerivedReceiptID()
+	if err != nil {
+		return invalid("cannot derive receiptId: %v", err)
+	}
+	if !strings.EqualFold(r.ReceiptID, want) {
+		return invalid(
+			"receiptId %s does not match the signed payload (derived %s); "+
+				"the id is a dedup key and must not be free-standing", r.ReceiptID, want)
+	}
 	return nil
 }
 

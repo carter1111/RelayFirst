@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/relayfirst/relayfirst/internal/eip712"
 )
 
 // Tests for the versioning foundation (S9-0, invariant A9 — MVP.md §17.4/§17.5).
@@ -403,5 +405,169 @@ func TestMarshalCanonical_PreservesPayload(t *testing.T) {
 	}
 	if err := back.Validate(nil); err != nil {
 		t.Fatalf("a payload-bearing receipt no longer verifies after a canonical round trip: %v", err)
+	}
+}
+
+// --- S9-0h: receiptId binding (finding B2) ------------------------------------
+
+// TestReceiptID_TamperedIDIsRejected is the fix for a critical finding.
+//
+// receiptId is outside the signed payload, so the signature never covered it —
+// yet it is the key the store, the dedup ledger, points idempotency and verdict
+// lookup all use. Before this check, an attacker holding one valid receipt could
+// re-emit it under arbitrary fresh ids, and each new id would defeat every one of
+// those guards, because each looked like a different receipt.
+func TestReceiptID_TamperedIDIsRejected(t *testing.T) {
+	r := validReceipt(t)
+	if err := r.Sign(testPrivKey); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	// Sanity: the untampered receipt is valid.
+	if err := r.Validate(nil); err != nil {
+		t.Fatalf("precondition: a correctly-derived id must validate: %v", err)
+	}
+
+	// Re-emit under a fresh id, which is the attack.
+	r.ReceiptID = "0x" + strings.Repeat("ab", 32)
+
+	err := r.Validate(nil)
+	if err == nil {
+		t.Fatal("a receipt re-emitted under a fresh id must be rejected; " +
+			"otherwise the dedup key is attacker-chosen and A6 is unenforced")
+	}
+	if !strings.Contains(err.Error(), "does not match the signed payload") {
+		t.Errorf("expected a receiptId mismatch, got: %v", err)
+	}
+}
+
+// TestReceiptID_DerivationIsPayloadBound confirms the id depends only on signed
+// bytes, which is what makes recomputation a valid check.
+func TestReceiptID_DerivationIsPayloadBound(t *testing.T) {
+	a := validReceipt(t)
+	b := validReceipt(t)
+
+	idA, err := a.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	idB, err := b.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	if idA != idB {
+		t.Fatal("the same payload must derive the same id (dedup depends on it)")
+	}
+
+	// A change to a signed field must change the id.
+	c := validReceipt(t)
+	c.Result.Value = "different"
+	idC, err := c.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	if idC == idA {
+		t.Error("changing a signed field must change the derived id")
+	}
+}
+
+// --- S9-0h: schema binding across versions (finding B3) ----------------------
+
+// TestTypedData_V1ProfileIsFrozen is the A9 §① guarantee for signing.
+//
+// v1 receipts are already in circulation. If the v1 profile changed, every one of
+// them would stop verifying — the exact outcome A9 forbids. So the v1 digest must
+// stay byte-identical: same domain version, same three message fields.
+func TestTypedData_V1ProfileIsFrozen(t *testing.T) {
+	r := validReceipt(t)
+	td, err := r.TypedData()
+	if err != nil {
+		t.Fatalf("typed data: %v", err)
+	}
+
+	if td.Domain.Version != "1" {
+		t.Errorf("v1 domain version must stay \"1\", got %q", td.Domain.Version)
+	}
+
+	fields := td.Types["RelayReceipt"]
+	if len(fields) != 3 {
+		t.Fatalf("v1 must sign exactly 3 fields, got %d: %+v", len(fields), fields)
+	}
+	for i, want := range []string{"agentId", "epoch", "payloadHash"} {
+		if fields[i].Name != want {
+			t.Errorf("v1 field %d = %q, want %q", i, fields[i].Name, want)
+		}
+	}
+}
+
+// TestTypedData_V2BindsSchemaAndReceiptID is the fix for B3.
+//
+// A v2 receipt must sign its schema major and its receiptId, so that relabelling
+// a v1 receipt as v2 (or swapping an id) changes the digest and fails the
+// signature rather than being silently accepted.
+func TestTypedData_V2BindsSchemaAndReceiptID(t *testing.T) {
+	r := validReceipt(t)
+	r.Schema = "relayfirst.receipt.v2"
+
+	td, err := r.typedDataForMajor(2)
+	if err != nil {
+		t.Fatalf("typed data: %v", err)
+	}
+
+	if td.Domain.Version != "2" {
+		t.Errorf("v2 domain version = %q, want \"2\"", td.Domain.Version)
+	}
+
+	names := map[string]bool{}
+	for _, f := range td.Types["RelayReceipt"] {
+		names[f.Name] = true
+	}
+	for _, want := range []string{"receiptId", "schemaMajor"} {
+		if !names[want] {
+			t.Errorf("the v2 profile must sign %q; otherwise it stays unauthenticated metadata", want)
+		}
+	}
+	if _, ok := td.Message["schemaMajor"]; !ok {
+		t.Error("the v2 message must carry schemaMajor")
+	}
+}
+
+// TestTypedData_ProfilesDiffer proves the relabel attack is closed: the same
+// receipt signed under v1 and validated under v2 must produce a different digest,
+// so the signature cannot carry over.
+func TestTypedData_ProfilesDiffer(t *testing.T) {
+	r := validReceipt(t)
+
+	v1, err := r.typedDataForMajor(1)
+	if err != nil {
+		t.Fatalf("v1 typed data: %v", err)
+	}
+	v2, err := r.typedDataForMajor(2)
+	if err != nil {
+		t.Fatalf("v2 typed data: %v", err)
+	}
+
+	d1, err := eip712.HashTypedData(v1)
+	if err != nil {
+		t.Fatalf("v1 digest: %v", err)
+	}
+	d2, err := eip712.HashTypedData(v2)
+	if err != nil {
+		t.Fatalf("v2 digest: %v", err)
+	}
+
+	if string(d1) == string(d2) {
+		t.Fatal("the v1 and v2 profiles must differ, or a v1 signature would verify under v2 rules")
+	}
+}
+
+// TestTypedData_MalformedSchemaIsRejected confirms signing refuses to guess a
+// profile. Guessing is how a receipt gets signed under the wrong rules.
+func TestTypedData_MalformedSchemaIsRejected(t *testing.T) {
+	r := validReceipt(t)
+	r.Schema = "not-a-schema"
+
+	if _, err := r.TypedData(); err == nil {
+		t.Fatal("a malformed schema must not silently select a signing profile")
 	}
 }

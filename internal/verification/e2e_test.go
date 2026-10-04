@@ -71,10 +71,9 @@ func TestEndToEnd_HonestWorkVerifiesAgainstTheRealExecutor(t *testing.T) {
 	}
 
 	r := &receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: "0x" + strings.Repeat("f1", 32),
-		AgentID:   agentOf(t, keyProducer),
-		Epoch:     7,
+		Schema:  receipt.Schema,
+		AgentID: agentOf(t, keyProducer),
+		Epoch:   7,
 		Task: receipt.Task{
 			Type:          receipt.TaskExtract,
 			Spec:          spec,
@@ -86,6 +85,14 @@ func TestEndToEnd_HonestWorkVerifiesAgainstTheRealExecutor(t *testing.T) {
 		Anchors:      anchors,
 		Verification: receipt.Verification{Status: receipt.VerificationPending},
 	}
+	// Derive the id from the signed payload; Validate rejects a free-standing one
+	// (S9-0h, finding B2).
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+
 	if err := r.Sign(keyProducer); err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -122,10 +129,9 @@ func TestEndToEnd_TamperedResultIsRejectedAgainstTheRealExecutor(t *testing.T) {
 	}
 
 	r := &receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: "0x" + strings.Repeat("f2", 32),
-		AgentID:   agentOf(t, keyProducer),
-		Epoch:     7,
+		Schema:  receipt.Schema,
+		AgentID: agentOf(t, keyProducer),
+		Epoch:   7,
 		Task: receipt.Task{
 			Type:          receipt.TaskExtract,
 			Spec:          spec,
@@ -138,6 +144,14 @@ func TestEndToEnd_TamperedResultIsRejectedAgainstTheRealExecutor(t *testing.T) {
 		Anchors:      []receipt.Anchor{{URL: srv.URL, ContentHash: hash32("content"), FetchedAt: 1791015810, Status: 200, Bytes: 20}},
 		Verification: receipt.Verification{Status: receipt.VerificationPending},
 	}
+	// Derive the id from the signed payload; Validate rejects a free-standing one
+	// (S9-0h, finding B2).
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+
 	if err := r.Sign(keyProducer); err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -234,10 +248,9 @@ func TestEndToEnd_CommitmentRecordedThroughTheRealVerifier(t *testing.T) {
 	}
 
 	r := &receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: "0x" + strings.Repeat("f6", 32),
-		AgentID:   agentOf(t, keyProducer),
-		Epoch:     7,
+		Schema:  receipt.Schema,
+		AgentID: agentOf(t, keyProducer),
+		Epoch:   7,
 		Task: receipt.Task{
 			Type:          receipt.TaskExtract,
 			Spec:          spec,
@@ -249,6 +262,14 @@ func TestEndToEnd_CommitmentRecordedThroughTheRealVerifier(t *testing.T) {
 		Anchors:      anchors,
 		Verification: receipt.Verification{Status: receipt.VerificationPending},
 	}
+	// Derive the id from the signed payload; Validate rejects a free-standing one
+	// (S9-0h, finding B2).
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+
 	if err := r.Sign(keyProducer); err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -302,10 +323,9 @@ func TestEndToEnd_CommitmentIsBoundToATimestamp(t *testing.T) {
 	fixed := time.Unix(1791015900, 0)
 
 	r := &receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: "0x" + strings.Repeat("f7", 32),
-		AgentID:   agentOf(t, keyProducer),
-		Epoch:     7,
+		Schema:  receipt.Schema,
+		AgentID: agentOf(t, keyProducer),
+		Epoch:   7,
 		Task: receipt.Task{
 			Type:          receipt.TaskExtract,
 			Spec:          spec,
@@ -317,6 +337,14 @@ func TestEndToEnd_CommitmentIsBoundToATimestamp(t *testing.T) {
 		Anchors:      anchors,
 		Verification: receipt.Verification{Status: receipt.VerificationPending},
 	}
+	// Derive the id from the signed payload; Validate rejects a free-standing one
+	// (S9-0h, finding B2).
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+
 	if err := r.Sign(keyProducer); err != nil {
 		t.Fatalf("Sign: %v", err)
 	}

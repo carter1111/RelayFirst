@@ -37,6 +37,17 @@ func mkStoredReceipt(t *testing.T, key, url, cHash, id string, created int64) *r
 		Anchors:      []receipt.Anchor{{URL: url, ContentHash: cHash, FetchedAt: created, Status: 200, Bytes: 10}},
 		Verification: receipt.Verification{Status: receipt.VerificationPending},
 	}
+
+	// The id is derived from the signed payload rather than taken from the
+	// caller: Validate rejects a free-standing id (S9-0h, finding B2). The `id`
+	// parameter is ignored on purpose so this fixture cannot accidentally assert
+	// on a guard instead of on export behaviour.
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
+
 	if err := r.Sign(key); err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -84,9 +95,16 @@ func TestReceiptStore_AllIsOldestFirst(t *testing.T) {
 	if len(all) != 5 {
 		t.Fatalf("All returned %d, want 5", len(all))
 	}
+
+	// All() orders by created_at then receipt_id. The fixtures use distinct
+	// created_at values, so the contract to assert is oldest-first by creation
+	// time — not by id. Asserting on id used to pass only because the fixtures
+	// hard-coded ids that happened to ascend with time; the id is now derived
+	// from the payload and has no relation to creation order.
 	for i := 1; i < len(all); i++ {
-		if all[i].ReceiptID < all[i-1].ReceiptID {
-			t.Errorf("receipts are not oldest first at index %d", i)
+		if all[i].Work.StartedAt < all[i-1].Work.StartedAt {
+			t.Errorf("receipts are not oldest first at index %d: startedAt %d after %d",
+				i, all[i].Work.StartedAt, all[i-1].Work.StartedAt)
 		}
 	}
 }

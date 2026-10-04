@@ -84,14 +84,13 @@ func mkProbe(t *testing.T, key, url, cHash, receiptID string, epoch uint64) *rec
 	}
 
 	r := &receipt.Receipt{
-		Schema:    receipt.Schema,
-		ReceiptID: receiptID,
-		AgentID:   agent,
-		Epoch:     epoch,
+		Schema:  receipt.Schema,
+		AgentID: agent,
+		Epoch:   epoch,
 		Task: receipt.Task{
 			Type:          receipt.TaskProbe,
 			Spec:          map[string]any{"url": url},
-			SpecHash:      contentHash(0x3d),
+			SpecHash:      contentHash(0x3d) + receiptID,
 			SelfGenerated: true,
 		},
 		Work: receipt.Work{
@@ -113,6 +112,15 @@ func mkProbe(t *testing.T, key, url, cHash, receiptID string, epoch uint64) *rec
 		}},
 		Verification: receipt.Verification{Status: receipt.VerificationPending},
 	}
+
+	// Derive the id from the signed payload; Validate rejects a free-standing one
+	// (S9-0h, finding B2). The `receiptID` argument still distinguishes fixtures
+	// through SpecHash, so derived ids stay distinct.
+	derived, err := r.DerivedReceiptID()
+	if err != nil {
+		t.Fatalf("DerivedReceiptID: %v", err)
+	}
+	r.ReceiptID = derived
 
 	if err := r.Sign(key); err != nil {
 		t.Fatalf("Sign: %v", err)
