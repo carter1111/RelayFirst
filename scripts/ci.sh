@@ -155,7 +155,7 @@ fi
 # like success: `go test -run` with no matches exits zero. The count check below
 # turns "nothing ran" into a failure, so a rename cannot quietly retire the gate.
 step "Version compatibility matrix (S9-0g: G2 cross-version, G3 unknown fields, G4 negotiation)"
-version_pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_|TestEvent_|TestEventHash_|TestDecodeEvent_|TestSignedBytes_|TestValidateChain_|TestValidateEvent_|TestDerive|TestDeriveSession_|TestSessionEvent_|TestSessionIDFor_|TestTimeoutCoverage_|TestA2ATaskState_|TestVerification_|TestVerify_(Recompute|Empty|Evaluator|Dispute|ModeRefusal)|TestEvaluate_|TestDesignateEvaluator_|TestA2ATaskID_|TestSetA2ATaskID_|TestValidateA2ATaskID_|TestWS_|TestHTTPEndpointsSurviveWebSocket|TestBuild_(DeclaresBothBindings|OmitsWebSocketWhenUnset)|TestSelectInterface_SkipsWebSocket|TestAcceptance_|TestRoundTrip|TestCiphertext|TestThirdParty|TestTampered|TestRecipient|TestTwoSeals|TestSharedSecret|TestUnsupportedAlgorithm|TestUnmarshalSealed|TestSeal|TestKeyPair|TestSealedPayload|TestNoAlgorithm|TestNoScopeCoversReceipts|TestAuthorizeEvent_|TestAllows_|TestIsRevokedBy_|TestScopesHash_|TestSignAndVerify|TestVerify_|TestSign_|TestScopeValid_|TestAllScopes_|TestObservations_|TestEvidence_|TestTasks_|TestAssert_|TestAssertion_|TestRunner_|TestCheck_|TestCriterion10_|TestNode_(PublishesNodeID|OmitsNodeID|HasNoKeyField|NoteIsAccurate)'
+version_pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_|TestEvent_|TestEventHash_|TestDecodeEvent_|TestSignedBytes_|TestValidateChain_|TestValidateEvent_|TestDerive|TestDeriveSession_|TestSessionEvent_|TestSessionIDFor_|TestTimeoutCoverage_|TestA2ATaskState_|TestVerification_|TestVerify_(Recompute|Empty|Evaluator|Dispute|ModeRefusal)|TestEvaluate_|TestDesignateEvaluator_|TestA2ATaskID_|TestSetA2ATaskID_|TestValidateA2ATaskID_|TestWS_|TestHTTPEndpointsSurviveWebSocket|TestBuild_(DeclaresBothBindings|OmitsWebSocketWhenUnset)|TestSelectInterface_SkipsWebSocket|TestAcceptance_|TestRoundTrip|TestCiphertext|TestThirdParty|TestTampered|TestRecipient|TestTwoSeals|TestSharedSecret|TestUnsupportedAlgorithm|TestUnmarshalSealed|TestSeal|TestKeyPair|TestSealedPayload|TestNoAlgorithm|TestNoScopeCoversReceipts|TestInitialize_|TestToolsList_|TestListTasks_|TestRelayMessage_|TestUnknownToolIsReported|TestToolFailureIs|TestNotificationProducesNoResponse|TestParseErrorIsReported|TestMethodNotFoundIsReported|TestPingIsAnswered|TestUnreachableRelay|TestResponseSizeIsBounded|TestAuthorizeEvent_|TestAllows_|TestIsRevokedBy_|TestScopesHash_|TestSignAndVerify|TestVerify_|TestSign_|TestScopeValid_|TestAllScopes_|TestObservations_|TestEvidence_|TestTasks_|TestAssert_|TestAssertion_|TestRunner_|TestCheck_|TestCriterion10_|TestNode_(PublishesNodeID|OmitsNodeID|HasNoKeyField|NoteIsAccurate)'
 version_out=$(CGO_ENABLED=0 go test ./internal/receipt/ ./internal/protocol/ ./internal/a2a/ \
   -run "$version_pattern" -count=1 -v 2>&1) && version_status=0 || version_status=$?
 version_pass=$(printf '%s' "$version_out" | grep -c '^--- PASS' || true)
@@ -226,6 +226,30 @@ verifier_forbidden=$(CGO_ENABLED=0 go list -deps ./cmd/relayfirst-verifier 2>/de
 if [ -n "$verifier_forbidden" ]; then
   fail "the verifier binary links the mining or scoring path, so it could sign work claims:"
   printf '%s\n' "$verifier_forbidden" | sed 's/^/      /'
+  separation_ok=0
+fi
+
+# The MCP server must hold NO key (S13-4, MVP.md §9.2).
+#
+# This is the whole security property of that binary, and it is a property of the BUILD rather than of
+# any behaviour: an MCP server runs inside the agent's process, so a prompt-injected agent could make
+# it sign an arbitrary receipt on the user's behalf if it could sign at all. "Never hold the master
+# key" is therefore enforced by making signing unreachable, not by remembering not to call it.
+#
+# It is checked here because a behavioural test cannot see it: a test can confirm no signing TOOL is
+# offered, but only the dependency graph proves none could be implemented.
+mcp_forbidden=$(CGO_ENABLED=0 go list -deps ./cmd/relayfirst-mcp 2>/dev/null \
+  | grep -E 'relayfirst/internal/(eip712|receipt|publish|store|assertion|delegation|delegationsign|e2ee|mining|scoring)$' || true)
+if [ -n "$mcp_forbidden" ]; then
+  fail "the MCP server links signing or verification code, so a prompt-injected agent could make it sign:"
+  printf '%s\n' "$mcp_forbidden" | sed 's/^/      /'
+  separation_ok=0
+fi
+
+# And it MUST be a real binary that builds, or the check above would pass for a package that had been
+# deleted — the same vacuity guard as the verifier's.
+if ! CGO_ENABLED=0 go list -deps ./cmd/relayfirst-mcp >/dev/null 2>&1; then
+  fail "cmd/relayfirst-mcp does not build, so the MCP separation check is vacuous"
   separation_ok=0
 fi
 

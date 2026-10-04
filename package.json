@@ -3,17 +3,21 @@
   "private": true,
   "version": "0.4.0",
   "type": "module",
-  "description": "RelayFirst — Proof of Agent Work MVP. The CLI is Go; the TypeScript side generates the cross-language EIP-712 KAT vectors (CODING_RULES.md §4).",
+  "description": "RelayFirst \u2014 Proof of Agent Work MVP. The CLI is Go; the TypeScript side generates the cross-language EIP-712 KAT vectors (CODING_RULES.md \u00a74).",
   "bin": {
-    "relayfirst": "scripts/npx-relayfirst.mjs"
+    "relayfirst": "scripts/npx-relayfirst.mjs",
+    "relayfirst-mcp": "scripts/npx-relayfirst-mcp.mjs"
   },
   "files": [
     "scripts/npx-relayfirst.mjs",
-    "bin/relayfirst"
+    "bin/relayfirst",
+    "scripts/npx-relayfirst-mcp.mjs",
+    "bin/relayfirst-mcp"
   ],
   "scripts": {
     "gen:kat": "tsx scripts/gen-kat.ts",
-    "relayfirst": "node scripts/npx-relayfirst.mjs"
+    "relayfirst": "node scripts/npx-relayfirst.mjs",
+    "relayfirst-mcp": "node scripts/npx-relayfirst-mcp.mjs"
   },
   "engines": {
     "node": ">=18"
