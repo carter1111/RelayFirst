@@ -71,6 +71,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/decisions/ADR-0002-*.md`](docs/decisions/ADR-0002-semantic-extract-as-inference-cost.md) | — | **决策** | 语义化 extract 作为推理成本载体 | 已 accepted |
 | [`docs/decisions/ADR-0003-*.md`](docs/decisions/ADR-0003-dedup-ledger-scope.md) | — | **决策** | 去重账本"全局"的作用域（A6 vs NET-2）—— 采纳"域内全局" | 已 accepted |
 | [`docs/decisions/ADR-0004-*.md`](docs/decisions/ADR-0004-node-identity-crypto.md) | — | **决策** | 节点身份引入密码学 vs「节点不能验签」—— 采纳分二进制 | 已 accepted |
+| [`docs/decisions/ADR-0005-*.md`](docs/decisions/ADR-0005-cli-framework-handwritten.md) | — | **决策** | CLI 框架实测为手写，修正 §8.1 选型表（含重新评估触发条件） | 已 accepted |
 | [`docs/stages/S1-report.md`](docs/stages/S1-report.md) | — | **报告** | S1（回执 + 签名 + KAT + verifier）验收证据 | 已归档 |
 | [`docs/stages/S2-report.md`](docs/stages/S2-report.md) | — | **报告** | S2（executor + 生成器 + 主循环）验收证据 | 已归档 |
 | [`docs/stages/S2b-report.md`](docs/stages/S2b-report.md) | 172 | **报告** | S2 补完（S2-6/7/8/9）验收证据 | 已归档 |

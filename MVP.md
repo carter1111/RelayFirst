@@ -653,7 +653,7 @@ docker run -d \
 | **EIP-712 hashing (TS)** | **`viem`** | ② | **MIT**，业界标准，**不要自己写** |
 | **HTTP 服务** | 标准库 `net/http` | ② | 零依赖 |
 | **SQLite 驱动** | **`modernc.org/sqlite`** | ① | 纯 Go，**无 CGO** —— 关键，见 §8.3 |
-| **CLI 框架** | **`github.com/spf13/cobra`** | ② | 生态标准 |
+| **CLI 框架** | ~~`github.com/spf13/cobra`~~ → **标准库手写** | ② | **修正（ADR-0005）**：实测为手写（`cmd/relayfirst/main.go`，零依赖）。见 §8.7 |
 | **X25519 / ChaCha20**（后续） | **`golang.org/x/crypto`** | ① | 标准扩展库，**绝不自研** |
 | **Merkle tree**（后续） | **`github.com/cbergoon/merkletree`** 或自研 | ② | 算法简单，但优先用库 |
 | **Delegation** | **自研** | ③ | 差异化，无现成轮子 |
@@ -746,6 +746,39 @@ testdata/eip712-vectors.json
 ### 8.6 为什么不把 A2A 放进 MVP 核心
 
 见 §16。
+
+### 8.7 CLI 框架：实测为手写（ADR-0005 修正）
+
+**§8.1 原表写 `spf13/cobra`，但实现从来没有用过它**（全仓库零导入）。
+**修正为"标准库手写"**，并在此写明理由与**重新评估的触发条件** ——
+否则这个决定会变成"因为当时是这么做的"。
+
+**实测规模：** 10 个扁平子命令、~20 个 flag、`cmd/relayfirst/main.go` 1938 行、零依赖。
+
+**为什么手写在这里是合理的：**
+
+- **§8.0 三分法**把 CLI 归为中间层（②），所以需要**具体理由**，而下面就是。
+- **cobra 的依赖树不空**（拖入 `pflag`），而本项目其余部分刻意保持极窄依赖（§8.3 选纯 Go SQLite 驱动正是为此）。
+- **规模不匹配**：cobra 解决"命令树很大、需要补全/man page 生成"，而这里是 10 个扁平命令。
+- **重写是纯搬迁风险**：CLI 的 `--help` 措辞与**安全约定**（`--key` 不经命令行、只走 env）已成型并被测试，
+  换成 cobra 是把 1938 行换成 1938 行 + 2 个依赖。
+- **手写的一个具体好处**：能在 flag 出现前就拒绝并给出**本项目自己的措辞**
+  （"a command-line flag would leak a key into shell history"）。cobra 的措辞是框架的，覆写反而更多代码。
+
+**⚠️ 这不是"手写永远更好"。重新评估的条件：**
+
+```text
+① 子命令树超过 ~20 个，或出现三层以上嵌套
+② 需要 shell 自动补全（bash/zsh/fish）
+③ 需要从同一份定义生成 man page 或文档
+④ 出现第二个需要共享 flag 定义的二进制
+```
+
+**④ 已经发生了一次**：`cmd/relayfirst-verifier`（S10-0）**复制**了 `--key` / `--chain-id` 的解析。
+**这是手写方案的第一个可见代价。** 若**第三个**二进制再复制一次，**天平就该倾斜** ——
+届时必须先评估抽公共解析层或改用 cobra，**不得再复制第三次**。
+
+**完整论证见 [`docs/decisions/ADR-0005-cli-framework-handwritten.md`](docs/decisions/ADR-0005-cli-framework-handwritten.md)（accepted）。**
 
 ---
 

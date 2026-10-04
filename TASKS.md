@@ -635,7 +635,7 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 |---|---|---|---|---|
 | **ADR-1** | 写 `docs/decisions/ADR-0003-dedup-ledger-scope.md`：裁定"全局"的作用域 | — | 一份 **accepted** 的 ADR；后续多节点工作引用它 | ✅ **done** — 已 `accepted`（采纳"域内全局，域间互不认"）；`MVP.md` §5.2 已补作用域说明与"跨域不兑换"条款；已登记 `DOCS.md` |
 | **ADR-2** | 写 `docs/decisions/ADR-0004-node-identity-crypto.md`：节点身份必然引入 secp256k1，如何与"节点不能验签"共存 | S10-0 | accepted ADR；CI 门禁随之显式更新（而非默默放宽） | ✅ **done** — 已 `accepted`（采纳分二进制）；**门禁已显式更新**（`relayfirst-node` 门禁**不变**，**新增** `relayfirst-verifier` 门禁）；S10-0 已按此实现 |
-| **ADR-3** | cobra 偏离：`MVP.md` §8.1 选了 cobra，实际是标准库手写 | — | 二选一：**补齐依赖**，或 **ADR 修正选型表**（写清"为何手写更好"） | ⬜ todo |
+| **ADR-3** | cobra 偏离：`MVP.md` §8.1 选了 cobra，实际是标准库手写 | — | 二选一：**补齐依赖**，或 **ADR 修正选型表**（写清"为何手写更好"） | ✅ **done** — 裁定**写 ADR 修正选型表**（不引入 cobra）。已产出 **`ADR-0005-cli-framework-handwritten.md`**（**注意：编号为 0005，非 0003** —— 0003 已被 dedup-ledger 占用；清单里的 "ADR-3" 即本文件）。`MVP.md` §8.1 表已修正 + 新增 **§8.7** 写明理由与**重新评估的 4 个触发条件**。**已知代价**：`relayfirst` 与 `relayfirst-verifier` 各自手写 flag 解析 —— **若出现第三个二进制必须先评估抽公共层** |
 
 **⚠️ ADR-2 是本清单里最危险的一条**：它可能被误读为"放宽节点约束"。
 **必须写清**：节点获得的是**签名结论**的能力，**不是**伪造工作或验证他人回执的能力 ——
