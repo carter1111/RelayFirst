@@ -149,13 +149,27 @@ func writeCanonical(b *strings.Builder, v any) error {
 		})
 
 	case Task:
-		return writeStruct(b, []kv{
+		fields := []kv{
 			{"type", string(t.Type)},
 			{"spec", t.Spec},
 			{"specHash", t.SpecHash},
 			{"selfGenerated", t.SelfGenerated},
 			{"a2aTaskId", t.A2ATaskID},
-		})
+		}
+		// verification is appended ONLY when set, matching the struct tag's
+		// omitempty.
+		//
+		// This condition is not cosmetic. Every receipt signed before the field
+		// existed has no verification key in its canonical bytes, and those bytes
+		// are what its payload hash covers. Emitting the key unconditionally — even
+		// as an empty string — would change the bytes of every historical receipt,
+		// changing its hash and invalidating every signature ever made. The
+		// conditional is the difference between a minor change and destroying the
+		// corpus.
+		if t.Verification != "" {
+			fields = append(fields, kv{"verification", string(t.Verification)})
+		}
+		return writeStruct(b, fields)
 
 	case Work:
 		return writeStruct(b, []kv{

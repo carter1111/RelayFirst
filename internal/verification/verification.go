@@ -49,6 +49,21 @@ import (
 // (MVP.md §5.6 rule 1).
 var ErrSelfVerification = errors.New("verification: an agent may not verify its own receipt")
 
+// ErrModeNotSupported reports that a receipt declares a verification mode this
+// verifier does not implement.
+//
+// # Why this is its own error rather than a generic failure
+//
+// "I cannot check this" and "I checked and it failed" have different fixes, and
+// collapsing them makes a mode mismatch look like a bad receipt. The same split as
+// UnsupportedError versus ValidationError in the receipt layer, and for the same
+// reason: an operator who sees a generic error will conclude the producer cheated,
+// when the actual answer is that the wrong verifier was asked.
+//
+// A caller should route it: a receipt declaring `evaluator` needs an evaluator, and
+// one declaring `dispute` is not checkable by this build at all.
+var ErrModeNotSupported = errors.New("verification: unsupported verification mode")
+
 // Recomputer re-runs a receipt's task and returns the result it observed.
 //
 // It is an interface rather than a direct call so the comparison logic can be tested
@@ -296,6 +311,26 @@ func (v *Verifier) Verify(ctx context.Context, r *receipt.Receipt) (Outcome, err
 	}
 	if strings.TrimSpace(r.ReceiptID) == "" {
 		return Outcome{}, errors.New("verification: receipt has no id")
+	}
+
+	// The declared verification mode decides whether this verifier can act at all
+	// (S9-8, MVP.md §5.0).
+	//
+	// # Why this is a refusal and not a downgrade
+	//
+	// This verifier implements `recompute`: re-run the task and compare. A receipt
+	// declaring `evaluator` cannot be checked that way — an evaluator's judgement is
+	// not a reproducible computation, so running the task again would produce a
+	// result that need not match and the comparison would be meaningless.
+	//
+	// Refusing is the only honest answer. Silently falling back to recompute would
+	// report a binary verdict for a task that was never eligible for one, which is
+	// worse than no verdict: it would launder a weak claim into a strong one. The
+	// error is distinguishable so a caller routes it to the right verifier rather
+	// than logging it as a failure.
+	if mode := r.Task.VerificationOrDefault(); mode != receipt.VerificationRecompute {
+		return Outcome{}, fmt.Errorf("%w: this verifier implements %s, not %s",
+			ErrModeNotSupported, receipt.VerificationRecompute, mode)
 	}
 
 	verifier, err := v.cfg.Policy.Assign(r, v.cfg.Candidates)

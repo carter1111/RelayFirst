@@ -56,6 +56,100 @@ func (t TaskType) Accepted() bool {
 	}
 }
 
+// VerificationMode declares how a task's result is checked (MVP.md §5.0).
+//
+// # Why this replaced the task-type restriction
+//
+// v1.0 allowed only probe/extract/compute and justified it as "only tasks with an
+// objective answer". The rule was protecting the wrong thing: what matters is not
+// who set the task or what it is about, but whether its result can be checked
+// without a dispute layer. Those are orthogonal — a task set by someone else over
+// A2A can still be a deterministic `probe`.
+//
+// So the constraint moves from the task's shape to the task's *verification*, which
+// is the property the original rule was reaching for.
+//
+// # Why all three values are accepted even though two are implemented
+//
+// `dispute` is in the schema and not implemented. Writing it now is what keeps
+// adding it later from being a wire-format change: a field that already parses
+// cannot break a parser, so the future work is behaviour, not protocol. The same
+// reasoning as the envelope's reserved chain fields (S9-0e).
+type VerificationMode string
+
+const (
+	// VerificationRecompute re-runs the task and re-fetches the anchor. It is
+	// binary, and it is the only mode whose answer is independent of opinion.
+	VerificationRecompute VerificationMode = "recompute"
+
+	// VerificationEvaluator has a designated evaluator — possibly another agent or
+	// model — score the result.
+	//
+	// # This is weaker than recompute, and must not be described as equal
+	//
+	// An evaluator can be wrong, bribed, or colluding with the producer. MVP.md
+	// §5.0 requires saying so plainly rather than presenting the two as equally
+	// trustworthy. A caller that treats an evaluator verdict as a binary fact has
+	// been misled by whoever let it assume that.
+	VerificationEvaluator VerificationMode = "evaluator"
+
+	// VerificationDispute defers to arbitration. Reserved; not implemented in 2.0
+	// (MVP.md §5.0 says it arrives in 2.1). Present so adding it is not a
+	// breaking change.
+	VerificationDispute VerificationMode = "dispute"
+)
+
+// Valid reports whether m is a mode this schema defines.
+//
+// It accepts all three, including the unimplemented one: a value that is in the
+// schema is valid whether or not this build can act on it. Whether the build can
+// *verify* a receipt is a separate question, answered by Implemented below.
+func (m VerificationMode) Valid() bool {
+	switch m {
+	case VerificationRecompute, VerificationEvaluator, VerificationDispute:
+		return true
+	default:
+		return false
+	}
+}
+
+// Implemented reports whether this build can actually check a task using m.
+//
+// # Why this is separate from Valid
+//
+// A receipt declaring `dispute` is well-formed and must be accepted, stored and
+// re-served — a node that rejected it would be making a protocol judgement it has
+// no basis for, and a client that could handle it would be told the receipt is
+// bad. But this build cannot produce a verdict for it, and the two facts must not
+// be collapsed: "I cannot check this" and "this is invalid" have different fixes,
+// exactly as with the schema major split (internal/receipt/schema.go).
+func (m VerificationMode) Implemented() bool {
+	switch m {
+	case VerificationRecompute, VerificationEvaluator:
+		return true
+	default:
+		return false
+	}
+}
+
+// DefaultVerificationMode is used when a receipt does not declare one.
+//
+// # Why the default is recompute rather than "unset"
+//
+// A missing field means an older receipt, and older receipts were all checked by
+// re-running. So the default is not a guess about intent — it is what actually
+// happened to them. Defaulting to anything else would retroactively claim those
+// receipts were verified by a weaker method than they were.
+//
+// It is also the safe default: recompute is the strongest mode, so an ambiguous
+// receipt is treated as the harder case rather than the easier one.
+func (t Task) VerificationOrDefault() VerificationMode {
+	if t.Verification == "" {
+		return VerificationRecompute
+	}
+	return t.Verification
+}
+
 // VerificationStatus tracks the adversarial verification outcome (MVP.md §5.5).
 type VerificationStatus string
 
@@ -131,6 +225,23 @@ type Task struct {
 	// A2ATaskID is reserved for future A2A interoperability (MVP.md §16.4).
 	// It stays null for the whole MVP.
 	A2ATaskID *string `json:"a2aTaskId"`
+
+	// Verification declares how this task's result is checked (MVP.md §5.0).
+	//
+	// # Why omitempty, and why that is load-bearing
+	//
+	// Every receipt already signed by a v1 build has no such field. Adding one that
+	// always serialized would change those receipts' canonical bytes, which would
+	// change their payload hash and invalidate every signature ever made. With
+	// omitempty an existing receipt's bytes are unchanged, and the field appears
+	// only on receipts that actually declare a mode.
+	//
+	// # Why an empty value means recompute, not "unknown"
+	//
+	// A receipt without this field predates the field, and every task back then was
+	// verified by re-running. So empty is not an absence of information — it is the
+	// information that this was a recompute task. See VerificationOrDefault.
+	Verification VerificationMode `json:"verification,omitempty"`
 }
 
 // Work records the inference budget consumed.
@@ -442,6 +553,14 @@ func (r Receipt) ValidateStructure() error {
 
 	if !r.Task.Type.Accepted() {
 		return invalid("task type %q is not accepted (allowed: probe/extract/compute)", r.Task.Type)
+	}
+	// An empty verification means a pre-S9-7 receipt, which was a recompute task.
+	// Only a non-empty value that is not in the schema is a defect.
+	if r.Task.Verification != "" && !r.Task.Verification.Valid() {
+		return invalid(
+			"task verification %q is not one of recompute/evaluator/dispute; "+
+				"leaving it empty means recompute",
+			r.Task.Verification)
 	}
 	if r.Task.Spec == nil {
 		return invalid("task.spec is nil")

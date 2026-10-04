@@ -155,7 +155,7 @@ fi
 # like success: `go test -run` with no matches exits zero. The count check below
 # turns "nothing ran" into a failure, so a rename cannot quietly retire the gate.
 step "Version compatibility matrix (S9-0g: G2 cross-version, G3 unknown fields, G4 negotiation)"
-version_pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_|TestEvent_|TestEventHash_|TestDecodeEvent_|TestSignedBytes_|TestValidateChain_|TestValidateEvent_|TestDerive|TestDeriveSession_|TestSessionEvent_|TestSessionIDFor_|TestTimeoutCoverage_|TestA2ATaskState_'
+version_pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_|TestEvent_|TestEventHash_|TestDecodeEvent_|TestSignedBytes_|TestValidateChain_|TestValidateEvent_|TestDerive|TestDeriveSession_|TestSessionEvent_|TestSessionIDFor_|TestTimeoutCoverage_|TestA2ATaskState_|TestVerification_|TestVerify_(Recompute|Empty|Evaluator|Dispute|ModeRefusal)|TestEvaluate_|TestDesignateEvaluator_'
 version_out=$(CGO_ENABLED=0 go test ./internal/receipt/ ./internal/protocol/ ./internal/a2a/ \
   -run "$version_pattern" -count=1 -v 2>&1) && version_status=0 || version_status=$?
 version_pass=$(printf '%s' "$version_out" | grep -c '^--- PASS' || true)
