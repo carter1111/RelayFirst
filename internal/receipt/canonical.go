@@ -143,6 +143,16 @@ func writeCanonical(b *strings.Builder, v any) error {
 		})
 
 	case Receipt:
+		// The order here must match the struct declaration in receipt.go. The
+		// final `payload` key is what carries the verbatim signed bytes through
+		// persistence, export and relay (S9-0b2).
+		//
+		// It was originally omitted, which silently destroyed the signed blob on
+		// every canonical path — store, export and publish — so a receipt signed
+		// with a verbatim payload came back as a structural one. The bug survived
+		// a passing test because that test asserted on json.Marshal while this
+		// writer is what the real paths use. Any test for this must go through
+		// MarshalCanonical.
 		return writeStruct(b, []kv{
 			{"schema", t.Schema},
 			{"receiptId", t.ReceiptID},
@@ -154,6 +164,7 @@ func writeCanonical(b *strings.Builder, v any) error {
 			{"anchors", t.Anchors},
 			{"verification", t.Verification},
 			{"signature", t.Signature},
+			{"payload", t.Payload},
 		})
 
 	case signedPayload:

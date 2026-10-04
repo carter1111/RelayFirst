@@ -351,3 +351,57 @@ func TestPayloadConsistency_EachSignedFieldIsCovered(t *testing.T) {
 		})
 	}
 }
+
+// TestMarshalCanonical_PreservesPayload is the regression guard for a real defect
+// (found by security review, not by the tests that existed).
+//
+// # The defect
+//
+// canonicalJSON's `case Receipt` enumerates keys explicitly and omitted
+// `payload`. That writer — not json.Marshal — is the only serializer on the
+// persistence, export and relay paths, so a receipt signed with a verbatim
+// payload was silently stored and exported as a structural one. The signed blob
+// was destroyed, and with it the A9 §④ guarantee that a verifier can hash the
+// exact signed bytes.
+//
+// # Why the original test missed it
+//
+// The earlier test asserted on json.Marshal, which *does* include the field, so
+// it passed while the real path dropped it. This test therefore goes through
+// MarshalCanonical and a full round trip, and asserts on verification rather
+// than on the presence of a substring: the question is not "is the field in the
+// JSON" but "does the receipt still verify after being persisted".
+func TestMarshalCanonical_PreservesPayload(t *testing.T) {
+	r := validReceipt(t)
+
+	payload, err := r.SignedPayload()
+	if err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	r.Payload = string(payload)
+	if err := r.Sign(testPrivKey); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	// Persist exactly as the store, exporter and relay do.
+	canonical, err := r.MarshalCanonical()
+	if err != nil {
+		t.Fatalf("marshal canonical: %v", err)
+	}
+	if !strings.Contains(string(canonical), `"payload"`) {
+		t.Fatalf("the canonical writer dropped the signed payload; every persistence, export and relay path would lose it")
+	}
+
+	// Round trip through the real serializer, then verify. This is the assertion
+	// that matters: the receipt must still be valid after storage.
+	back, err := Unmarshal(canonical)
+	if err != nil {
+		t.Fatalf("unmarshal canonical: %v", err)
+	}
+	if back.Payload == "" {
+		t.Fatal("payload did not survive the canonical round trip")
+	}
+	if err := back.Validate(nil); err != nil {
+		t.Fatalf("a payload-bearing receipt no longer verifies after a canonical round trip: %v", err)
+	}
+}
