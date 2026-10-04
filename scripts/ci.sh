@@ -15,6 +15,24 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# ---------------------------------------------------------------------------
+# A note on `set -e` and `pipefail`, because this script was bitten three times.
+#
+# `pipefail` makes ANY stage's failure fail the whole pipeline, not just the last. Combined with
+# `set -e`, that means a command substitution whose pipeline matches nothing EXITS THE SCRIPT from
+# inside an assignment — silently, with no FAIL line, because the failure happens at a `var=$(...)`
+# rather than at a gate.
+#
+# Measured: an empty testdata/eip712-vectors.json made `count=$(grep ... | wc -l | tr -d ' ')` exit 1
+# and the whole run produced no output at all. That is worse than a wrong answer, because it looks
+# like nothing happened.
+#
+# So every piped command substitution in this file ends in `|| true` and guards the empty case.
+# If you add one, do the same. The alternative — dropping `pipefail` — would hide real pipeline
+# failures (a `go test` that fails but whose output is piped to `tail` would look like a pass), so
+# the discipline is the right trade.
+# ---------------------------------------------------------------------------
+
 # Homebrew-installed Go is not always on PATH in non-interactive shells.
 if ! command -v go >/dev/null 2>&1 && [ -x /opt/homebrew/bin/go ]; then
   export PATH="/opt/homebrew/bin:$PATH"
@@ -89,7 +107,11 @@ fi
 
 step "KAT corpus freshness"
 if [ -f testdata/eip712-vectors.json ]; then
-  count=$(grep -o '"name"' testdata/eip712-vectors.json | wc -l | tr -d ' ')
+  # `|| true` because `pipefail` makes ANY stage's failure fail the whole pipeline, so a grep that
+  # matches nothing would exit the SCRIPT from inside this assignment — silently, with no FAIL line.
+  # Measured: an empty vectors file produced exit 1 and no output at all.
+  count=$(grep -o '"name"' testdata/eip712-vectors.json | wc -l | tr -d ' ' || true)
+  count=${count:-0}
   pass "testdata/eip712-vectors.json present ($count vectors)"
 else
   fail "testdata/eip712-vectors.json missing — run: npm run gen:kat"
@@ -204,7 +226,10 @@ else
         failures=$((failures + 1))
       else
         regression=$(awk -v d="$bench_delta" 'BEGIN { print (d + 0 < -20) ? "yes" : "no" }')
-        throughput=$(printf '%s\n' "$bench_out" | grep -E '^  throughput' | sed 's/^ *//')
+        # `|| true` for the same reason as bench_delta: under `set -euo pipefail` a substitution
+        # whose pipeline matches nothing exits nonzero, and that exits the SCRIPT from inside an
+        # assignment — with no FAIL line, which is the least debuggable outcome available.
+        throughput=$(printf '%s\n' "$bench_out" | grep -E '^  throughput' | sed 's/^ *//' || true)
         if [ "$regression" = "yes" ]; then
           fail "ingest throughput regressed by ${bench_delta}% (threshold -20%): $throughput"
           printf '%s\n' "$bench_out" | sed 's/^/      /'
@@ -366,7 +391,8 @@ else
   if go run internal/devtools/gen_merkle_vectors.go >/tmp/rf-ci-merkle.log 2>&1; then
     merkle_after=$(cat testdata/merkle-vectors.json contracts/test/MerkleVectors.sol)
     if [ "$merkle_before" = "$merkle_after" ]; then
-      trees=$(grep -o '"name"' testdata/merkle-vectors.json | wc -l | tr -d ' ')
+      trees=$(grep -o '"name"' testdata/merkle-vectors.json | wc -l | tr -d ' ' || true)
+      trees=${trees:-0}
       pass "merkle vectors are current ($trees trees, .json and .sol in sync)"
     else
       fail "merkle vectors are STALE — regenerate and commit: go run internal/devtools/gen_merkle_vectors.go"
