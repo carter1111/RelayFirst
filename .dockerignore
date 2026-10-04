@@ -1,0 +1,47 @@
+# Docker build context exclusions.
+#
+# Without this file the build context includes node_modules (110 MB), the local
+# SQLite databases, and the test corpus — none of which the image needs. The cost
+# is paid twice: once uploading the context, and again invalidating the COPY layer
+# on every unrelated local change.
+
+# Node / TypeScript (used only by the KAT generator, never by the node image)
+node_modules/
+*.tsbuildinfo
+
+# Local data — must never enter an image
+*.db
+*.sqlite
+*.sqlite-journal
+data/
+
+# Secrets (CODING_RULES.md §8)
+.env
+.env.*
+*.key
+*.pem
+
+# Build artefacts
+/bin/
+*.test
+*.out
+coverage.*
+
+# Foundry artefacts (S7) — derived from contracts/, not needed to build the node
+out/
+cache/
+broadcast/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Version control — the builder only needs the working tree
+.git
+.gitignore
+
+# Docs are not needed to compile the binary
+docs/
+*.md

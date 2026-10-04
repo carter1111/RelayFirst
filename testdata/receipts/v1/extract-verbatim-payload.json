@@ -1,0 +1,46 @@
+{
+  "schema": "relayfirst.receipt.v1",
+  "receiptId": "0x8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b",
+  "agentId": "agent:eip155:8453:0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+  "epoch": 43,
+  "task": {
+    "type": "extract",
+    "spec": {
+      "field": "price",
+      "url": "https://api.example.com/ticker"
+    },
+    "specHash": "sha256:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+    "selfGenerated": false,
+    "a2aTaskId": null
+  },
+  "work": {
+    "provider": "local",
+    "model": "",
+    "tokensIn": 0,
+    "tokensOut": 0,
+    "startedAt": 1791102200,
+    "finishedAt": 1791102260
+  },
+  "result": {
+    "value": "42.50",
+    "hash": "sha256:d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2"
+  },
+  "anchors": [
+    {
+      "url": "https://api.example.com/ticker",
+      "contentHash": "sha256:1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+      "fetchedAt": 1791102210,
+      "status": 200,
+      "bytes": 512
+    }
+  ],
+  "verification": {
+    "status": "pending",
+    "verifierId": null,
+    "verifiedAt": null,
+    "stake": 50,
+    "recomputedHash": null
+  },
+  "signature": "0x5e6e9d4c1468dce34f1e6d149bd34835954f307e85af2590250955809d18a8ac530320e4a670febd2716a6cde7e2639ecd1f6203c39c1fd682dc4820fcef744f1c",
+  "payload": "{\"agentId\":\"agent:eip155:8453:0x2c7536e3605d9c16a7a3d7b1898e529396a65c23\",\"epoch\":43,\"task\":{\"type\":\"extract\",\"spec\":{\"field\":\"price\",\"url\":\"https://api.example.com/ticker\"},\"specHash\":\"sha256:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e\",\"selfGenerated\":false,\"a2aTaskId\":null},\"work\":{\"provider\":\"local\",\"model\":\"\",\"tokensIn\":0,\"tokensOut\":0,\"startedAt\":1791102200,\"finishedAt\":1791102260},\"result\":{\"value\":\"42.50\",\"hash\":\"sha256:d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2\"},\"anchors\":[{\"url\":\"https://api.example.com/ticker\",\"contentHash\":\"sha256:1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f\",\"fetchedAt\":1791102210,\"status\":200,\"bytes\":512}]}"
+}

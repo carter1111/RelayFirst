@@ -1,0 +1,44 @@
+# RelayFirst — ignore rules
+
+# Go
+/bin/
+*.test
+*.out
+coverage.*
+
+# Node / TypeScript
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+
+# Foundry build artifacts (S7). `forge build` writes compiled output here; it is
+# derived from contracts/ and must not be committed or copied into an image.
+out/
+cache/
+broadcast/
+
+# Secrets — CODING_RULES.md §8
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Local data / scratch
+/data/
+/tmp/
+*.sqlite
+*.sqlite-journal
+*.db
+
+# KAT corpus is generated but IS committed on purpose: it is the cross-language
+# contract (CODING_RULES.md §4). Do not add testdata/ here.
+!testdata/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

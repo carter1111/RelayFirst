@@ -1,0 +1,26 @@
+{
+  "name": "relayfirst",
+  "private": true,
+  "version": "0.4.0",
+  "type": "module",
+  "description": "RelayFirst — Proof of Agent Work MVP. The CLI is Go; the TypeScript side generates the cross-language EIP-712 KAT vectors (CODING_RULES.md §4).",
+  "bin": {
+    "relayfirst": "scripts/npx-relayfirst.mjs"
+  },
+  "files": [
+    "scripts/npx-relayfirst.mjs",
+    "bin/relayfirst"
+  ],
+  "scripts": {
+    "gen:kat": "tsx scripts/gen-kat.ts",
+    "relayfirst": "node scripts/npx-relayfirst.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "viem": "^2.21.55"
+  }
+}

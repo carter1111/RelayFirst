@@ -1,0 +1,45 @@
+{
+  "schema": "relayfirst.receipt.v1",
+  "receiptId": "0x9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a",
+  "agentId": "agent:eip155:8453:0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+  "epoch": 42,
+  "task": {
+    "type": "probe",
+    "spec": {
+      "url": "https://api.example.com/health"
+    },
+    "specHash": "sha256:3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+    "selfGenerated": true,
+    "a2aTaskId": null
+  },
+  "work": {
+    "provider": "local",
+    "model": "",
+    "tokensIn": 0,
+    "tokensOut": 0,
+    "startedAt": 1791015800,
+    "finishedAt": 1791015862
+  },
+  "result": {
+    "value": "200",
+    "hash": "sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
+  },
+  "anchors": [
+    {
+      "url": "https://api.example.com/health",
+      "contentHash": "sha256:7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b",
+      "fetchedAt": 1791015810,
+      "status": 200,
+      "bytes": 20480
+    }
+  ],
+  "verification": {
+    "status": "pending",
+    "verifierId": null,
+    "verifiedAt": null,
+    "stake": 50,
+    "recomputedHash": null
+  },
+  "signature": "0x81e161400144ab1e95e869eea6820a44d0e6d30850e205d8651ef8c280f240b135eac6238094c030f794f54f946399606265cabdf6136876c6172cafaefd1f8b1c",
+  "payload": "{\"agentId\":\"agent:eip155:8453:0x2c7536e3605d9c16a7a3d7b1898e529396a65c23\",\"epoch\":42,\"task\":{\"type\":\"probe\",\"spec\":{\"url\":\"https://api.example.com/health\"},\"specHash\":\"sha256:3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d\",\"selfGenerated\":true,\"a2aTaskId\":null},\"work\":{\"provider\":\"local\",\"model\":\"\",\"tokensIn\":0,\"tokensOut\":0,\"startedAt\":1791015800,\"finishedAt\":1791015862},\"result\":{\"value\":\"200\",\"hash\":\"sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\"},\"anchors\":[{\"url\":\"https://api.example.com/health\",\"contentHash\":\"sha256:7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b\",\"fetchedAt\":1791015810,\"status\":200,\"bytes\":20480}]}"
+}

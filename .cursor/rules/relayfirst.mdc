@@ -1,0 +1,60 @@
+---
+description: RelayFirst project conventions — read order, hard invariants, and doc-update protocol
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# RelayFirst — 项目约定（薄指针）
+
+**本文件只是指针，不承载正文。** 详细内容在上述文件里，避免重复导致漂移。
+
+## 项目定位（30 秒）
+
+RelayFirst 当前做的是 **agent 订阅挖矿 MVP**（Proof of Agent Work），目标是持有 agent / LLM 订阅的 crypto 用户。
+
+> ⚠️ `ARCHITECTURE.md` 是**长期路线图，不照着实现**。当前范围只看 `MVP.md`。
+
+## 必读（按序）
+
+1. `DOCS.md` §1 —— 权威层级（谁是老大）
+2. `MVP.md` —— 范围（L0，不可偏离）
+3. `TASKS.md` —— 唯一任务源
+4. `AGENTS.md` —— 操作契约（AI 必读）
+5. `CODING_RULES.md` —— 动代码前
+
+## 八条硬不变式（违反即无效）
+
+```
+A1  密码学原语绝不手写（keccak256/secp256k1/ecrecover/X25519 全用库）
+A2  任务类型只允许 probe / extract / compute
+A3  CGO_ENABLED=0 必须能构建
+A4  跨语言 KAT 向量必须存在且在 CI 门禁中
+A5  积分不可转让、不定价、不承诺回报
+A6  artifact 去重账本必须是全局的（非 per-agent）
+A7  不做 token 挖矿 / 质押奖励 / 节点排放
+A8  不修改 AgentLand 及其他 sibling 项目
+```
+
+## 三条最容易踩的坑
+
+| 坑 | 正确做法 |
+|---|---|
+| 拿 `ARCHITECTURE.md` 当实现清单 | 只看 `MVP.md`；否决 delegation/结算/E2EE 需求 |
+| 只改 `TASKS.md` 不改 `MVP.md` | **范围变化必须先改 `MVP.md`** |
+| 放宽任务类型约束 | 会导致验证失去客观标准 → 复杂度爆炸 |
+
+## 完成任务时
+
+- **必须附证据**（测试计数 / 命令输出 / 提交哈希）。无证据的 `done` 视为未完成。
+- 验收判据未过 → **不得标 `verified`**。
+- 偏差必须如实记录到 `docs/stages/S<N>-report.md`。
+
+## 详细规范
+
+- 操作契约 → `AGENTS.md`
+- 编码规范 → `CODING_RULES.md`
+- 文档地图与命名 → `DOCS.md`
+- 范围与选型 → `MVP.md`
+- 任务与状态 → `TASKS.md`
+- 反模式 → `HANDOFF.md` §9
