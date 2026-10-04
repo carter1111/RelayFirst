@@ -79,6 +79,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/stages/S7-report.md`](docs/stages/S7-report.md) | — | **报告** | S7（**链上锚定**：Merkle + Solidity + 跨语言语料）—— **代码层完成，链上未部署** | 已归档 |
 | [`docs/stages/S4-report.md`](docs/stages/S4-report.md) | — | **报告** | S4（**对抗验证机制**：重执行 + anchor 重取 + 指派接口 + 承诺记录 + S4-0 接线）—— **BLK-3 仍开放** | 已归档 |
 | [`docs/stages/S8-report.md`](docs/stages/S8-report.md) | — | **报告** | S8（**红队**：四项伪造攻击对真实栈全部 0 分 + 门禁状态） | 已归档 |
+| [`docs/stages/S9-report.md`](docs/stages/S9-report.md) | — | **报告** | S9-0（**版本化地基**：10 项发布前阻断项全关 + 12 道门禁）—— **S9-1 未开工** | 已归档 |
 
 ---
 
