@@ -267,11 +267,28 @@ func modelOf(spec map[string]any) string {
 // VerifyReceipt re-checks a receipt produced by this loop, mirroring what the
 // standalone verifier does. Used by tests and by the daemon's self-check before
 // reporting work.
+//
+// A receipt from a version this build cannot check is reported as such rather
+// than as an invalid receipt (H2, S9-0j): the two mean different things to
+// whoever reads the error, and the fix differs.
 func VerifyReceipt(r *receipt.Receipt) error {
 	if err := r.ValidateStructure(); err != nil {
-		return err
+		return classifyVerifyError(err)
 	}
-	return r.Validate(nil)
+	return classifyVerifyError(r.Validate(nil))
+}
+
+// classifyVerifyError labels an unsupported version explicitly.
+func classifyVerifyError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if receipt.IsUnsupported(err) {
+		return fmt.Errorf(
+			"this receipt's schema is newer or older than this build can check — upgrade the verifier; "+
+				"it is not being reported as invalid: %w", err)
+	}
+	return err
 }
 
 // SignerAddressHex returns the address implied by the loop's agent id, for

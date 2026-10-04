@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/relayfirst/relayfirst/internal/anchor"
@@ -217,5 +218,46 @@ func TestVerify_RefetchRejectsUnknownFlag(t *testing.T) {
 
 	if _, err := captureRunVerify(t, path, []string{"--refetchh"}); err == nil {
 		t.Fatal("an unknown flag must be rejected, not ignored")
+	}
+}
+
+// TestVerify_UnsupportedVersionIsNotReportedAsForgery covers finding H2 at the
+// surface where it matters: what a human reads.
+//
+// A receipt from a version this build cannot check must not be presented as a
+// failed verification, because the operator's next action is completely
+// different — upgrade the verifier, versus investigate a forgery.
+func TestVerify_UnsupportedVersionIsNotReportedAsForgery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+
+	path := writeSignedReceipt(t, srv.URL+"/x", anchor.HashString("hello"))
+
+	// Rewrite the schema to a future major. The signature still covers the
+	// payload, so this is exactly the "newer receipt, older verifier" case.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	patched := strings.Replace(string(raw), `"schema":"relayfirst.receipt.v1"`,
+		`"schema":"relayfirst.receipt.v99"`, 1)
+	if patched == string(raw) {
+		t.Fatal("precondition: the schema field was not found to patch")
+	}
+	if err := os.WriteFile(path, []byte(patched), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err = captureRunVerify(t, path, nil)
+	if err == nil {
+		t.Fatal("a receipt from an unsupported version must not be reported as valid")
+	}
+
+	msg := err.Error()
+	if !strings.Contains(msg, "upgrade the verifier") {
+		t.Errorf("the message must tell the operator to upgrade, not leave them guessing: %q", msg)
+	}
+	if !strings.Contains(msg, "NOT a claim that the receipt is forged") {
+		t.Errorf("the message must explicitly deny forgery, or an operator will assume it: %q", msg)
 	}
 }

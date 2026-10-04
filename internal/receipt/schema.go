@@ -1,6 +1,7 @@
 package receipt
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -101,6 +102,25 @@ func IsSupportedMajor(major int) bool {
 		}
 	}
 	return false
+}
+
+// IsUnsupported reports whether err means "this build cannot check that version"
+// rather than "the receipt is broken" (H2, S9-0j).
+//
+// # Why callers must branch on this
+//
+// The whole point of the UnsupportedError/ValidationError split is that an
+// out-of-date verifier should say "upgrade me", not "this is forged". That
+// distinction is worthless if no production caller inspects it: an operator who
+// sees a generic failure will conclude forgery, and the error type exists only to
+// be tested.
+//
+// Callers that report a verdict to a human — the CLI, the self-check verdict
+// source, the miner's pre-report check — must use this and say which side is
+// behind, because the fix is completely different.
+func IsUnsupported(err error) bool {
+	var un *UnsupportedError
+	return errors.As(err, &un)
 }
 
 // UnsupportedError means "this is a version I do not know how to check", as

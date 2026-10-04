@@ -1,6 +1,8 @@
 package mining
 
 import (
+	"log"
+
 	"github.com/relayfirst/relayfirst/internal/receipt"
 )
 
@@ -52,11 +54,39 @@ type VerdictSource interface {
 type SelfCheckVerdicts struct{}
 
 // Verified implements VerdictSource using the receipt's own validation.
+//
+// # Why the unsupported case is reported rather than silently returning false
+//
+// A receipt from a version this build cannot check is not evidence of forgery,
+// and scoring it as one would penalise an honest producer for a verifier that is
+// merely out of date (H2, S9-0j). The distinction is logged so an operator can
+// tell "this node is behind" from "this submission is bad".
+//
+// The verdict is still false: without being able to check the version, this
+// source cannot assert the work was done, and defaulting to true would be worse.
+// What changes is that the reason is visible instead of being indistinguishable
+// from a rejection.
 func (SelfCheckVerdicts) Verified(r *receipt.Receipt) bool {
 	if r == nil {
 		return false
 	}
-	return r.ValidateStructure() == nil && r.Validate(nil) == nil
+	if err := r.ValidateStructure(); err != nil {
+		if receipt.IsUnsupported(err) {
+			log.Printf(
+				"self-check: receipt %s declares a schema this build cannot check, so it is NOT credited here. "+
+					"This is not a finding against the submitter — upgrade the verifier. (%v)",
+				r.ReceiptID, err)
+		}
+		return false
+	}
+	if err := r.Validate(nil); err != nil {
+		if receipt.IsUnsupported(err) {
+			log.Printf("self-check: receipt %s cannot be checked by this build; upgrade the verifier. (%v)",
+				r.ReceiptID, err)
+		}
+		return false
+	}
+	return true
 }
 
 // Describe implements a human-readable label for reporting, so a CLI can say which

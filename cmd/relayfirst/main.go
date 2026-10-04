@@ -243,14 +243,14 @@ func runVerify(path string, flagArgs []string) error {
 	}
 
 	if err := r.ValidateStructure(); err != nil {
-		return err
+		return reportVerifyFailure(err)
 	}
 
 	if r.Signature == "" {
 		return errors.New("receipt has no signature")
 	}
 	if err := r.Validate(nil); err != nil {
-		return err
+		return reportVerifyFailure(err)
 	}
 
 	out := map[string]any{
@@ -295,6 +295,26 @@ func runVerify(path string, flagArgs []string) error {
 	out["anchorConsistency"] = true
 	out["note"] = "signature and structure verified offline; anchors re-fetched and still match"
 	return printJSON(out)
+}
+
+// reportVerifyFailure turns a validation error into a message that names which
+// side is behind (H2, S9-0j).
+//
+// # Why this is not just an error pass-through
+//
+// An out-of-date verifier and a forged receipt both "fail", and reporting them
+// identically sends an operator looking for a forger when the actual fix is to
+// upgrade the verifier. The receipt package distinguishes the two error types;
+// this is where that distinction reaches a human, which is the only place it
+// matters.
+func reportVerifyFailure(err error) error {
+	if receipt.IsUnsupported(err) {
+		return fmt.Errorf(
+			"this receipt is from a version this build cannot check — upgrade the verifier.\n"+
+				"  This is NOT a claim that the receipt is forged; it is a claim that it cannot be judged here.\n"+
+				"  %w", err)
+	}
+	return err
 }
 
 // runID prints the canonical agent id derived from a private key.

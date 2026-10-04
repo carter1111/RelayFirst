@@ -460,24 +460,30 @@ race 门禁补覆盖时**找到一个真实 bug**：
 |---|---|---|---|
 | **S9-0h** | **把 `receiptId` 与 schema 绑进签名载荷** | **critical（B2+B3）** | ✅ **done** — ①**`receiptId`**：`Validate` 重算 `DerivedReceiptID()`（= `sha256(SignedPayload())`）并比对；**不改签名字节**，故对 v1 回执同样生效（`checkReceiptID`）。②**schema**：引入**版本 profile** —— v1 的 domain `Version` 与消息字段**逐字节冻结**（3 字段），v2 起绑定 `receiptId` + `schemaMajor`（5 字段，domain `Version="2"`）。**改标 v1→v2 会换 digest → 签名失败**。**实测**：`TestTypedData_V1ProfileIsFrozen` 锁定 v1 形状；`TestTypedData_ProfilesDiffer` 证明两 profile digest 不同；`TestReceiptID_TamperedIDIsRejected` 断言重发被拒。**非空转**：禁用 `checkReceiptID` → 测试 FAIL |
 | **S9-0i** | **`canonicalJSON` 加数字分支**（`float64` / `json.Number`） | **high（H1）** | ✅ **done** — 加 `float64` / `float32` / `json.Number` 分支。**浮点渲染委托给 `encoding/json`**（不手写格式化规则）—— 保证结构性路径与逐字 payload 路径**按构造一致**；手写是 Go/TS 漂移的根源（正是 A4 要防的）。`json.Number` **先校验 JSON 数字语法**再输出（它是字符串类型，不校验会把任意字节塞进签名字节）。**非空转**：移除 `float64` 分支 → 往返测试 FAIL |
-| **S9-0j** | **生产调用方区分 `UnsupportedError`** | **high（H2）** | ⬜ todo — 类型只在测试里被 `errors.As`；CLI/verdict/miner 都映射为 `false` → **"我验不了"被报成"这是伪造"** |
-| **S9-0k** | **语料 SHA-256 清单 + 生成器拒绝覆盖** | medium（M1） | ⬜ todo — 否则"重新生成"可**悄悄重写绊线**，append-only 失效 |
+| **S9-0j** | **生产调用方区分 `UnsupportedError`** | **high（H2）** | ✅ **done** — 新增 `receipt.IsUnsupported(err)`（用 `errors.As`，**能穿透包装**）；三处生产调用方接入：**CLI** `reportVerifyFailure`（输出明确写"**不是**伪造指控，是**无法判定**"）、**`SelfCheckVerdicts`**（记录原因，避免把"节点太旧"记成"提交有问题"）、**`mining.VerifyReceipt`**。**关键**：`false` 仍是 `false`（无法判定时不能断言已做），改的是**理由可见**而非结论。**测试断言两个方向**：未来 major **不是** `ValidationError`；畸形 schema **不是** unsupported。CLI 层测试断言操作员看到 "upgrade the verifier" 且含 "NOT a claim that the receipt is forged"。**非空转**：禁用 CLI 分支 → 测试 FAIL |
+| **S9-0k** | **语料 SHA-256 清单 + 生成器拒绝覆盖** | medium（M1） | ✅ **done** — `testdata/receipts/v1/MANIFEST.sha256`（sha256sum 格式）；`TestFrozenCorpus_MatchesManifest` 断言**每个文件的哈希**，并检测**清单有而文件无**（删除历史回执同属此类）。生成器**拒绝覆盖**已存在文件并给出明确信息。**非空转**：只改一份回执的**空白字符** → 门禁 FAIL |
+
+**M2 与 L2 的缺口也已关闭（随 S9-0k 一并交付）：**
+
+| 缺口 | 修法 |
+|---|---|
+| **M2** | 新增 `receipt.ValidateForMajor(major, ...)` —— **拒绝 major 与回执声明不符**（否则测试 API 会把版本错配"洗成"通过）；`SupportedMajors` / `IsSupportedMajor` 导出。语料测试**按目录名分派**，所以钉住的是"v1 规则仍接受 v1 回执"而非"今天的规则恰好接受" |
+| **L2** | 语料新增 `compute-structural.json`（**不带 payload**），使**结构性重建路径**（所有历史回执依赖的路径）被永久样本钉住，而非只靠同 build 的单元测试 |
 
 **发布门槛（来自审查）：**
 
 ```text
 首发前必修：  B1 ✅ · B2 ✅ · B3 ✅ · H1 ✅ · B4 ✅
-声称 A9 合规前：H2（⬜）· M1（⬜）· M2（⬜）· L2（⬜）
+声称 A9 合规前：H2 ✅ · M1 ✅ · M2 ✅ · L2 ✅
 可后置：      M3 · L1 · L3
 ```
 
-> **✅ 五个发布前阻断项已全部解决。** B4 的解决方式是把一致性检查改为**子集语义**
-> （见 S9-0b），并让 `Unmarshal` 容忍未知字段 —— 这样旧验证器**能验证**带增量字段的新回执，
-> 而**篡改已知字段仍被抓到**。
+> **✅ 九个必修项全部解决**（五个首发阻断 + 四个"声称合规前必修"）。
+> 剩余三项（M3 消费者不得把 `Payload` 当权威元数据 / L1 `agentId` 的 chainId 未绑定 /
+> L3 测试断言错误字符串）经审查判定**可后置**。
 >
-> **⚠️ 但 A9 仍不应声称完全合规** —— 剩下四项（H2/M1/M2/L2）是"声称合规前必修"：
-> H2 让"我验不了"被误报成"这是伪造"；M1 让语料绊线可被重新生成悄悄重写；
-> M2 使语料只用当前规则验证（G2 无法表达）；L2 缺结构性路径的语料样本。
+> **⚠️ A9 现在可以说"机制已就位并被门禁锁定"**，但仍**不等于**"协议已上线" ——
+> 上线仍受 BLK-1/2/3/4 与人工动作所阻（见 §1）。
 
 > **⚠️ 实现中发现并修复了一个真实安全缺陷（值得记住）：**
 > S9-0b2 初版**只哈希 payload 字节，不比对结构化字段**。于是两者可**不一致** ——

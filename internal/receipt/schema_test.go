@@ -848,3 +848,79 @@ func TestValidateForMajor_RejectsMismatchedMajor(t *testing.T) {
 		t.Errorf("expected a major-mismatch error, got: %v", err)
 	}
 }
+
+// --- S9-0j: callers must distinguish unsupported from invalid (finding H2) ---
+
+// TestIsUnsupported_ClassifiesErrors is the helper every production caller uses.
+//
+// The error types were only ever inspected inside tests. Without a caller-facing
+// predicate, an out-of-date verifier reports a generic failure and the operator
+// concludes forgery — the exact misclassification S9-0a exists to prevent.
+func TestIsUnsupported_ClassifiesErrors(t *testing.T) {
+	t.Run("future major is unsupported", func(t *testing.T) {
+		if err := CheckSchema("relayfirst.receipt.v99"); !IsUnsupported(err) {
+			t.Errorf("a future major must classify as unsupported, got %T: %v", err, err)
+		}
+	})
+
+	t.Run("malformed schema is not unsupported", func(t *testing.T) {
+		err := CheckSchema("garbage")
+		if IsUnsupported(err) {
+			t.Errorf("a malformed schema is a defect in the receipt, not a version mismatch: %v", err)
+		}
+	})
+
+	t.Run("nil is not unsupported", func(t *testing.T) {
+		if IsUnsupported(nil) {
+			t.Error("nil must not classify as unsupported")
+		}
+	})
+
+	t.Run("a wrapped unsupported error is still detected", func(t *testing.T) {
+		wrapped := fmt.Errorf("context: %w", CheckSchema("relayfirst.receipt.v99"))
+		if !IsUnsupported(wrapped) {
+			t.Error("IsUnsupported must see through wrapping, or a caller that adds context would lose the distinction")
+		}
+	})
+}
+
+// TestValidate_UnsupportedIsNotReportedAsInvalid is the end-to-end form.
+//
+// It asserts both directions, because either mistake is harmful: reporting
+// unsupported as invalid accuses an honest producer, and reporting invalid as
+// unsupported would let a genuinely broken receipt be skipped rather than
+// rejected.
+func TestValidate_UnsupportedIsNotReportedAsInvalid(t *testing.T) {
+	t.Run("future major", func(t *testing.T) {
+		r := validReceipt(t)
+		r.Schema = "relayfirst.receipt.v99"
+		if err := r.Sign(testPrivKey); err != nil {
+			t.Fatalf("sign: %v", err)
+		}
+
+		err := r.Validate(nil)
+		if err == nil {
+			t.Fatal("a future major must not validate")
+		}
+		if !IsUnsupported(err) {
+			t.Errorf("a future major must be reported as unsupported, not invalid: %v", err)
+		}
+		var ve *ValidationError
+		if errors.As(err, &ve) {
+			t.Error("reporting unsupported as a ValidationError tells the operator to look for a forger")
+		}
+	})
+
+	t.Run("malformed schema", func(t *testing.T) {
+		r := validReceipt(t)
+		r.Schema = "not-a-schema"
+
+		err := r.Validate(nil)
+		if err == nil {
+			t.Fatal("a malformed schema must not validate")
+		}
+		if IsUnsupported(err) {
+			t.Errorf("a malformed schema is broken, not merely uncheckable: %v", err)
+		}
+	})
+}
