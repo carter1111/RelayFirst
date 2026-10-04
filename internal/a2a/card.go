@@ -118,6 +118,13 @@ type CardSpec struct {
 	// "https://node.example/a2a".
 	URL string
 
+	// RelaySet, when set, declares where this agent publishes (P1 #3, ARCHITECTURE.md §17.1).
+	//
+	// It is a full RelaySetExtension rather than a bare URL list because the set carries roles
+	// and priorities, and flattening it here would lose the part a reader needs to pick where to
+	// send.
+	RelaySet *RelaySetExtension
+
 	// WebSocketURL, when set, declares the agent's push binding in the same card
 	// (S9-12, MVP.md §12.1).
 	//
@@ -158,6 +165,16 @@ func Build(spec CardSpec) (*a2asdk.AgentCard, error) {
 	// speak. HTTP is the MVP binding (MVP.md §7.3) and the one every existing client
 	// uses, so it comes first and a client that speaks both stays on the proven path
 	// rather than being silently moved to the newer one.
+	// Extensions are assembled before the card so a producer's relay set is validated while
+	// both the set and its caller are in hand, rather than published and discovered later.
+	extensions := []a2asdk.AgentExtension{identity.Extension()}
+	if spec.RelaySet != nil {
+		if err := ValidateRelaySet(*spec.RelaySet); err != nil {
+			return nil, fmt.Errorf("a2a: %w", err)
+		}
+		extensions = append(extensions, spec.RelaySet.Extension())
+	}
+
 	interfaces := []*a2asdk.AgentInterface{iface}
 	if ws := strings.TrimSpace(spec.WebSocketURL); ws != "" {
 		wsIface := a2asdk.NewAgentInterface(ws, TransportWebSocket)
@@ -171,7 +188,7 @@ func Build(spec CardSpec) (*a2asdk.AgentCard, error) {
 		Version:             spec.Version,
 		SupportedInterfaces: interfaces,
 		Capabilities: a2asdk.AgentCapabilities{
-			Extensions: []a2asdk.AgentExtension{identity.Extension()},
+			Extensions: extensions,
 		},
 		// The default modes describe what the agent accepts and returns when a
 		// skill does not narrow it. RelayFirst tasks exchange JSON, so that is

@@ -90,7 +90,7 @@
 | 项 | 缺口 |
 |---|---|
 | **判据 ③** | "陌生人 10 分钟起节点" —— **代码层达成**（Dockerfile 已有、实测 build/run 成功），**真人计时未做**；且**未发布到 registry** |
-| **判据 ⑨** | 徽章**能**进钱包且**确实不可转让**，但 **`tokenURI` 未做 → 点进去看不到积分数字**（S11-6） |
+| **判据 ⑨** | ✅ **已达成**（S11-6 补齐 `tokenURI`）。**未验证的部分**：与真实 `RelayAnchor` 部署对跑、以及**真实钱包**的渲染 —— 后者需人工 |
 | **判据 ⑩** | ✅ **已达成**（S10-0 补齐节点身份） |
 | **P1 #4** | 多 relay 的 **quorum / per-relay 健康 / failover 策略未实现**（只有并发扇出 + 部分成功） |
 | **超时边** | 6 条中实现 **4 条**；`RUNNING_HEARTBEAT` / `DISPUTE_TTL` 由 `TimeoutCoverage()` **显式报告为未实现** |
@@ -253,10 +253,12 @@ testdata/eip712-vectors.json
 
 ```text
 ⑧ A2A 闭环跑通（两 agent：卡片→会话→派任务→执行→收回执→验证，且 wire 兼容）  ✅ 达成（S9-11）
-⑨ SBT 积分在钱包可见且不可转让（转让必须 revert，不只是 locked() 声明）      🔸 部分
-    → 不可转让 ✅（12 项合约测试，变异验证）
+⑨ SBT 积分在钱包可见且不可转让（转让必须 revert，不只是 locked() 声明）      ✅ 达成
+    → 不可转让 ✅（15 项合约测试，变异验证：移除 revert → 3 项 FAIL 而 locked() 仍 true）
     → Merkle claim 能拿到 ✅（对 stub root source）
-    → 钱包可见积分 metadata ⏸（tokenURI 未做，S11-6）
+    → 钱包可见积分 metadata ✅（on-chain data URI；只报合约真实持有的 agentId + points，
+      不编造 rank/receipts/verifiedRate —— 变异验证：注入假 rank → FAIL）
+    → 未验证：与真实 RelayAnchor 部署对跑、真实钱包渲染
 ⑩ 节点不可信但能干（索引/查询/中转 + 客户端在节点撒谎时仍能独立判定 + 结论可归因） ✅ 达成（S10-0/1/2/3/5/6）
 ```
 

@@ -60,6 +60,12 @@ contract RelayPointsTest is IERC721Receiver {
         testNoPriceLikeSurface();
         setUp();
         testSupportsERC5192Interface();
+        setUp();
+        testTokenURIIsSelfContained();
+        setUp();
+        testTokenURIReflectsPoints();
+        setUp();
+        testTokenURIInventsNothing();
     }
 
     // ---------------------------------------------------------------- badge
@@ -223,6 +229,62 @@ contract RelayPointsTest is IERC721Receiver {
         // be deleted first, which is the point of writing it down.
     }
 
+    /// @dev Criterion ⑨ asks for the badge to be visible in a wallet. The metadata must be a
+    /// data URI, or the badge renders only while some server is up — which would make it a
+    /// hosted picture rather than a durable record.
+    function testTokenURIIsSelfContained() public {
+        setUp();
+        uint256 tokenId = points.claimBadge(8453);
+        string memory uri = points.tokenURI(tokenId);
+
+        require(_startsWith(uri, "data:application/json;base64,"), "the metadata must be a data URI");
+        // A remote reference would defeat the point, so it must not appear anywhere.
+        require(!_contains(uri, "http://"), "no remote reference may appear in the metadata");
+        require(!_contains(uri, "https://"), "no remote reference may appear in the metadata");
+    }
+
+    /// @dev The number a badge shows must be the number the contract holds, at claim time and
+    /// after.
+    function testTokenURIReflectsPoints() public {
+        setUp();
+        bytes32 agentId = points.agentIdFor(8453, address(this));
+        uint256 tokenId = points.claimBadge(8453);
+
+        // Before any claim, zero is the honest number. The check reads the PLAIN JSON: a
+        // substring of the inner document is not necessarily a substring of the base64 data
+        // URI, since base64 groups bytes in threes, so searching the encoded form would be
+        // unsound.
+        string memory before = points.metadataJSON(tokenId);
+        require(_contains(before, '"trait_type":"points","value":0'), "expected points 0");
+
+        roots.setProof(true);
+        points.claimPoints(agentId, 1284, 1, 0, new bytes32[](0));
+
+        string memory updated = points.metadataJSON(tokenId);
+        require(_contains(updated, '"trait_type":"points","value":1284'), "the badge must report the claimed total");
+        require(!_contains(updated, before), "the metadata must change when the total does");
+    }
+
+    /// @dev The honesty check that matters for this contract. MVP.md §6.1 sketches receipts,
+    /// epochPoints, rank and verifiedRate, and this contract has none of them. It must not
+    /// invent values, because a wallet displays a constant rank exactly as if it meant
+    /// something.
+    function testTokenURIInventsNothing() public {
+        setUp();
+        uint256 tokenId = points.claimBadge(8453);
+        string memory json = points.metadataJSON(tokenId);
+
+        // The fields this contract cannot supply must be absent, not stubbed. A constant rank
+        // would be displayed by a wallet exactly as if it meant something.
+        require(!_contains(json, "rank"), "rank must not be emitted: it is not on-chain");
+        require(!_contains(json, "verifiedRate"), "verifiedRate must not be emitted: it is not computed here");
+        require(!_contains(json, "receipts"), "receipts must not be emitted: receipts live off-chain");
+
+        // And the two facts it DOES have must be present.
+        require(_contains(json, "agentId"), "the agent id must be reported: it is contract state");
+        require(_contains(json, "points"), "the points total must be reported: it is contract state");
+    }
+
     function testSupportsERC5192Interface() public {
         setUp();
         require(
@@ -230,6 +292,37 @@ contract RelayPointsTest is IERC721Receiver {
             "a wallet checks for ERC-5192 before treating the badge as soulbound"
         );
     }
+}
+
+/// @dev Byte-prefix check, since the test setup has no string library.
+function _startsWith(string memory haystack, string memory prefix) pure returns (bool) {
+    bytes memory h = bytes(haystack);
+    bytes memory p = bytes(prefix);
+    if (h.length < p.length) return false;
+    for (uint256 i = 0; i < p.length; i++) {
+        if (h[i] != p[i]) return false;
+    }
+    return true;
+}
+
+/// @dev Substring check by naive scan. The strings here are short, so a quadratic scan is fine
+/// and avoids pulling in a string library for one helper.
+function _contains(string memory haystack, string memory needle) pure returns (bool) {
+    bytes memory h = bytes(haystack);
+    bytes memory n = bytes(needle);
+    if (n.length == 0) return true;
+    if (h.length < n.length) return false;
+    for (uint256 i = 0; i + n.length <= h.length; i++) {
+        bool matched = true;
+        for (uint256 j = 0; j < n.length; j++) {
+            if (h[i + j] != n[j]) {
+                matched = false;
+                break;
+            }
+        }
+        if (matched) return true;
+    }
+    return false;
 }
 
 /// @dev A minimal root source standing in for RelayAnchor.

@@ -3,6 +3,8 @@ pragma solidity ^0.8.20;
 
 import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 import {IERC5192} from "./interfaces/IERC5192.sol";
+import {Base64} from "openzeppelin-contracts/contracts/utils/Base64.sol";
+import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
 
 /// @title RelayPoints — non-transferable points badge (MVP.md §6.1, invariant A5)
 ///
@@ -58,6 +60,16 @@ contract RelayPoints is ERC721, IERC5192 {
     /// @notice How many badges exist.
     uint256 public totalBadges;
 
+    /// @notice The agent id behind a token, so `tokenURI` can report whose badge it is.
+    ///
+    /// @dev The mapping is the other direction of `_tokenOf`, and it exists because `tokenURI`
+    /// receives a TOKEN id and must find the agent's points. Deriving the agent from `ownerOf`
+    /// would work today, since a badge cannot change hands — but it would silently break the
+    /// moment a transfer became possible, and the failure would be a wrong points number on
+    /// someone's badge rather than an error. Storing the link makes the lookup independent of
+    /// the soulbound property.
+    mapping(uint256 => bytes32) public agentOfToken;
+
     /// @notice Whether a badge has ever been minted for an agent.
     event BadgeMinted(bytes32 indexed agentId, uint256 indexed tokenId);
     /// @notice Emitted when an agent's cumulative total is updated by a claim.
@@ -97,6 +109,7 @@ contract RelayPoints is ERC721, IERC5192 {
         totalBadges += 1;
         tokenId = totalBadges;
         _tokenOf[agentId] = tokenId;
+        agentOfToken[tokenId] = agentId;
         _safeMint(msg.sender, tokenId);
         emit BadgeMinted(agentId, tokenId);
         // ERC-5192 requires the lock event on mint, since a soulbound token is locked from the
@@ -190,7 +203,112 @@ contract RelayPoints is ERC721, IERC5192 {
         return interfaceId == type(IERC5192).interfaceId || super.supportsInterface(interfaceId);
     }
 
-    /// @dev The actual soulbound enforcement.
+    /// @notice Returns this collection's `tokenURI` base.
+    ///
+    /// @dev Empty means the collection is fully on-chain: `tokenURI` returns a data URI built
+    /// from contract state, so the badge renders without any server. Overriding `baseURI` to a
+    /// hosted endpoint would work too, and would reintroduce exactly the central dependency
+    /// this design avoids — a badge that stops rendering when a domain lapses is not a
+    /// durable record of anything.
+    function _baseURI() internal pure override returns (string memory) {
+        return "";
+    }
+
+    /// @notice Returns the badge's metadata as an on-chain data URI (S11-6, criterion ⑨).
+    ///
+    /// @dev # What it contains, and what it deliberately does not
+    ///
+    /// MVP.md §6.1 sketches a richer document — `receipts`, `epochPoints`, `rank`,
+    /// `verifiedRate`. The contract does NOT have those numbers. Receipts live off-chain, and
+    /// rank and verification rate are computed by the scoring layer over data this contract
+    /// never sees. Emitting them would mean inventing values, and a badge whose `rank` is a
+    /// constant is worse than one with no rank at all: a wallet would display it as though it
+    /// meant something.
+    ///
+    /// So this returns the two facts the contract actually holds — who the agent is, and the
+    /// cumulative points its claims have proven — and nothing else. When the richer fields
+    /// exist on-chain they belong here; until then, the honest document is the short one.
+    ///
+    /// @dev # Why SVG rather than a hosted image
+    ///
+    /// The image is a data URI too, so the whole badge — metadata and picture — renders from
+    /// the contract alone. The alternative is an `image` URL pointing at a server, which is
+    /// the central dependency described above.
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        return string.concat("data:application/json;base64,", Base64.encode(bytes(metadataJSON(tokenId))));
+    }
+
+    /// @notice Returns the badge's metadata as plain JSON, before the data-URI wrapping.
+    ///
+    /// @dev Exposed separately so the document can be INSPECTED. Base64-encoding it makes the
+    /// whole thing opaque: a substring of the inner JSON is not necessarily a substring of the
+    /// outer encoding, because base64 groups bytes in threes, so a test that searched the data
+    /// URI for an expected field would be unsound. This function lets a caller check what the
+    /// badge actually says, and is what the tests use.
+    function metadataJSON(uint256 tokenId) public view returns (string memory) {
+        _requireOwned(tokenId);
+
+        // Read the link written at mint rather than re-deriving it: tokenURI has no chainId
+        // parameter, and deriving from the current owner would tie the metadata to the
+        // soulbound property (see agentOfToken).
+        bytes32 agentId = agentOfToken[tokenId];
+        uint256 pts = _points[agentId];
+
+        return string.concat(
+            '{"name":"RelayFirst Miner #',
+            Strings.toString(tokenId),
+            '","description":"',
+            _description(),
+            '","image":"data:image/svg+xml;base64,',
+            Base64.encode(bytes(_svg(tokenId, pts))),
+            '","attributes":[',
+            '{"trait_type":"agentId","value":"',
+            Strings.toHexString(uint256(agentId), 32),
+            '"},',
+            '{"trait_type":"points","value":',
+            Strings.toString(pts),
+            "}]}"
+        );
+    }
+
+    /// @dev The A5 sentence that ships inside the metadata.
+    ///
+    /// @dev It is in the token itself because the token is what a wallet, a marketplace or a
+    /// block explorer displays. A disclaimer that lives only in a repository is not read by the
+    /// people who form the assumption, and a badge that looks like a collectible is exactly
+    /// where someone would assume a value.
+    ///
+    /// @dev Note the wording is on ONE line, and it deliberately matches an approved phrase in
+    /// `internal/compliance`. The A5 guard scans per line, so a phrase split across lines reads
+    /// as a violation — which happened once already (ADR-0006, MVP.md §8.8).
+    function _description() internal pure returns (string memory) {
+        return "RelayFirst contribution badge: non-transferable, unpriced, no promised return. "
+            "Points are not a token and carry no guaranteed value.";
+    }
+
+    /// @dev Renders a minimal badge from the two values the contract holds.
+    ///
+    /// @dev No external font and no remote asset: the SVG must be self-contained, or it defeats
+    /// the purpose of an on-chain URI. Only the points number and token id vary.
+    function _svg(uint256 tokenId, uint256 pts) internal pure returns (string memory) {
+        return string.concat(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">',
+            '<rect width="400" height="400" fill="#0b0d12"/>',
+            '<circle cx="200" cy="170" r="96" fill="none" stroke="#6ee7b7" stroke-width="6"/>',
+            '<text x="200" y="186" font-family="monospace" font-size="44" fill="#6ee7b7" ',
+            'text-anchor="middle">',
+            Strings.toString(pts),
+            "</text>",
+            '<text x="200" y="300" font-family="monospace" font-size="18" fill="#9ca3af" ',
+            'text-anchor="middle">POINTS</text>',
+            '<text x="200" y="340" font-family="monospace" font-size="14" fill="#4b5563" ',
+            'text-anchor="middle">#',
+            Strings.toString(tokenId),
+            "</text></svg>"
+        );
+    }
+
+    /// @dev The actual soulbound enforcement, and the part of this contract that matters most.
     ///
     /// @dev Both mints and burns must stay legal, and that is the whole subtlety of this
     /// override. A mint moves from address(0); a burn moves to address(0). Everything else is
