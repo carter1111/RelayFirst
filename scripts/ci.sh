@@ -132,6 +132,64 @@ fi
 
 # The cross-version compatibility matrix (S9-0g: G2 + G3 + G4).
 #
+# The ingest benchmark gate (Phase 1).
+#
+# # Why this gate exists
+#
+# RelayFirst had never measured its own ingest throughput, and the WuKongIM note was corrected
+# (b6ee030) for having borrowed a number from another project. The correction left a real gap: the
+# cost of single-connection, row-at-a-time SQLite was KNOWN to be unquantified. A measurement that
+# nobody re-runs would leave the same gap, so the number is gated.
+#
+# # Why the threshold is 20% and why that is defensible
+#
+# Measured repeatability on the baseline machine (Apple M4, go1.27.1, modernc.org/sqlite v1.60.1)
+# over four runs: 10782, 11578, 11124, 10885 writes/s. That is a spread of about 7%, so run-to-run
+# noise alone can move the number by more than a few percent.
+#
+# A threshold BELOW the observed noise would fail for its own jitter and would be switched off,
+# which is worse than no gate. 20% is comfortably above the ~7% noise floor while still catching a
+# real algorithmic regression: the Phase 2 change is expected to move throughput by a multiple, not
+# by percent, so the gate's job is to catch "something got much slower", not to police small drift.
+#
+# # Why a missing baseline is a FAILURE rather than a skip
+#
+# The baseline is committed, so its absence means someone deleted it — and a silently skipped gate
+# is how a regression ships. It fails with the command to regenerate.
+step "Ingest benchmark regression (write path; baseline in testdata/ingest-baseline.json)"
+if [ ! -f testdata/ingest-baseline.json ]; then
+  fail "testdata/ingest-baseline.json is missing — regenerate with: go run internal/devtools/ingest_bench.go -update"
+  failures=$((failures + 1))
+else
+  bench_out=$(CGO_ENABLED=0 go run internal/devtools/ingest_bench.go 2>&1) && bench_status=0 || bench_status=$?
+  if [ "$bench_status" -ne 0 ]; then
+    fail "the ingest benchmark did not run:"
+    printf '%s\n' "$bench_out" | sed 's/^/      /' | tail -20
+    failures=$((failures + 1))
+  else
+    # The benchmark prints its own comparison; this parses the delta it computed so the gate and the
+    # tool cannot disagree about what the number means.
+    bench_delta=$(printf '%s\n' "$bench_out" | grep -E '^change ' | grep -oE '[-+][0-9.]+' | head -1)
+    if [ -z "$bench_delta" ]; then
+      # No delta line means the workload or the machine differed, and the tool said so rather than
+      # printing a misleading figure. That is not a regression, so it is reported and not failed.
+      printf '  \033[33mSKIP\033[0m no comparable baseline (workload or machine differs)\n'
+      printf '%s\n' "$bench_out" | grep -E '^baseline|^change|differs' | sed 's/^/      /'
+    else
+      # Compare with awk rather than bc, which is not present everywhere.
+      regression=$(awk -v d="$bench_delta" 'BEGIN { print (d < -20) ? "yes" : "no" }')
+      throughput=$(printf '%s\n' "$bench_out" | grep -E '^  throughput' | sed 's/^ *//')
+      if [ "$regression" = "yes" ]; then
+        fail "ingest throughput regressed by ${bench_delta}% (threshold -20%): $throughput"
+        printf '%s\n' "$bench_out" | sed 's/^/      /'
+        failures=$((failures + 1))
+      else
+        pass "ingest benchmark (${bench_delta}% vs baseline; $throughput)"
+      fi
+    fi
+  fi
+fi
+
 # The frozen corpus above pins one property: a historical receipt still verifies.
 # It does not exercise the paths that break when a NEW version is being added,
 # which are the paths that are hardest to notice because everything green today
