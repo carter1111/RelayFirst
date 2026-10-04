@@ -42,3 +42,15 @@ broadcast/
 .idea/
 .vscode/
 *.swp
+
+# Tool scaffolding that initialises itself inside a repository.
+#
+# `relayfirst/` and `relayfirst-sdd/` appeared during a session without anyone creating them: they
+# hold only spec-kit scaffolding (.specify/, .github/skills/speckit-*/) and no project code. They
+# were briefly staged and then unstaged, which is exactly how such a directory ends up committed —
+# `git add -A` does not distinguish "this is mine" from "a tool left this here".
+#
+# They are ignored rather than deleted so that a tool relying on them keeps working, and so that
+# removing them stays a separate decision from forgetting them.
+/relayfirst/
+/relayfirst-sdd/
