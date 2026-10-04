@@ -256,7 +256,41 @@ func (r Receipt) TypedData() (eip712.TypedData, error) {
 // It is separate from TypedData so verification can ask for a profile
 // independently of what the receipt claims, which is what makes the relabel
 // attack detectable.
+//
+// # Why an unknown major is refused instead of clamped (S9-0c)
+//
+// The body below selects a profile with `major >= 2`. That reads as "v2 and
+// everything after it", which is only correct while the newest profile is also
+// the right profile for every future major — an assumption that holds exactly
+// until it does not. On the day v3 changes a field, a v3 receipt would keep
+// being validated under v2 rules and *pass*, because the extra field is simply
+// ignored. The gate would go green on a receipt it never actually checked.
+//
+// Refusing unknown majors turns that silent wrong-answer into a loud
+// UnsupportedError, which is the answer callers already know how to report
+// (S9-0j). A build that wants to validate v3 must add v3 to supportedMajors and
+// give it a profile; it cannot drift into one by accident.
 func (r Receipt) typedDataForMajor(major int) (eip712.TypedData, error) {
+	if !IsSupportedMajor(major) {
+		return eip712.TypedData{}, unsupported(
+			"no signing profile for schema major v%d (supported: %s); upgrade the verifier",
+			major, formatMajors())
+	}
+	return r.profileForMajor(major)
+}
+
+// profileForMajor builds the typed data for a major's rules, without checking
+// whether this build supports that major.
+//
+// The split exists so the profile *mechanism* can be tested directly. Testing it
+// through typedDataForMajor would mean either shipping a fake version in
+// supportedMajors or being unable to test the rules until a real v2 lands — and
+// "untestable until after release" is how the relabel attack got in.
+//
+// Production code must not call this: it would build a signature under rules the
+// build cannot claim to check. typedDataForMajor is the entry point; this is the
+// part it delegates to.
+func (r Receipt) profileForMajor(major int) (eip712.TypedData, error) {
 	payload, err := r.SignedPayload()
 	if err != nil {
 		return eip712.TypedData{}, err
@@ -289,6 +323,10 @@ func (r Receipt) typedDataForMajor(major int) (eip712.TypedData, error) {
 		// (the version selector itself). Without these, an intermediary can
 		// relabel a v1 receipt as v2, or re-emit a valid receipt under a fresh
 		// id, and the signature would not notice.
+		//
+		// Reaching this branch for a major this build does not support is
+		// impossible: the guard above returns first, so a future v3 cannot
+		// inherit v2's rules by falling through.
 		version = strconv.Itoa(major)
 		types["RelayReceipt"] = append(types["RelayReceipt"],
 			eip712.Field{Name: "receiptId", Type: "string"},

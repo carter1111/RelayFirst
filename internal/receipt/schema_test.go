@@ -523,7 +523,10 @@ func TestTypedData_V2BindsSchemaAndReceiptID(t *testing.T) {
 	r := validReceipt(t)
 	r.Schema = "relayfirst.receipt.v2"
 
-	td, err := r.typedDataForMajor(2)
+	// profileForMajor, not typedDataForMajor: v2 is not a shipped version yet,
+	// so typedDataForMajor deliberately refuses it (S9-0c). The mechanism that
+	// will define v2 is still worth testing now.
+	td, err := r.profileForMajor(2)
 	if err != nil {
 		t.Fatalf("typed data: %v", err)
 	}
@@ -552,11 +555,11 @@ func TestTypedData_V2BindsSchemaAndReceiptID(t *testing.T) {
 func TestTypedData_ProfilesDiffer(t *testing.T) {
 	r := validReceipt(t)
 
-	v1, err := r.typedDataForMajor(1)
+	v1, err := r.profileForMajor(1)
 	if err != nil {
 		t.Fatalf("v1 typed data: %v", err)
 	}
-	v2, err := r.typedDataForMajor(2)
+	v2, err := r.profileForMajor(2)
 	if err != nil {
 		t.Fatalf("v2 typed data: %v", err)
 	}
@@ -572,6 +575,69 @@ func TestTypedData_ProfilesDiffer(t *testing.T) {
 
 	if string(d1) == string(d2) {
 		t.Fatal("the v1 and v2 profiles must differ, or a v1 signature would verify under v2 rules")
+	}
+}
+
+// TestTypedData_UnknownMajorIsRefused is the S9-0c guard.
+//
+// Before this, an unknown major fell through the `major >= 2` branch and was
+// validated under v2's rules. That is a silent wrong answer: on the day a real
+// v3 changes a field, a v3 receipt would be checked against v2's field set and
+// pass without any of the new rules being applied. The guard converts it to
+// "cannot check this", which the caller already knows how to report.
+func TestTypedData_UnknownMajorIsRefused(t *testing.T) {
+	r := validReceipt(t)
+
+	for _, major := range []int{0, 2, 3, 99} {
+		if IsSupportedMajor(major) {
+			continue // a genuinely supported major must not be refused
+		}
+		_, err := r.typedDataForMajor(major)
+		if err == nil {
+			t.Errorf("major v%d is not supported but a profile was built for it; "+
+				"a future version would silently inherit the newest ruleset", major)
+			continue
+		}
+		if !IsUnsupported(err) {
+			t.Errorf("refusing major v%d must be a version answer (unsupported), "+
+				"not a claim that the receipt is broken: %v", major, err)
+		}
+	}
+}
+
+// TestTypedData_SupportedMajorsHaveDistinctProfiles is the cross-version matrix
+// (S9-0c G2, in-repo half).
+//
+// Every major this build claims to support must map to its own digest. If two
+// profiles ever coincide, a signature made under one verifies under the other,
+// which is precisely the relabel attack B3 closed.
+func TestTypedData_SupportedMajorsHaveDistinctProfiles(t *testing.T) {
+	r := validReceipt(t)
+
+	digests := map[string]int{}
+	for _, major := range SupportedMajors() {
+		td, err := r.profileForMajor(major)
+		if err != nil {
+			t.Fatalf("supported major v%d has no profile: %v", major, err)
+		}
+		// A supported major must also pass the gate that production uses.
+		if _, err := r.typedDataForMajor(major); err != nil {
+			t.Fatalf("supported major v%d is refused by typedDataForMajor: %v", major, err)
+		}
+		d, err := eip712.HashTypedData(td)
+		if err != nil {
+			t.Fatalf("v%d digest: %v", major, err)
+		}
+		key := string(d)
+		if prev, dup := digests[key]; dup {
+			t.Fatalf("majors v%d and v%d produce the same digest; "+
+				"a signature under one would verify under the other", prev, major)
+		}
+		digests[key] = major
+	}
+	if len(digests) != len(SupportedMajors()) {
+		t.Fatalf("expected one distinct profile per supported major, got %d digests for %d majors",
+			len(digests), len(SupportedMajors()))
 	}
 }
 
@@ -909,11 +975,17 @@ func TestIsUnsupported_ClassifiesErrors(t *testing.T) {
 // rejected.
 func TestValidate_UnsupportedIsNotReportedAsInvalid(t *testing.T) {
 	t.Run("future major", func(t *testing.T) {
+		// This build cannot sign a v99 receipt: TypedData refuses a major it has
+		// no profile for (S9-0c). That refusal is the point — fabricating a
+		// signature under guessed rules is exactly the silent-wrong-answer the
+		// guard prevents. So the fixture is not signed here.
+		//
+		// It does not need to be. ValidateStructure -> CheckSchema runs before
+		// any signature work, so the classification under test is decided by the
+		// schema alone. A real receipt from a future build would have a real
+		// signature and would still land on this same branch.
 		r := validReceipt(t)
 		r.Schema = "relayfirst.receipt.v99"
-		if err := r.Sign(testPrivKey); err != nil {
-			t.Fatalf("sign: %v", err)
-		}
 
 		err := r.Validate(nil)
 		if err == nil {
@@ -925,6 +997,22 @@ func TestValidate_UnsupportedIsNotReportedAsInvalid(t *testing.T) {
 		var ve *ValidationError
 		if errors.As(err, &ve) {
 			t.Error("reporting unsupported as a ValidationError tells the operator to look for a forger")
+		}
+	})
+
+	t.Run("future major cannot be signed", func(t *testing.T) {
+		// The other half of S9-0c: the build must not sign what it cannot check.
+		// Before the guard, this succeeded via the `major >= 2` fall-through, so a
+		// v3 receipt would have been signed and verified under v2's field set.
+		r := validReceipt(t)
+		r.Schema = "relayfirst.receipt.v99"
+
+		err := r.Sign(testPrivKey)
+		if err == nil {
+			t.Fatal("signing a future major must fail; otherwise this build invents rules for a version it does not know")
+		}
+		if !IsUnsupported(err) {
+			t.Errorf("an unknown major is a version problem, not a malformed receipt: %v", err)
 		}
 	})
 
