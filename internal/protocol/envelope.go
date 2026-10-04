@@ -95,6 +95,40 @@ type Envelope struct {
 // KindReceipt is the envelope kind used for a mined receipt.
 const KindReceipt = "receipt"
 
+// KindEvent is the envelope kind used for a signed protocol event (S9-6).
+//
+// # Why an event travels as an envelope and not as a new message type
+//
+// An event is a signed, opaque body with an id and an addressee — exactly what an
+// envelope carries. Giving it its own transport would mean a second store, a
+// second dedup rule and a second pull path, all of which already exist and are
+// already tested. The node needs no new capability: it indexes by id and agent and
+// carries the bytes.
+//
+// # What the node still must not do
+//
+// Nothing here lets a node interpret an event. It does not parse the payload, does
+// not check the chain and does not verify the signature — the same rule as receipts
+// (MVP.md §7.1). An event's chain is validated by whoever holds the events, with a
+// hasher the node does not have.
+const KindEvent = "event"
+
+// LooksLikeEventID reports whether id has the shape of an event id.
+//
+// Event ids are opaque strings chosen by the actor, unlike receipt ids which are
+// derived hashes. So this is a weaker check than LooksLikeReceiptID: it only
+// rejects an empty or absurdly long id, which is enough to keep the index sane
+// without constraining a newer actor's id scheme.
+func LooksLikeEventID(id string) bool {
+	if id == "" {
+		return false
+	}
+	// The bound is generous and exists only so a hostile sender cannot use an id
+	// as an unbounded storage key.
+	const maxEventIDLength = 256
+	return len(id) <= maxEventIDLength
+}
+
 // MaxPayloadBytes caps a single accepted message.
 //
 // A node is a public endpoint, so an uncapped body is an unbounded memory and

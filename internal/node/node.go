@@ -55,6 +55,9 @@ type Envelope = protocol.Envelope
 // KindReceipt is the envelope kind used for a mined receipt.
 const KindReceipt = protocol.KindReceipt
 
+// KindEvent is the envelope kind used for a signed protocol event (S9-6).
+const KindEvent = protocol.KindEvent
+
 // MaxPayloadBytes caps a single accepted message.
 const MaxPayloadBytes = protocol.MaxPayloadBytes
 
@@ -218,6 +221,11 @@ func (n *Node) validate(env Envelope) error {
 	if env.Kind == KindReceipt && !protocol.LooksLikeReceiptID(env.ID) {
 		return fmt.Errorf("a %s message needs a 32-byte hex id", KindReceipt)
 	}
+	// An event id is chosen by its actor rather than derived, so only its shape is
+	// checked. The node still does not look inside (S9-6).
+	if env.Kind == KindEvent && !protocol.LooksLikeEventID(env.ID) {
+		return fmt.Errorf("an %s message needs a non-empty id of at most 256 bytes", KindEvent)
+	}
 	return nil
 }
 
@@ -302,7 +310,7 @@ func (n *Node) handleWellKnown(w http.ResponseWriter, _ *http.Request) {
 			"POST /messages", "GET /messages/{agentId}",
 			"POST /agents", "GET /agents", "GET /agents/{agentId}",
 		},
-		MessageKind: []string{KindReceipt},
+		MessageKind: []string{KindReceipt, KindEvent},
 		Messages:    n.cfg.Store.Count(),
 		Agents:      n.cfg.Store.AgentCount(),
 		AgentCards:  n.cfg.Cards.Count(),
