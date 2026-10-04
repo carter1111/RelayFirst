@@ -86,6 +86,7 @@ func run(args []string) error {
 
 	n, err := node.New(node.Config{
 		Store:           sqlite.NewMessageStore(db),
+		Cards:           sqlite.NewCardStore(db),
 		PublicURL:       cfg.publicURL,
 		Version:         version,
 		MaxPayloadBytes: cfg.maxPayload,

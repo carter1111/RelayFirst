@@ -48,7 +48,11 @@ func concurrentNode(t *testing.T) (*node.Node, *sqlite.MessageStore) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	ms := sqlite.NewMessageStore(db)
-	n, err := node.New(node.Config{Store: ms, Version: "concurrency-test"})
+	n, err := node.New(node.Config{
+		Store:   ms,
+		Cards:   sqlite.NewCardStore(db),
+		Version: "concurrency-test",
+	})
 	if err != nil {
 		t.Fatalf("node.New: %v", err)
 	}

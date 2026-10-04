@@ -170,6 +170,50 @@ else
   pass "cross-version matrix ($version_pass tests across receipt/protocol/a2a)"
 fi
 
+# The import-graph separation gate (MVP.md §7.1 and §8.5).
+#
+# Two boundaries in this project are load-bearing security properties, and both
+# are properties of the import graph rather than of reviewer attention:
+#
+#   1. A relay node must be UNABLE to verify a signature. If it could, it could
+#      forge one, and "validate on the client" (MVP.md §5.4) is what stops a
+#      hostile node from fabricating work. So the node binary must not link
+#      eip712, receipt, publish or the miner-side stores.
+#
+#   2. The mining core must not depend on the A2A wire layer. MVP.md §8.5 permits
+#      a2a-go only at the identity/serialization boundary; letting it into the
+#      mining path would drag a wire-format concern into the one thing that must
+#      stay stable (the receipt).
+#
+# Neither boundary can be verified by reading code, because a single transitive
+# import re-links everything. `go list -deps` answers it exactly, so it is checked
+# here rather than trusted. A violation is silent otherwise: the node would build
+# and pass every functional test while having quietly gained the ability to forge.
+step "Import-graph separation (MVP.md §7.1: node cannot verify; §8.5: mining core stays A2A-free)"
+separation_ok=1
+
+node_forbidden=$(CGO_ENABLED=0 go list -deps ./cmd/relayfirst-node 2>/dev/null \
+  | grep -E 'relayfirst/internal/(eip712|receipt|publish|store)$' || true)
+if [ -n "$node_forbidden" ]; then
+  fail "the node binary links signing/verification code, so it could forge:"
+  printf '%s\n' "$node_forbidden" | sed 's/^/      /'
+  separation_ok=0
+fi
+
+mining_a2a=$(CGO_ENABLED=0 go list -deps ./internal/mining 2>/dev/null \
+  | grep -E 'relayfirst/internal/a2a$' || true)
+if [ -n "$mining_a2a" ]; then
+  fail "the mining core depends on the A2A wire layer (MVP.md §8.5 forbids this):"
+  printf '%s\n' "$mining_a2a" | sed 's/^/      /'
+  separation_ok=0
+fi
+
+if [ "$separation_ok" -eq 1 ]; then
+  pass "node cannot verify; mining core is A2A-free"
+else
+  failures=$((failures + 1))
+fi
+
 # The Merkle corpus is the S7 cross-language gate. It is checked by regeneration
 # rather than by presence: a stale corpus would still pass every test on both sides
 # while the two implementations quietly diverged, which is exactly the failure

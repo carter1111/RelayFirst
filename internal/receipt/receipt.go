@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/relayfirst/relayfirst/internal/agentid"
 	"github.com/relayfirst/relayfirst/internal/eip712"
 	ep "github.com/relayfirst/relayfirst/internal/epoch"
 )
@@ -703,29 +704,14 @@ func (r Receipt) Validate(expectedAgent []byte) error {
 // it is authenticated — authenticated as *this string*, not as a valid chain id.
 // Binding is not the same as validating.
 func agentAddressFromID(agentID string) ([]byte, error) {
-	const prefix = "agent:eip155:"
-	if !strings.HasPrefix(agentID, prefix) {
-		return nil, invalid("agentId %q must start with %q", agentID, prefix)
+	// The syntax is parsed in internal/agentid, which has no dependencies, so the
+	// A2A layer can share it without the node linking this package. Two parsers
+	// for one identifier is how L1 happened; there is now one.
+	parsed, err := agentid.Parse(agentID)
+	if err != nil {
+		return nil, invalid("%v", err)
 	}
-	rest := strings.TrimPrefix(agentID, prefix)
-	i := strings.IndexByte(rest, ':')
-	if i < 0 {
-		return nil, invalid("agentId %q must have form agent:eip155:<chainId>:<address>", agentID)
-	}
-
-	chainStr := rest[:i]
-	if chainStr == "" {
-		return nil, invalid("agentId %q has an empty chainId", agentID)
-	}
-	if _, err := strconv.ParseUint(chainStr, 10, 64); err != nil {
-		return nil, invalid("agentId chainId %q is not a decimal uint64: %v", chainStr, err)
-	}
-
-	addr := rest[i+1:]
-	if addr == "" {
-		return nil, invalid("agentId %q has an empty address", agentID)
-	}
-	out, err := eip712.HexToAddress(addr)
+	out, err := eip712.HexToAddress(parsed.Address)
 	if err != nil {
 		return nil, invalid("agentId address: %v", err)
 	}
@@ -738,20 +724,11 @@ func agentAddressFromID(agentID string) ([]byte, error) {
 // re-parse the id and risk disagreeing with validation about what the field
 // contains.
 func AgentChainID(agentID string) (uint64, error) {
-	const prefix = "agent:eip155:"
-	rest, ok := strings.CutPrefix(agentID, prefix)
-	if !ok {
-		return 0, invalid("agentId %q must start with %q", agentID, prefix)
-	}
-	i := strings.IndexByte(rest, ':')
-	if i < 0 {
-		return 0, invalid("agentId %q must have form agent:eip155:<chainId>:<address>", agentID)
-	}
-	id, err := strconv.ParseUint(rest[:i], 10, 64)
+	parsed, err := agentid.Parse(agentID)
 	if err != nil {
-		return 0, invalid("agentId chainId %q is not a decimal uint64: %v", rest[:i], err)
+		return 0, invalid("%v", err)
 	}
-	return id, nil
+	return parsed.ChainID, nil
 }
 
 // AgentID builds the canonical RelayFirst agent id.

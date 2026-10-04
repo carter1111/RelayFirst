@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -33,6 +34,7 @@ func newTestNode(t *testing.T, publicURL string) (*httptest.Server, *sqlite.Mess
 	ms := sqlite.NewMessageStore(db)
 	n, err := node.New(node.Config{
 		Store:     ms,
+		Cards:     sqlite.NewCardStore(db),
 		PublicURL: publicURL,
 		Version:   "test",
 		Now:       func() time.Time { return time.Unix(1791015800, 0) },
@@ -98,6 +100,52 @@ func postEnvelope(t *testing.T, url string, env node.Envelope) *http.Response {
 	}
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	return resp
+}
+
+// postJSON POSTs v as JSON to url and returns the response. The caller owns the
+// body (t.Cleanup closes it), matching postEnvelope.
+func postJSON(t *testing.T, client *http.Client, url string, v any) *http.Response {
+	t.Helper()
+
+	body, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST %s: %v", url, err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	return resp
+}
+
+// get performs a GET. The caller owns the body.
+func get(t *testing.T, client *http.Client, url string) *http.Response {
+	t.Helper()
+	resp, err := client.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	return resp
+}
+
+// readAll returns the response body as a string, for assertions and diagnostics.
+func readAll(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return string(b)
+}
+
+// decode reads resp's body into v.
+func decode(t *testing.T, resp *http.Response, v any) {
+	t.Helper()
+	if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 }
 
 // TestNode_ReceiptRoundTripSurvivesSignature is the load-bearing test of S5.
@@ -365,6 +413,7 @@ func TestNode_RejectsOversizePayload(t *testing.T) {
 
 	n, err := node.New(node.Config{
 		Store:           sqlite.NewMessageStore(db),
+		Cards:           sqlite.NewCardStore(db),
 		MaxPayloadBytes: 128,
 	})
 	if err != nil {

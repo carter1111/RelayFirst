@@ -63,6 +63,11 @@ type Config struct {
 	// Store is the durable message store. Required.
 	Store *sqlite.MessageStore
 
+	// Cards is the published agent-card directory (S9-3). Required: a node
+	// serves cards as part of the A2A surface, and a nil directory would make
+	// the /agents endpoints silently useless rather than absent.
+	Cards *sqlite.CardStore
+
 	// PublicURL is the address clients should reach this node at, used in the
 	// well-known document. It is distinct from the listen address because a node
 	// behind a proxy hears on localhost but is reached publicly.
@@ -91,6 +96,9 @@ func New(cfg Config) (*Node, error) {
 	if cfg.Store == nil {
 		return nil, fmt.Errorf("node: a message store is required")
 	}
+	if cfg.Cards == nil {
+		return nil, fmt.Errorf("node: a card store is required")
+	}
 	if cfg.MaxPayloadBytes <= 0 {
 		cfg.MaxPayloadBytes = MaxPayloadBytes
 	}
@@ -118,6 +126,12 @@ func (n *Node) Handler() http.Handler {
 
 	// GET /.well-known/relayfirst advertises the node (S5-5).
 	mux.HandleFunc("GET /.well-known/relayfirst", n.handleWellKnown)
+
+	// Agent Card directory (S9-3). The node stores and serves cards; it does not
+	// verify their proofs, which is why every response says so (see cards.go).
+	mux.HandleFunc("POST /agents", n.handlePublishCard)
+	mux.HandleFunc("GET /agents", n.handleListCards)
+	mux.HandleFunc("GET /agents/{agentId}", n.handleGetCard)
 
 	return mux
 }
@@ -268,6 +282,7 @@ type wellKnown struct {
 	MessageKind []string `json:"messageKinds"`
 	Messages    int      `json:"messages"`
 	Agents      int      `json:"agents"`
+	AgentCards  int      `json:"agentCards"`
 
 	// Verifies states plainly that this node does not check signatures. A client
 	// must not assume a node's acceptance means a receipt is valid, and the
@@ -279,14 +294,18 @@ type wellKnown struct {
 
 func (n *Node) handleWellKnown(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, wellKnown{
-		Name:        "relayfirst-node",
-		Version:     n.cfg.Version,
-		PublicURL:   n.cfg.PublicURL,
-		Protocol:    "relayfirst.store-and-forward.v1",
-		Endpoints:   []string{"POST /messages", "GET /messages/{agentId}"},
+		Name:      "relayfirst-node",
+		Version:   n.cfg.Version,
+		PublicURL: n.cfg.PublicURL,
+		Protocol:  "relayfirst.store-and-forward.v1",
+		Endpoints: []string{
+			"POST /messages", "GET /messages/{agentId}",
+			"POST /agents", "GET /agents", "GET /agents/{agentId}",
+		},
 		MessageKind: []string{KindReceipt},
 		Messages:    n.cfg.Store.Count(),
 		Agents:      n.cfg.Store.AgentCount(),
+		AgentCards:  n.cfg.Cards.Count(),
 		Verifies:    false,
 		Note: "store-and-forward only: this node does not verify signatures and does not read any chain; " +
 			"validate receipts on the client (MVP.md §5.4)",

@@ -419,9 +419,9 @@ race 门禁补覆盖时**找到一个真实 bug**：
 
 | id | 任务 | 依赖 | 验收 | 状态 |
 |---|---|---|---|---|
-| S9-1 | 引入官方 A2A SDK（wire 层不自研） | S9-0* | Agent Card / Message / Task 线格式与 A2A 1.0 兼容 | ⬜ todo |
-| S9-2 | `internal/a2a` 包骨架（card / task / session） | S9-1 | 包存在且有测试 | ⬜ todo |
-| S9-3 | Agent Card 发布 + 发现（签名） | S9-2 | 能发布/查到 agent 能力 | ⬜ todo |
+| S9-1 | 引入官方 A2A SDK（wire 层不自研） | S9-0* | Agent Card / Message / Task 线格式与 A2A 1.0 兼容 | ✅ **done** — `github.com/a2aproject/a2a-go/v2 v2.6.0` 已成为直接依赖。**wire 类型全部复用 SDK**：`AgentCard` / `AgentInterface` / `AgentSkill` / `Task` / `TaskState` / `Message` 均未自研。`internal/a2a` 只做**别名 + RelayFirst 绑定**（见 S9-2）。**兼容性由测试钉住**：`TestCard_SerializesAsStandardA2A` 断言标准字段名齐全、**且 `agentId` 不是顶层字段**（否则等于 fork schema）。**依赖事实**：节点导入图中 grpc/genproto = 0（重半在 `a2agrpc` 子包，未触及）；`CGO_ENABLED=0` 构建正常 |
+| S9-2 | `internal/a2a` 包骨架（card / task / session） | S9-1 | 包存在且有测试 | ✅ **done** — `internal/a2a`：`a2a.go`（SDK 原语别名）、`version.go`（协商，S9-0d）、`mapping.go`（版本映射表）、**`card.go`（CardSpec / Build / ValidateCard / SelectInterface）**。**关键安全决策**：`a2a` 包**保持无密码学**（不 import eip712/receipt/publish），否则节点一提供卡片就会链接签名代码 —— 违反 MVP §7.1。签名因此放在 `internal/publish`。**身份绑定**：A2A 没有"卡片属于某个 EVM 账户"的字段，新增会 fork schema（A9 禁止），故用 A2A **原生扩展**（URI `https://relayfirst.dev/a2a/identity/v1`），`Required: false`（标准客户端可忽略）。**27 项测试** |
+| S9-3 | Agent Card 发布 + 发现（签名） | S9-2 | 能发布/查到 agent 能力 | ✅ **done** — 分三层，**刻意分离签名与存储**：<br>**① 签名（`internal/publish/card_proof.go`）**：**不能用 SDK 的 `a2acrypto`** —— 它只支持 ES256(P-256)/RS256，而 MVP §17.2 规定身份是 **EVM secp256k1 且"不能省"**；用第二把密钥会给每个 agent **两套互不一致的身份**。故证明是 **EIP-712 secp256k1**（domain `RelayFirst` / version `1`），**对卡片原始字节**取 keccak256（同 A9 §④ 的逐字理由：重序列化会静默作废签名）。<br>**② 目录（`internal/node/cards.go` + `internal/sqlite/cards.go`）**：节点**存字节、返回字节、绝不验签**（MVP §7.1）。每个响应**显式带 `verified:false`** 并附注说明 —— 裸列表会让读者**误以为节点已过滤**。卡片是"当前状态"（主键 agentId，重复发布覆盖）。<br>**③ 发现（`internal/publish/card_fetch.go`）**：`Fetch`/`List` **把拉取与验证合成一个函数** —— 不提供"先拿后验"的分步 API，因为"忘了验证"是这类端点最可能的误用。节点若**自称已验证**→ 视为**撒谎**并拒绝（它根本做不到）。<br>**新增第 13 道 CI 门禁**：`go list -deps` 实测**节点不能验签** + **挖矿核心不含 a2a**。**实测注入 `receipt` import → 门禁 FAIL**。<br>**端到端**：真实 HTTP 节点上 发布→列出→验证 全通；**恶意节点篡改端点被拒**。**共 40+ 项测试** |
 | S9-4 | Session 生命周期（`SESSION_OPEN` / `_CLOSE`） | S9-2 | 两个 agent 能开会话 | ⬜ todo |
 | S9-5 | Task 状态机（先 4 条超时边） | S9-2 | `OFFER`/`ACCEPT_START`/`INPUT`/`APPROVAL` 超时可用 | ⬜ todo |
 | S9-6 | 消息/事件层（`ARCHITECTURE.md` §4.4 事件表子集） | S9-4 | 任务全生命周期事件可发可收 | ⬜ todo |

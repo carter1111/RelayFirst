@@ -193,6 +193,37 @@ CREATE TABLE IF NOT EXISTS verification_verdicts (
 );
 
 CREATE INDEX IF NOT EXISTS verdicts_verifier_idx ON verification_verdicts (verifier_id);
+
+-- Published A2A agent cards (S9-3).
+--
+-- # Why the node stores the card as opaque bytes
+--
+-- The card is a signed document: its proof covers an exact byte sequence
+-- (internal/publish/card_proof.go). A node that parsed and re-serialized a card
+-- would silently invalidate that proof — the card would still look correct and
+-- would fail verification somewhere else, later, which is the worst failure mode.
+-- So the bytes are stored and returned verbatim, and the two indexed columns the
+-- node needs are supplied by the publisher rather than extracted by reading the
+-- card.
+--
+-- # Why this table holds no verification state
+--
+-- The node does not verify card proofs (MVP.md §7.1: a node cannot check
+-- signatures). Nothing here records "this card is valid" because the node is in no
+-- position to know that. A client fetches the card and its proof and decides for
+-- itself; the node is a directory, not an authority.
+--
+-- agent_id is the primary key, so re-publishing a card for the same agent replaces
+-- it. That is the intended behaviour: a card is current state, not a log. An agent
+-- that rotates its endpoint should not leave a stale card for readers to find.
+CREATE TABLE IF NOT EXISTS agent_cards (
+    agent_id     TEXT    PRIMARY KEY,
+    card         BLOB    NOT NULL,
+    proof        BLOB    NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS agent_cards_updated_idx ON agent_cards (updated_at DESC);
 `
 
 func (db *DB) migrate() error {
