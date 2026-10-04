@@ -448,8 +448,31 @@ race 门禁补覆盖时**找到一个真实 bug**：
 | S9-0c | domain **多版本验证**（try-all + 只增不减版本表） | S9-0b2 | 旧回执永久可验 | ⬜ todo |
 | S9-0d | 采用 A2A 的 `A2A-Version` / `AgentInterface`，**不自研协商** | S9-1 | 无交集时用 `ErrVersionNotSupported` 显式失败 | ⬜ todo |
 | S9-0e | 消息契约占位：`sequence` + `previousEventHash` 字段位置 | S9-0b2 | 现在可恒空，但**位置现在定** | ⬜ todo |
-| S9-0f | CI **G1 冻结语料** `testdata/receipts/v<major>/*.json` | S9-0b2 | 每个历史 major 至少一份真实签名回执，**只增不删** | ✅ **done** — `testdata/receipts/v1/`（2 份真实签名回执，含 1 份逐字 payload 形态）；生成器 `internal/devtools/gen_frozen_receipts.go`；消费测试 `corpus_test.go`（断言每份仍可验 + 当前 major 有语料 + 含逐字形态） |
-| S9-0g | CI **G2 跨版本矩阵** + **G3 未知字段注入** + **G4 协商无交集** | S9-0f | 三条门禁全绿 | 🔸 **部分** — **G1 已接入 CI（第 11 道门禁）**；G2–G4 待 S9-0b/c/d 落地后补 |
+| S9-0f | CI **G1 冻结语料** `testdata/receipts/v<major>/*.json` | S9-0b2 | 每个历史 major 至少一份真实签名回执，**只增不删** | ✅ **done** — `testdata/receipts/v1/`（2 份真实签名回执，含 1 份逐字 payload 形态）；生成器 `internal/devtools/gen_frozen_receipts.go`；消费测试 `corpus_test.go`（断言每份仍可验 + 当前 major 有语料 + 含逐字形态）。**已知缺口**：缺结构性路径样本（L2）、缺 per-major 验证入口（M2）、语料无 SHA-256 清单（M1） |
+| S9-0g | CI **G2 跨版本矩阵** + **G3 未知字段注入** + **G4 协商无交集** | S9-0f | 三条门禁全绿 | 🔸 **部分** — **G1 已接入 CI（第 11 道门禁）**；G2 依赖 S9-0h + M2；G3 依赖 S9-0b；G4 依赖 S9-0d |
+
+### 10.1b S9-0 安全审查：新增的发布前阻断项
+
+> **审查结论见 [`docs/notes/s9-0-security-review.md`](docs/notes/s9-0-security-review.md)。**
+> **结论：S9-0 比原计划大。** 审查发现 4 个发布前阻断项 + 1 高 + 3 中 + 3 低。
+
+| id | 任务 | 严重度 | 状态 |
+|---|---|---|---|
+| **S9-0h** | **把 `receiptId` 与 schema 绑进签名载荷** | **critical（B2+B3）** | ⬜ todo — `receiptId` 未签名却是去重/积分/verdict 的键；`schema` 未签名且 major 被忽略 → **跨版本签名混淆**（v1 回执可改标为 v2 而仍通过）。**这两条使 A6 与 A9 §② 名不副实** |
+| **S9-0i** | **`canonicalJSON` 加数字分支**（`float64` / `json.Number`） | **high（H1）** | ⬜ todo — `Task.Spec` 含数字会让**导出崩**或让**合法回执验证失败** |
+| **S9-0j** | **生产调用方区分 `UnsupportedError`** | **high（H2）** | ⬜ todo — 类型只在测试里被 `errors.As`；CLI/verdict/miner 都映射为 `false` → **"我验不了"被报成"这是伪造"**，正是 S9-0a 要避免的 |
+| **S9-0k** | **语料 SHA-256 清单 + 生成器拒绝覆盖** | medium（M1） | ⬜ todo — 否则"重新生成"可**悄悄重写绊线**，append-only 失效 |
+
+**发布门槛（来自审查）：**
+
+```text
+首发前必修：  B1（✅ 已修）· B2 · B3 · H1 · 并解决 B4
+声称 A9 合规前：H2 · M1 · M2 · L2
+可后置：      M3 · L1 · L3
+```
+
+> **⚠️ 在 B2/B3 修好之前，不应声称满足 A9。**
+> 当前状态是"版本化地基已开始，但**签名字节与信封字段之间仍有未绑定的信任输入**"。
 
 > **⚠️ 实现中发现并修复了一个真实安全缺陷（值得记住）：**
 > S9-0b2 初版**只哈希 payload 字节，不比对结构化字段**。于是两者可**不一致** ——

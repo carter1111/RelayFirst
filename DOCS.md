@@ -61,6 +61,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/getting-started.md`](docs/getting-started.md) | — | **指南** | 从零到首次出分；**明确说明密钥为何由用户自备** | 上手路径变化时 |
 | [`docs/notes/inference-cost-gap.md`](docs/notes/inference-cost-gap.md) | — | **笔记** | 调研：挖矿不消耗推理额度的断层 | 已被 ADR-0002 修复，保留为决策依据 |
 | [`docs/notes/epoch-anchoring.md`](docs/notes/epoch-anchoring.md) | — | **笔记** | **epoch 缺起点导致发行量恒为零**（已修复；起点值待定稿 → BLK-4） | 起点定稿后 |
+| [`docs/notes/s9-0-security-review.md`](docs/notes/s9-0-security-review.md) | 200 | **安全审查** | **S9-0 版本化地基的对抗审查**：4 个发布前阻断项（B1–B4）+ H1–H2 + M1–M3 + L1–L3，含攻击路径与修法 | 阻断项修复后 |
 | [`docs/notes/upgrade-architecture-plan.md`](docs/notes/upgrade-architecture-plan.md) | 651 | **笔记** | **MVP 2.0 → 全架构升级方案**：反分叉版本化（A9 论证）、升级顺序、库采用表、风险登记册 | 版本化地基（S9-0）落地后 |
 | [`docs/notes/blk-2-first-consumer-plan.md`](docs/notes/blk-2-first-consumer-plan.md) | 200 | **行动方案** | **BLK-2：找第一个真实消费方**（价格/可达性 → 交易机器人）—— 买家画像 / demo 形态 / 首封信 / 反自我欺骗判据 / 8 周时间盒 | 拿到第一个使用者后 |
 | [`docs/notes/emission-model-conflict.md`](docs/notes/emission-model-conflict.md) | — | **笔记** | **计分公式（§5.3）与 epoch 发行模型（§6.2）互相矛盾**——需人裁决 | 用户裁决后 |
