@@ -102,6 +102,21 @@ type Receipt struct {
 	//
 	// It is not itself inside the signed payload — it *is* the signed payload's
 	// bytes. Including it in the struct the signature covers would be circular.
+	//
+	// # Consumers must not treat this as authoritative metadata (finding M3)
+	//
+	// Its presence is not proof that the signer used it. A receipt originally
+	// signed structurally can have a Payload added afterwards equal to its
+	// structural bytes and still verify, because the bytes — and therefore the
+	// hash — are identical. That specific case is harmless, but a verifier cannot
+	// in general distinguish "this blob is what was signed" from "this blob
+	// happens to hash the same".
+	//
+	// So the rule for consumers is: read the *validated* structured fields, not
+	// this field. Validation is what guarantees the two agree (Validate rejects a
+	// receipt whose fields do not match the payload), and it is the only reason
+	// either can be trusted. Anything that parses the receipt without validating
+	// it must not present Payload-derived values as though they were checked.
 	Payload string `json:"payload,omitempty"`
 }
 
@@ -635,8 +650,20 @@ func (r Receipt) Validate(expectedAgent []byte) error {
 	return nil
 }
 
-// agentAddressFromID extracts the address from
+// agentAddressFromID extracts and validates the address from
 // "agent:eip155:<chainId>:<address>".
+//
+// # Why the chainId is validated rather than ignored (finding L1)
+//
+// This used to skip straight to the address, leaving the chainId unchecked. The
+// result was that an agentId with an empty, negative or non-numeric chainId
+// ("agent:eip155::0x...", "agent:eip155:not-a-number:0x...") validated cleanly as
+// long as the address and signature agreed. A consumer that routes or filters by
+// chain would then act on a value nothing had ever parsed.
+//
+// The signature does not help here: the chainId is inside the signed agentId, so
+// it is authenticated — authenticated as *this string*, not as a valid chain id.
+// Binding is not the same as validating.
 func agentAddressFromID(agentID string) ([]byte, error) {
 	const prefix = "agent:eip155:"
 	if !strings.HasPrefix(agentID, prefix) {
@@ -647,6 +674,15 @@ func agentAddressFromID(agentID string) ([]byte, error) {
 	if i < 0 {
 		return nil, invalid("agentId %q must have form agent:eip155:<chainId>:<address>", agentID)
 	}
+
+	chainStr := rest[:i]
+	if chainStr == "" {
+		return nil, invalid("agentId %q has an empty chainId", agentID)
+	}
+	if _, err := strconv.ParseUint(chainStr, 10, 64); err != nil {
+		return nil, invalid("agentId chainId %q is not a decimal uint64: %v", chainStr, err)
+	}
+
 	addr := rest[i+1:]
 	if addr == "" {
 		return nil, invalid("agentId %q has an empty address", agentID)
@@ -656,6 +692,28 @@ func agentAddressFromID(agentID string) ([]byte, error) {
 		return nil, invalid("agentId address: %v", err)
 	}
 	return out, nil
+}
+
+// AgentChainID returns the chainId declared in an agentId.
+//
+// It exists so a consumer that routes or filters by chain does not have to
+// re-parse the id and risk disagreeing with validation about what the field
+// contains.
+func AgentChainID(agentID string) (uint64, error) {
+	const prefix = "agent:eip155:"
+	rest, ok := strings.CutPrefix(agentID, prefix)
+	if !ok {
+		return 0, invalid("agentId %q must start with %q", agentID, prefix)
+	}
+	i := strings.IndexByte(rest, ':')
+	if i < 0 {
+		return 0, invalid("agentId %q must have form agent:eip155:<chainId>:<address>", agentID)
+	}
+	id, err := strconv.ParseUint(rest[:i], 10, 64)
+	if err != nil {
+		return 0, invalid("agentId chainId %q is not a decimal uint64: %v", rest[:i], err)
+	}
+	return id, nil
 }
 
 // AgentID builds the canonical RelayFirst agent id.

@@ -380,6 +380,72 @@ func TestAgentID_Format(t *testing.T) {
 	}
 }
 
+// TestAgentID_ChainIDIsValidated is the regression test for finding L1.
+//
+// agentAddressFromID used to jump straight to the address and never look at the
+// chainId, so these ids all validated. The signature does not save us: the
+// chainId lives inside the signed agentId, so it is authenticated as a string
+// but was never checked to be a chain id at all.
+func TestAgentID_ChainIDIsValidated(t *testing.T) {
+	addr := "0x7f4db0d9c4b8a6bce8e1c22da9c419e6e1f3a8b5"
+
+	// A well-formed id must still work, or the check would be vacuously strict.
+	if _, err := agentAddressFromID("agent:eip155:8453:" + addr); err != nil {
+		t.Fatalf("a valid agent id must parse, got: %v", err)
+	}
+	if _, err := agentAddressFromID("agent:eip155:0:" + addr); err != nil {
+		t.Fatalf("chainId 0 is a valid uint64 and must parse, got: %v", err)
+	}
+
+	bad := []struct {
+		name string
+		id   string
+	}{
+		{"empty chainId", "agent:eip155::" + addr},
+		{"non-numeric chainId", "agent:eip155:not-a-number:" + addr},
+		{"negative chainId", "agent:eip155:-5:" + addr},
+		{"hex chainId", "agent:eip155:0x1f:" + addr},
+		{"overflow chainId", "agent:eip155:99999999999999999999999999:" + addr},
+		{"chainId with spaces", "agent:eip155: 8453:" + addr},
+	}
+	for _, c := range bad {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := agentAddressFromID(c.id); err == nil {
+				t.Errorf("agentId with %s must be rejected, but it parsed", c.name)
+			}
+		})
+	}
+}
+
+// TestAgentID_ChainIDAgreesWithAddress pins the two halves of the id together.
+//
+// The address parser and the chain parser read the same string. If they ever
+// disagree about where the boundary is, a consumer routing on the chain id would
+// act on a different value than the one validation approved.
+func TestAgentID_ChainIDAgreesWithAddress(t *testing.T) {
+	addr, err := eip712.HexToAddress("0x7F4dB0D9C4B8A6BCE8E1C22dA9c419E6e1F3A8B5")
+	if err != nil {
+		t.Fatalf("parse address: %v", err)
+	}
+	id := AgentID(8453, addr)
+
+	gotChain, err := AgentChainID(id)
+	if err != nil {
+		t.Fatalf("AgentChainID on a freshly built id failed: %v", err)
+	}
+	if gotChain != 8453 {
+		t.Errorf("chain id round-trip mismatch: got %d, want 8453", gotChain)
+	}
+
+	gotAddr, err := agentAddressFromID(id)
+	if err != nil {
+		t.Fatalf("agentAddressFromID on a freshly built id failed: %v", err)
+	}
+	if !equalBytes(gotAddr, addr) {
+		t.Errorf("address round-trip mismatch: got %x, want %x", gotAddr, addr)
+	}
+}
+
 func TestNewEpoch(t *testing.T) {
 	// The epoch clock is anchored at internal/epoch.GenesisValue
 	// (2026-10-01T00:00:00Z == 1790841600), NOT at the unix zero.

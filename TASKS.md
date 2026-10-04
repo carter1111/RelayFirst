@@ -469,14 +469,19 @@ race 门禁补覆盖时**找到一个真实 bug**：
 |---|---|
 | **M2** | 新增 `receipt.ValidateForMajor(major, ...)` —— **拒绝 major 与回执声明不符**（否则测试 API 会把版本错配"洗成"通过）；`SupportedMajors` / `IsSupportedMajor` 导出。语料测试**按目录名分派**，所以钉住的是"v1 规则仍接受 v1 回执"而非"今天的规则恰好接受" |
 | **L2** | 语料新增 `compute-structural.json`（**不带 payload**），使**结构性重建路径**（所有历史回执依赖的路径）被永久样本钉住，而非只靠同 build 的单元测试 |
+| **L1** | **比审查报告更严重。** 原描述为"chainId 未绑定"，实测是**从未解析** —— `agent:eip155:` 与地址之间的字段可为**空串 / 非数字 / 负数 / 十六进制 / 溢出 u64**，只要地址与签名一致，`Validate` 全部通过。签名在此**不救场**：chainId 在被签的 `agentId` 字符串里，被认证的是"这个字符串"，不是"一个合法 chain id"。修法：`agentAddressFromID` 走 `strconv.ParseUint(chainStr, 10, 64)` 并拒绝空串；新增 `AgentChainID` 让按链路由的消费者复用**同一套**解析，避免校验与消费各判各的。测试 `TestAgentID_ChainIDIsValidated`（6 个子用例）+ `TestAgentID_ChainIDAgreesWithAddress`（两半解析互洽）。**非空转**：移除 `ParseUint` → 5 个子用例 FAIL |
+| **L3** | `schema_test.go` 两处 payload 一致性断言改为**先** `errors.As(&ValidationError)` 且 `!IsUnsupported(err)`，字符串检查降为**次要**（只确认消息点了字段名）。这样"篡改被判成版本不兼容"这类**分类漂移**会让测试失败，而纯字符串断言不会 |
+| **M3** | **文档类修复**（协议层无法消除："signer 用了哪种序列化"本就不进签名）。在 `receipt.go` 的 `Payload` 字段上写明：消费者**只读经 `Validate` 的结构化字段**，不读 `Payload`；`Validate` 已保证两者一致，这是任一方可信的唯一理由 |
 
 **发布门槛（来自审查）：**
 
 ```text
 首发前必修：  B1 ✅ · B2 ✅ · B3 ✅ · H1 ✅ · B4 ✅
 声称 A9 合规前：H2 ✅ · M1 ✅ · M2 ✅ · L2 ✅
-可后置：      M3 · L1 · L3
+已清理：      M3 ✅ · L1 ✅ · L3 ✅
 ```
+
+**10 项全部关闭。** 每一项都附**非空过**证据（改修复 → 施加对应篡改令测试失败 → 还原令测试通过）。
 
 > **✅ 九个必修项全部解决**（五个首发阻断 + 四个"声称合规前必修"）。
 > 剩余三项（M3 消费者不得把 `Payload` 当权威元数据 / L1 `agentId` 的 chainId 未绑定 /

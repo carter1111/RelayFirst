@@ -311,9 +311,18 @@ func TestPayloadConsistency_TamperedFieldIsRejected(t *testing.T) {
 		t.Fatal("a field that disagrees with the signed payload must be rejected; " +
 			"otherwise the structured fields are unauthenticated and consumers read forged values")
 	}
-	// The message names the offending field. The tolerant path reports per-field
-	// mismatches rather than a blanket byte difference, which is what makes the
-	// failure actionable when the payload legitimately carries extra fields.
+	// Assert on the type first (finding L3): a string check alone would keep
+	// passing if the classification changed, and the classification is what tells
+	// a caller whether to look for a forged field or for a version mismatch.
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("a tampered known field is a defect in the receipt, so it must be a ValidationError, got %T: %v", err, err)
+	}
+	if IsUnsupported(err) {
+		t.Error("a tampered field must not be reported as an unsupported version")
+	}
+	// The message also names the offending field, which is what makes the failure
+	// actionable when the payload legitimately carries extra fields.
 	if !strings.Contains(err.Error(), "disagrees with the signed payload") {
 		t.Errorf("expected a payload-consistency failure naming the field, got: %v", err)
 	}
@@ -817,6 +826,14 @@ func TestValidate_AdditiveFieldStillCatchesTampering(t *testing.T) {
 	err = r.Validate(nil)
 	if err == nil {
 		t.Fatal("tolerating additive fields must not tolerate a tampered known field")
+	}
+	// Type first, string second (finding L3).
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("a tampered field is a receipt defect, not a version issue, so it must be a ValidationError, got %T: %v", err, err)
+	}
+	if IsUnsupported(err) {
+		t.Error("a tampered field must not be reported as an unsupported version")
 	}
 	if !strings.Contains(err.Error(), "disagrees with the signed payload") {
 		t.Errorf("expected a field-level mismatch, got: %v", err)
