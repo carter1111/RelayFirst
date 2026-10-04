@@ -88,6 +88,7 @@ func run(args []string) error {
 		Store:           sqlite.NewMessageStore(db),
 		Cards:           sqlite.NewCardStore(db),
 		Observations:    sqlite.NewObservationStore(db),
+		Tasks:           sqlite.NewTaskStore(db),
 		PublicURL:       cfg.publicURL,
 		Version:         version,
 		MaxPayloadBytes: cfg.maxPayload,

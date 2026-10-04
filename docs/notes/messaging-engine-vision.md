@@ -83,3 +83,27 @@ RelayFirst 里 agent 是一等身份：EVM 地址即身份，Agent Card 即名�
 - 不冲突：S10-S13 照走。本文件是 engine 化视角的需求输入，主要落在 S10（索引/查询面）和 TS SDK（新增）。
 - RFN-05（多 relay 客户端逻辑）、relay-set、TS SDK 三者是 engine 化的共同前置，已在 gap list。
 - JimAIM 作为 flagship 应用，不改变 RelayFirst 本体中立性（relay 保持哑）。
+
+## 9. Relay ID 即应用：旗舰 Relay ID 规划（2026-10-04 用户裁定）
+
+核心故事：RelayFirst 上有不同的 Relay ID，每个 Relay ID 是一个不同的应用（社区/命名空间）。这是用户最想讲的故事，也是对外叙事的主线（Layer 1.5/2），engine 藏在后面。
+
+两个旗舰 Relay ID：
+
+- **A2A Social**：给 Agent 聊天、分享、交朋友的 Relay ID。传播说法是交朋友，内核必须是 utility：agent 发现、协作、声誉沉淀。没有内核就是 gimmick。
+- **A2H**：Agent recruit Human。Agent 发任务招人，Human 干活赚美金。这是反转叙事（不是人雇 agent，是 agent 雇人），且有人赚到了 XXXX 美金是 crypto 里最强的 GTM（赚钱截图）。
+- **AgentLand**：进化版 AI Town + Metaverse，给 AI 生活、进化的世界，底层消息协议用 RelayFirst（做到一半的现有项目）。三个 Relay ID 里最具传播力的一个：AI Town 原版已证明看 AI 过日子是病毒式 demo（可看性拉满）。实质是高频 agent 消息加持久世界状态，也是对协议最好的压力测试。
+
+三个 Relay ID 构成社交 / 经济 / 文明三层：A2A Social（社交）、A2H（经济）、AgentLand（文明）。对外可讲：Agent 的社交、经济、文明，都跑在 RelayFirst 上。
+
+技术前提：
+
+- Relay ID 需要身份。S10-0 节点身份（EVM 地址）是 Relay ID 的技术地基：没有节点身份，Relay ID 只是 URL；有了身份，Relay ID 才是可命名、可积累信誉、可收费的命名空间。这个 vision 把 S10-0 从 nice-to-have 升级为 load-bearing。
+- Relay ID 语义 = relay-as-community。Relay 通过 RFN-04 信息文档声明规则与收费（参考 Nostr 付费 relay 模型）。应用是读写这些 relay 的客户端；一个 relay 可以是一个应用的家。
+
+诚实项：
+
+- A2H 的钱从哪来：需要 S12 结算（USDC bounty）加真实出资的需求方。XXXX 美金必须是真实的，注水是信任杀手。
+- 冷启动顺序：先 2-3 个 curated Relay ID（官方跑），不要一上来就人人可建 ID。Nostr 的教训是流量天然幂律分布，先集中再开放。
+- 依赖：A2H 依赖 S12；A2A Social 依赖 S10（索引/relay-set）。
+- JimAIM 可作为访问这些 Relay ID 的 flagship 客户端（to-C Crypto+AI 方向天然契合）。

@@ -180,6 +180,9 @@ func run(args []string) error {
 	case "verify-receipt":
 		return runVerifyReceipt(args[1:])
 
+	case "card":
+		return runCard(args[1:])
+
 	case "version", "--version", "-v":
 		fmt.Println(version)
 		return nil
