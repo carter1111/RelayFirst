@@ -224,6 +224,89 @@ CREATE TABLE IF NOT EXISTS agent_cards (
 );
 
 CREATE INDEX IF NOT EXISTS agent_cards_updated_idx ON agent_cards (updated_at DESC);
+
+-- Observation index (S10-1).
+--
+-- # Why the node may parse a receipt for THIS table
+--
+-- MVP.md §7.1 says the node does not verify signatures, and that stands. Indexing is a
+-- different act: it reads a few fields to make the work findable, and it makes no claim
+-- about whether the work is real. §7.3 puts it plainly — indexing and querying do not
+-- break security, because the data can be re-verified by whoever retrieves it.
+--
+-- The fields are extracted by JSON path, never by linking internal/receipt, which the
+-- import-graph gate enforces. That is the structural expression of "index, do not verify":
+-- the node cannot check a signature because it cannot reach the code that would.
+--
+-- # Why there is no validity column
+--
+-- A boolean here would be a judgement the node is in no position to make, and a consumer
+-- reading it would be trusting the node's opinion. A forged receipt is indexed like any
+-- other; the consumer's signature check is what discards it.
+--
+-- The primary key is the receipt id, so the same receipt arriving twice (a retry, or a
+-- second path) indexes once. Two rows for one receipt would make the cross-verification
+-- count wrong, and that count is the number a consumer actually reads.
+CREATE TABLE IF NOT EXISTS observations (
+    receipt_id   TEXT    PRIMARY KEY,
+    subject      TEXT    NOT NULL,
+    content_hash TEXT    NOT NULL,
+    result_hash  TEXT    NOT NULL,
+    agent_id     TEXT    NOT NULL,
+    task_type    TEXT    NOT NULL,
+    epoch        INTEGER NOT NULL,
+    indexed_at   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS observations_subject_idx ON observations (subject, epoch DESC);
+CREATE INDEX IF NOT EXISTS observations_agent_idx ON observations (agent_id);
+
+-- Task board (S10-3).
+--
+-- # Why the node records offers without judging them
+--
+-- It stores a task announcement so executors can find it. It does not verify the requester,
+-- does not grant exclusivity, and does not enforce expiry — MVP.md §7.3 puts the task relay
+-- in the "does not break security" column precisely because the two agents verify each
+-- other and the node's opinion is not load-bearing.
+--
+-- # Why expiry is stored but never filtered on
+--
+-- ARCHITECTURE.md §4.5 makes expiry a protocol transition decided from signed data. A relay
+-- filtering by its own clock would be inventing an authority it does not have, and two
+-- relays with skewed clocks would disagree about whether an offer was open. The column is
+-- returned so a client can apply its own clock.
+CREATE TABLE IF NOT EXISTS task_offers (
+    task_id    TEXT    PRIMARY KEY,
+    requester  TEXT    NOT NULL,
+    subject    TEXT    NOT NULL,
+    spec       BLOB,
+    expires_at INTEGER,
+    offered_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS task_offers_subject_idx ON task_offers (subject, offered_at DESC);
+
+-- Claims are recorded as INTEREST, not as grants.
+--
+-- # Why there is no "winner" column
+--
+-- The node cannot know who won: it has no authority to grant a task, and giving it one
+-- would make it a market operator rather than a relay. What resolves a competition is the
+-- protocol — the requester accepts one offer, and the others' work has no receipt the
+-- requester acknowledges.
+--
+-- The primary key is (task_id, claimant), so one agent claiming twice is a retry rather
+-- than two claims. Counting it twice would inflate the interest a task appears to have,
+-- which is the number a requester reads when deciding whether the board is alive.
+CREATE TABLE IF NOT EXISTS task_claims (
+    task_id    TEXT    NOT NULL,
+    claimant   TEXT    NOT NULL,
+    claimed_at INTEGER NOT NULL,
+    PRIMARY KEY (task_id, claimant)
+);
+
+CREATE INDEX IF NOT EXISTS task_claims_task_idx ON task_claims (task_id, claimed_at);
 `
 
 func (db *DB) migrate() error {

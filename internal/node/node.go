@@ -21,6 +21,19 @@
 // possible failure mode. So the body is stored and returned verbatim, and the
 // indexing fields the node needs travel in the envelope instead.
 //
+// # The one exception, and why it is not one (S10-1)
+//
+// The observation index reads a few JSON paths out of a receipt payload to make the
+// work findable. That is parsing, and it is the opposite of re-serializing: the bytes
+// stored and served are untouched, and the index is a separate table. MVP.md §7.3
+// authorises exactly this — indexing and querying do not break security, because
+// whoever retrieves the data can re-verify it.
+//
+// The distinction the code keeps: parse to INDEX, never to VERIFY. This package cannot
+// verify even if someone tried, because it cannot reach the signing code (see below),
+// and a forged receipt is indexed like any other and discarded by the consumer's
+// signature check.
+//
 // # Why this package cannot verify, structurally
 //
 // The wire format lives in internal/protocol, and this package imports that — not
@@ -70,6 +83,14 @@ type Config struct {
 	// serves cards as part of the A2A surface, and a nil directory would make
 	// the /agents endpoints silently useless rather than absent.
 	Cards *sqlite.CardStore
+
+	// Observations is the receipt index (S10-1). Required for the same reason: a nil
+	// index would make the query endpoints silently empty rather than absent, and an
+	// empty result reads as "nothing exists" instead of "this node cannot answer".
+	Observations *sqlite.ObservationStore
+
+	// Tasks is the task board (S10-3). Required for the same reason.
+	Tasks *sqlite.TaskStore
 
 	// PublicURL is the address clients should reach this node at, used in the
 	// well-known document. It is distinct from the listen address because a node
@@ -125,6 +146,12 @@ func New(cfg Config) (*Node, error) {
 	if cfg.Cards == nil {
 		return nil, fmt.Errorf("node: a card store is required")
 	}
+	if cfg.Observations == nil {
+		return nil, fmt.Errorf("node: an observation store is required")
+	}
+	if cfg.Tasks == nil {
+		return nil, fmt.Errorf("node: a task store is required")
+	}
 	if cfg.MaxPayloadBytes <= 0 {
 		cfg.MaxPayloadBytes = MaxPayloadBytes
 	}
@@ -163,6 +190,19 @@ func (n *Node) Handler() http.Handler {
 	// HTTP endpoints, not a replacement for them: a client that needs durability or a
 	// cross-node view still pulls. See ws.go for what a socket does and does not promise.
 	mux.HandleFunc(WSPathPattern, n.handleSubscribe)
+
+	// Observation index and cross-verification (S10-1, S10-2). The node indexes what
+	// receipts claim without verifying them; see observations.go for why that is not a
+	// hole. Both responses say so, because a bare list invites a reader to assume the
+	// node filtered it.
+	mux.HandleFunc("GET /observations", n.handleObservations)
+	mux.HandleFunc("GET /observations/{id}/evidence", n.handleEvidence)
+
+	// Task board (S10-3). A noticeboard, not an authority: see tasks.go for what the node
+	// refuses to decide, and why a claim is recorded as interest rather than as a grant.
+	mux.HandleFunc("POST /tasks", n.handleOfferTask)
+	mux.HandleFunc("GET /tasks", n.handleListTasks)
+	mux.HandleFunc("POST /tasks/{id}/claim", n.handleClaimTask)
 
 	return mux
 }
@@ -223,6 +263,10 @@ func (n *Node) handlePost(w http.ResponseWriter, r *http.Request) {
 	// look like new activity to every subscriber.
 	if stored {
 		n.hub.publish(env)
+		// Index a receipt for the observation queries. Best-effort: a receipt the index
+		// cannot read is still delivered, because delivery is the node's obligation and
+		// indexing is additive.
+		n.indexReceiptEnvelope(env)
 	}
 
 	// A duplicate is an acknowledgement, not a conflict: the sender's job is done
@@ -317,15 +361,17 @@ func (n *Node) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // of band, and so an operator can confirm the node is alive and serving. The
 // fields are the minimum a publisher needs to address it.
 type wellKnown struct {
-	Name        string   `json:"name"`
-	Version     string   `json:"version"`
-	PublicURL   string   `json:"publicUrl,omitempty"`
-	Protocol    string   `json:"protocol"`
-	Endpoints   []string `json:"endpoints"`
-	MessageKind []string `json:"messageKinds"`
-	Messages    int      `json:"messages"`
-	Agents      int      `json:"agents"`
-	AgentCards  int      `json:"agentCards"`
+	Name         string   `json:"name"`
+	Version      string   `json:"version"`
+	PublicURL    string   `json:"publicUrl,omitempty"`
+	Protocol     string   `json:"protocol"`
+	Endpoints    []string `json:"endpoints"`
+	MessageKind  []string `json:"messageKinds"`
+	Messages     int      `json:"messages"`
+	Agents       int      `json:"agents"`
+	AgentCards   int      `json:"agentCards"`
+	Observations int      `json:"observations"`
+	Tasks        int      `json:"tasks"`
 
 	// Verifies states plainly that this node does not check signatures. A client
 	// must not assume a node's acceptance means a receipt is valid, and the
@@ -348,12 +394,16 @@ func (n *Node) handleWellKnown(w http.ResponseWriter, _ *http.Request) {
 			// same document it already fetches (MVP.md §12.1: a second AgentInterface,
 			// not a replacement).
 			"GET /ws/messages/{agentId}",
+			"GET /observations", "GET /observations/{id}/evidence",
+			"POST /tasks", "GET /tasks", "POST /tasks/{id}/claim",
 		},
-		MessageKind: []string{KindReceipt, KindEvent},
-		Messages:    n.cfg.Store.Count(),
-		Agents:      n.cfg.Store.AgentCount(),
-		AgentCards:  n.cfg.Cards.Count(),
-		Verifies:    false,
+		MessageKind:  []string{KindReceipt, KindEvent},
+		Messages:     n.cfg.Store.Count(),
+		Agents:       n.cfg.Store.AgentCount(),
+		AgentCards:   n.cfg.Cards.Count(),
+		Observations: n.cfg.Observations.Count(),
+		Tasks:        n.cfg.Tasks.Count(),
+		Verifies:     false,
 		Note: "store-and-forward only: this node does not verify signatures and does not read any chain; " +
 			"validate receipts on the client (MVP.md §5.4)",
 	})

@@ -55,8 +55,10 @@ func newE2ENode(t *testing.T) *httptest.Server {
 	t.Cleanup(func() { _ = db.Close() })
 
 	n, err := node.New(node.Config{
-		Store: sqlite.NewMessageStore(db),
-		Cards: sqlite.NewCardStore(db),
+		Store:        sqlite.NewMessageStore(db),
+		Cards:        sqlite.NewCardStore(db),
+		Observations: sqlite.NewObservationStore(db),
+		Tasks:        sqlite.NewTaskStore(db),
 	})
 	if err != nil {
 		t.Fatalf("node.New: %v", err)

@@ -49,9 +49,11 @@ func concurrentNode(t *testing.T) (*node.Node, *sqlite.MessageStore) {
 
 	ms := sqlite.NewMessageStore(db)
 	n, err := node.New(node.Config{
-		Store:   ms,
-		Cards:   sqlite.NewCardStore(db),
-		Version: "concurrency-test",
+		Store:        ms,
+		Cards:        sqlite.NewCardStore(db),
+		Observations: sqlite.NewObservationStore(db),
+		Tasks:        sqlite.NewTaskStore(db),
+		Version:      "concurrency-test",
 	})
 	if err != nil {
 		t.Fatalf("node.New: %v", err)

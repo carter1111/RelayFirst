@@ -33,11 +33,13 @@ func newTestNode(t *testing.T, publicURL string) (*httptest.Server, *sqlite.Mess
 
 	ms := sqlite.NewMessageStore(db)
 	n, err := node.New(node.Config{
-		Store:     ms,
-		Cards:     sqlite.NewCardStore(db),
-		PublicURL: publicURL,
-		Version:   "test",
-		Now:       func() time.Time { return time.Unix(1791015800, 0) },
+		Store:        ms,
+		Cards:        sqlite.NewCardStore(db),
+		Observations: sqlite.NewObservationStore(db),
+		Tasks:        sqlite.NewTaskStore(db),
+		PublicURL:    publicURL,
+		Version:      "test",
+		Now:          func() time.Time { return time.Unix(1791015800, 0) },
 	})
 	if err != nil {
 		t.Fatalf("node.New: %v", err)
@@ -414,6 +416,8 @@ func TestNode_RejectsOversizePayload(t *testing.T) {
 	n, err := node.New(node.Config{
 		Store:           sqlite.NewMessageStore(db),
 		Cards:           sqlite.NewCardStore(db),
+		Observations:    sqlite.NewObservationStore(db),
+		Tasks:           sqlite.NewTaskStore(db),
 		MaxPayloadBytes: 128,
 	})
 	if err != nil {
