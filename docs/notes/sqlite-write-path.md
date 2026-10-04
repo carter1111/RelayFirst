@@ -134,6 +134,74 @@ Phase 2 **必须**先做的事：**用并发测试实测**在 `>1` 写连接下 
 
 ---
 
+## 6b. 【Phase 2 前置】A6 论证 —— 用实测替代推断（2026-10-05）
+
+**任务书要求 Phase 2 先写 A6 论证。已按"先度量"原则用测试完成。**
+
+### 实测结论
+
+| 问题 | 答案 |
+|---|---|
+| A6 的原子性来自哪里？ | **SQL 语义** —— 两条写路径都是**单语句原子 upsert**（§6 已述） |
+| 那么 `SetMaxOpenConns(1)` 保护的是什么？ | **不是** A6 的原子性；是**忙等行为** |
+| 现在能放宽写连接吗？ | ❌ **不能 —— 实测立即失败** |
+
+### 决定性实测：`PRAGMA busy_timeout` 是**每连接**的
+
+8 连接下并发写，**实测大量 `database is locked (SQLITE_BUSY)`**：
+
+```
+ledger:  16 个观察者中 10 个 SQLITE_BUSY
+message: 16 个写入者中 多数 SQLITE_BUSY
+```
+
+**根因（直接探测证实）：**
+
+```text
+db.Handle().Exec("PRAGMA busy_timeout = 5000")
+  → conn 0 busy_timeout=5000   ← 只有这一条
+  → conn 1 busy_timeout=0      ← 池里其余全是 0
+  → conn 2 busy_timeout=0
+  → conn 3 busy_timeout=0
+```
+
+`PRAGMA` **按连接生效**，而 `Exec` 只触及池中**一条**连接。
+所以池里**除第一条之外**的连接**没有忙等待** → 立即返回 `SQLITE_BUSY`。
+
+### 为什么原来那句"`SetMaxOpenConns(1)` 是 A6 的原子性保证"**错了两层**
+
+| | 原说法 | 实测 |
+|---|---|---|
+| 机制 | "避免检查-后-插入竞态" | ❌ 两条路径**都是单语句**，**没有** check-then-insert |
+| 结论 | "所以它是 A6 的原子性保证" | ❌ A6 原子性来自 **SQL**；`=1` 保证的是**忙等行为** |
+
+**但"能放宽写连接"这个反向结论同样不成立** —— 实测显示 8 连接**立即崩**。
+
+### 因此 Phase 2 的正确形态
+
+```text
+若要让写池 >1，【必须先】把 busy_timeout 按连接应用
+    （driver 的 connection hook，或 DSN 参数若驱动支持）
+然后【重新跑】TestA6_..._ManyConnections 确认仍只有一个赢家
+```
+
+**两个测试已就位并处于 skip 状态**（`TestA6_ArtifactDedupHasExactlyOneWinner_ManyConnections` /
+`TestA6_MessageDedupHasExactlyOneWinner_ManyConnections`）——
+**它们就是放宽写池前必须先通过的测量**。skip 而**不是删除**，因为"存在但失败"是比注释更好的"尚未成立"记录。
+
+**另有两个测试断言"当前阻塞"**（`TestA6_ManyConnectionsAreBlockedByAMissingBusyTimeout`）——
+一旦有人按连接应用了 pragma，**这些测试会失败**，并把人指向需要重跑的测量。
+
+### 对 Phase 2 的影响（诚实说明）
+
+**Phase 2 的"批量事务"仍可做且可能仍有收益**（把 N 次往返合成 1 次），
+但它**不是**"为了放宽连接"的手段 —— 单连接下的批量事务**与 A6 无冲突**
+（去重语句本就在事务内单语句原子）。
+
+**而"放宽写连接"是一项独立的前置工作**，且**实测表明它现在不可用**。
+
+---
+
 ## 7. 与 WuKongIM 笔记的关系
 
 `docs/notes/wukongim-tech-advantages.md` 的借鉴清单 #1（benchmark 门禁）**已由本 Phase 完成**。
