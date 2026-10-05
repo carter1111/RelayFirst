@@ -630,15 +630,20 @@ func runMine(args []string) error {
 		OnVerdict: reportVerdict,
 	}
 
+	// Whether stdout is a terminal is decided once here and reused by the banner and the
+	// progress line, so the two cannot disagree about which mode the run is in.
+	interactive := term.IsTTY(os.Stdout)
+
 	// Live progress state. It is created before the runner so the progress hook can
 	// read the same ledgers the sink writes to — which is what makes the displayed
 	// numbers the real ones rather than a separate tally that could drift.
 	live := &liveProgress{
-		AgentID:   agentID,
-		Points:    ledgers.Points,
-		Receipts:  receipts,
-		EpochOf:   scoring.EpochOf,
-		StartedAt: time.Now(),
+		AgentID:     agentID,
+		Points:      ledgers.Points,
+		Receipts:    receipts,
+		EpochOf:     scoring.EpochOf,
+		StartedAt:   time.Now(),
+		Interactive: interactive,
 	}
 
 	// Publishing wraps the sink rather than replacing it, so a receipt is always
@@ -687,24 +692,48 @@ func runMine(args []string) error {
 		return runOnce(ctx, loop, sink)
 	}
 
-	fmt.Printf("mining as %s\n", agentID)
-	fmt.Printf("  database: %s\n", dbPath)
-	fmt.Printf("  sources:  %d\n", len(sources))
-	fmt.Printf("  interval: %s\n", interval)
-	// Report which verdict source is in use: it decides what a point means, so an operator
-	// watching the numbers needs to know which evidence produced them.
-	fmt.Printf("  verdicts: %s\n", verdictsLabel)
-	if len(generator.SemanticFields) > 0 {
-		fmt.Printf("  semantic: %d field(s) via %s (extract tasks cost inference)\n",
-			len(generator.SemanticFields), provider)
+	// On a terminal the startup block is a short branded banner; piped, it stays the
+	// plain lines it has always been, because the log of a run is something a person and
+	// a script both read and only one of them wants a wordmark.
+	if interactive {
+		d := func(s string) string { return term.Paint(s, term.Dim, true) }
+		b := func(s string) string { return term.Paint(s, term.Bold, true) }
+		c := func(s string) string { return term.Paint(s, term.Cyan, true) }
+		fmt.Println()
+		fmt.Println(c(logo))
+		fmt.Printf("  %s\n\n", d("Proof of Agent Work"))
+		fmt.Printf("  %-12s %s\n", b("mining as"), c(agentID))
+		fmt.Printf("  %-12s %s\n", b("database"), dbPath)
+		fmt.Printf("  %-12s %d\n", b("sources"), len(sources))
+		fmt.Printf("  %-12s %s\n", b("interval"), interval)
+		fmt.Printf("  %-12s %s\n", b("verdicts"), verdictsLabel)
+		if len(generator.SemanticFields) > 0 {
+			fmt.Printf("  %-12s %d field(s) via %s (extract tasks cost inference)\n",
+				b("semantic"), len(generator.SemanticFields), provider)
+		}
+		if earned := ledgers.Points.Balance(agentID); earned > 0 {
+			fmt.Printf("  %-12s %.4f points\n", b("earned"), earned)
+		}
+		fmt.Printf("\n  %s\n\n", d("press ctrl-c to stop"))
+	} else {
+		fmt.Printf("mining as %s\n", agentID)
+		fmt.Printf("  database: %s\n", dbPath)
+		fmt.Printf("  sources:  %d\n", len(sources))
+		fmt.Printf("  interval: %s\n", interval)
+		// Report which verdict source is in use: it decides what a point means, so an
+		// operator watching the numbers needs to know which evidence produced them.
+		fmt.Printf("  verdicts: %s\n", verdictsLabel)
+		if len(generator.SemanticFields) > 0 {
+			fmt.Printf("  semantic: %d field(s) via %s (extract tasks cost inference)\n",
+				len(generator.SemanticFields), provider)
+		}
+		// Report points earned before this run, so a restart does not look like it
+		// wiped the balance.
+		if earned := ledgers.Points.Balance(agentID); earned > 0 {
+			fmt.Printf("  earned so far: %.4f points\n", earned)
+		}
+		fmt.Println("press ctrl-c to stop")
 	}
-
-	// Report points earned before this run, so a restart does not look like it
-	// wiped the balance.
-	if earned := ledgers.Points.Balance(agentID); earned > 0 {
-		fmt.Printf("  earned so far: %.4f points\n", earned)
-	}
-	fmt.Println("press ctrl-c to stop")
 
 	// Cancel on interrupt so the loop can shut down between iterations rather
 	// than mid-write.
@@ -714,6 +743,8 @@ func runMine(args []string) error {
 	err = runner.Run(ctx)
 	if errors.Is(err, context.Canceled) {
 		produced, failed := runner.Stats()
+		// Close the in-place line before the summary, or the two would share a row.
+		clearLiveLine()
 		fmt.Printf("\nstopped: %d receipts produced, %d attempts failed\n", produced, failed)
 		fmt.Printf("points: %.4f total (%d receipt(s) credited)\n",
 			ledgers.Points.Balance(agentID), countCredits(ledgers.Points.Entries(), agentID))
@@ -767,6 +798,7 @@ func runOnce(_ context.Context, loop *mining.Loop, sink mining.ReceiptSink) erro
 // miner that only prints "ok probe" cannot be distinguished from one that is
 // producing worthless work.
 func reportVerdict(r *receipt.Receipt, v scoring.Verdict) {
+	clearLiveLine()
 	if v.Points > 0 {
 		fmt.Printf("  + %s → +%.4f points\n", shortID(r.ReceiptID), v.Points)
 		return
@@ -786,6 +818,7 @@ func reportVerdict(r *receipt.Receipt, v scoring.Verdict) {
 // took it" and "every node took it" are different situations, and an operator
 // watching for a dead node needs to see which one it was.
 func reportDelivery(r *receipt.Receipt, o publish.Outcome) {
+	clearLiveLine()
 	if o.Failed == 0 {
 		fmt.Printf("  → relayed to %d node(s)\n", o.Acked)
 		return
@@ -839,6 +872,12 @@ type liveProgress struct {
 	// Tasks counts completed iterations. It is only used for display, so a plain
 	// field is fine — the authoritative counts come from the ledger and the store.
 	Tasks int
+
+	// Interactive selects an in-place single line (a terminal) over one line per
+	// iteration (a pipe). It is a field rather than a global so the two behaviours are
+	// testable side by side, and so the choice is made once by the caller that already
+	// knows whether stdout is a terminal.
+	Interactive bool
 }
 
 // Report prints the running summary for one completed iteration.
@@ -867,9 +906,42 @@ func (p *liveProgress) Report(res mining.RunResult) {
 		}
 	}
 
+	if p.Interactive {
+		// One line that rewrites itself, so a long run does not scroll the numbers away.
+		// The carriage return returns to the start of the line; the padding clears any
+		// tail left by a previous, longer line so digits do not smear.
+		line := fmt.Sprintf("  %s %-7s  |  epoch %d  points %s / %s  tasks %d  anchors %d",
+			term.Paint("●", term.Green, true), res.Task, epoch,
+			term.Paint(fmt.Sprintf("%.4f", epochPoints), term.Cyan, true),
+			fmt.Sprintf("%.4f", lifetime), p.Tasks, anchors)
+		const pad = 8
+		fmt.Printf("\r%s%s", line, strings.Repeat(" ", pad))
+		liveLineOpen = true
+		return
+	}
 	fmt.Printf("  ok %-7s %s  |  epoch %d  points epoch: %.4f  lifetime: %.4f  tasks: %d  anchors: %d\n",
 		res.Task, shortID(res.Receipt.ReceiptID), epoch,
 		epochPoints, lifetime, p.Tasks, anchors)
+}
+
+// liveLineOpen records that an in-place progress line is currently on screen, so a
+// message printed by any other reporter can end that line first instead of appending
+// onto it. It is a package variable because the verdict and delivery reporters are
+// free functions the runner calls directly; the alternative is threading a handle
+// through every callback for one carriage return.
+var liveLineOpen bool
+
+// clearLiveLine ends an in-place progress line before a normal message is printed.
+//
+// Without it, a line that is rewritten with `\r` has no terminating newline, so the
+// next message — a points award, a delivery note — is appended to the same row and the
+// two run together. The fix is a single newline, emitted only when a live line is open,
+// so a piped run (which never opens one) is unchanged.
+func clearLiveLine() {
+	if liveLineOpen {
+		fmt.Println()
+		liveLineOpen = false
+	}
 }
 
 // anchorFetcher returns the fetcher the mining loop uses to capture evidence.

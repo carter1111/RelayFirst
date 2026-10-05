@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/relayfirst/relayfirst/internal/mining"
 	"github.com/relayfirst/relayfirst/internal/receipt"
+	"github.com/relayfirst/relayfirst/internal/scoring"
 	"github.com/relayfirst/relayfirst/internal/store"
 )
 
@@ -344,5 +346,44 @@ func TestStatus_NonTTYStaysJSON(t *testing.T) {
 	}
 	if strings.Contains(out, "\033") {
 		t.Errorf("a piped status must contain no ANSI escapes, got:\n%s", out)
+	}
+}
+
+// TestLiveProgress_PipedIsOneLinePerIteration is the freeze for the mine loop: piped,
+// it must stay one line per iteration with no carriage return, so a log of a run is
+// exactly what it always was.
+func TestLiveProgress_PipedIsOneLinePerIteration(t *testing.T) {
+	p := &liveProgress{
+		AgentID:     "agent:eip155:8453:0xabc",
+		Points:      scoring.NewMemPointsLedger(),
+		EpochOf:     func(time.Time) uint64 { return 7 },
+		Interactive: false,
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	p.Report(mining.RunResult{Task: "probe", Receipt: &receipt.Receipt{ReceiptID: "0xdeadbeef"}})
+	_ = w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	_ = r.Close()
+	out := buf.String()
+
+	if strings.Contains(out, "\r") {
+		t.Errorf("a piped progress line must not use a carriage return, got %q", out)
+	}
+	if !strings.HasSuffix(out, "\n") {
+		t.Errorf("a piped progress line must end with a newline, got %q", out)
+	}
+	if strings.Contains(out, "\033") {
+		t.Errorf("a piped progress line must contain no ANSI, got %q", out)
+	}
+	if !strings.Contains(out, "tasks: 1") {
+		t.Errorf("the piped line must keep its fields, got %q", out)
 	}
 }
