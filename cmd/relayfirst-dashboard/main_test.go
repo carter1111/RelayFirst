@@ -99,6 +99,93 @@ type unreachableErr struct{}
 
 func (*unreachableErr) Error() string { return "connection refused" }
 
+// TestFilter_NarrowsLocally: the filter must narrow the list already fetched without
+// asking the node for anything.
+func TestFilter_NarrowsLocally(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m.tab = 2
+	m.tasks = []noderead.Task{
+		{TaskID: "tsk_1", Subject: "https://a.example/price"},
+		{TaskID: "tsk_2", Subject: "https://b.example/status"},
+	}
+	m.filter = "price"
+	if got := m.rowCount(); got != 1 {
+		t.Errorf("filter must narrow to 1 row, got %d", got)
+	}
+	if v := m.View(); !strings.Contains(v, "tsk_1") || strings.Contains(v, "tsk_2") {
+		t.Errorf("the filtered view must show only the match, got:\n%s", v)
+	}
+}
+
+// TestInputLine_IsAMode: while typing, a key that is normally a command becomes text.
+func TestInputLine_IsAMode(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m.tab = 1
+	// Open the filter.
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	if !m.editing {
+		t.Fatal("/ on Agents must open the filter input")
+	}
+	// Type "a/b": the slash must be text, not a second command, and "q" must not quit.
+	for _, r := range "a/b" {
+		m = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if m.input != "a/b" {
+		t.Fatalf("input = %q, want \"a/b\" (keys must be text while editing)", m.input)
+	}
+	// Enter commits.
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.editing {
+		t.Error("enter must close the input")
+	}
+	if m.filter != "a/b" {
+		t.Errorf("enter must commit the filter, got %q", m.filter)
+	}
+}
+
+// TestInputLine_EscCancels keeps a half-typed filter from being applied.
+func TestInputLine_EscCancels(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m.filter = "keep"
+	m.tab = 2
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyEscape})
+	if m.editing {
+		t.Error("esc must close the input")
+	}
+	if m.filter != "keep" {
+		t.Errorf("esc must not change the committed filter, got %q", m.filter)
+	}
+}
+
+// TestObservations_NoSubjectIsExplained: the one list that needs a query must say so
+// rather than looking empty.
+func TestObservations_NoSubjectIsExplained(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m.tab = 3
+	v := m.View()
+	if !strings.Contains(v, "no subject set") {
+		t.Errorf("the observations view must prompt for a subject, got:\n%s", v)
+	}
+}
+
+// TestObservations_ShowsResultsAndCaveat keeps the subject visible and the caveat present.
+func TestObservations_ShowsResultsAndCaveat(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m.tab = 3
+	m.subject = "https://a.example/price"
+	m.observations = []noderead.Observation{
+		{ReceiptID: "0xabc", Subject: m.subject, TaskType: "probe", ContentHash: "0xdef"},
+	}
+	v := m.View()
+	for _, want := range []string{"https://a.example/price", "0xabc", "not verdicts"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("the observations view must contain %q, got:\n%s", want, v)
+		}
+	}
+}
+
 // TestHelpIsAMode: while help is up, other keys must not act on the view.
 func TestHelpIsAMode(t *testing.T) {
 	m := newModel(nil, time.Second)
@@ -245,7 +332,7 @@ func TestViewAgents_EmptyIsExplained(t *testing.T) {
 func TestViewConfig_ShowsConnectionAndNote(t *testing.T) {
 	m := newModel(nil, time.Second)
 	m.base = "http://localhost:8080"
-	m.tab = 3
+	m.tab = 4 // Config; Observations took slot 3
 	m.well = noderead.WellKnown{Name: "relayfirst-node", Note: "holds no key"}
 	v := m.View()
 	for _, want := range []string{"http://localhost:8080", "holds no key", "poll"} {

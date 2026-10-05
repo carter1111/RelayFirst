@@ -134,6 +134,14 @@ type pollMsg struct {
 	agents []noderead.Card
 	tasks  []noderead.Task
 
+	// observations are fetched for the subject the user typed. They are carried with
+	// the poll so the same backoff and cap apply, and so an empty result is a real
+	// answer rather than a missing fetch.
+	observations []noderead.Observation
+	// obsSubject echoes what the observations were fetched for, so a result is not
+	// attributed to a subject the user has since changed.
+	obsSubject string
+
 	// err is a CONNECTIVITY failure (health or well-known): the node is unreachable.
 	// listErr is a listing failure on a reachable node, which must not be shown as
 	// "unreachable" — the counts are still live.
@@ -177,6 +185,23 @@ type model struct {
 	// otherwise act are consumed by closing it.
 	help bool
 
+	// filter is a local, case-insensitive substring applied to the Agents and Tasks
+	// lists. It narrows what is ALREADY fetched; it does not ask the node for anything
+	// new, so it is instant and cannot be a query-injection surface.
+	filter string
+	// subject is the URL the Observations tab queries. The node indexes observations
+	// by subject, so this is the one list that is a real query rather than a filter.
+	subject string
+	// observations holds the last subject's results.
+	observations []noderead.Observation
+
+	// input is the text being typed when an input line is open, and editing says one is.
+	editing bool
+	input   string
+	// editingSubject distinguishes "typing a filter" from "typing a subject", since both
+	// use the same input line.
+	editingSubject bool
+
 	// agents and tasks are the active listings. They are refreshed on every poll so
 	// switching tabs shows current data without a separate fetch path.
 	agents []noderead.Card
@@ -190,7 +215,7 @@ const historyLen = 48
 
 // The tabs, in order. Kept as a slice so the header and the key handler agree on how
 // many there are and what they are called.
-var tabs = []string{"Overview", "Agents", "Tasks", "Config"}
+var tabs = []string{"Overview", "Agents", "Tasks", "Observations", "Config"}
 
 func newModel(client *noderead.Client, interval time.Duration) model {
 	m := model{client: client, interval: interval, history: make([]float64, 0, historyLen)}
@@ -228,7 +253,19 @@ func (m model) poll() tea.Cmd {
 		} else if tErr != nil {
 			lErr = tErr
 		}
-		return pollMsg{health: h, well: wk, agents: agents, tasks: tasks, listErr: lErr, at: time.Now()}
+
+		// Observations are only fetched when a subject is set: the node indexes them by
+		// subject and has no "list all" endpoint, so an empty subject is not a query.
+		msg := pollMsg{health: h, well: wk, agents: agents, tasks: tasks, listErr: lErr, at: time.Now()}
+		if m.subject != "" {
+			obs, oErr := m.client.Observations(m.subject, listLimit)
+			if oErr != nil && lErr == nil {
+				msg.listErr = oErr
+			}
+			msg.observations = obs
+			msg.obsSubject = m.subject
+		}
+		return msg
 	}
 }
 
@@ -257,6 +294,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// The input line is a mode too: while it is open, printable keys edit the buffer
+		// rather than acting as commands. A `/` typed into a filter is text, not a second
+		// command, which is the behaviour a reader expects.
+		if m.editing {
+			return m.updateEditing(msg)
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
@@ -270,16 +314,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+tab", "left":
 			m.tab = (m.tab - 1 + len(tabs)) % len(tabs)
 			m.cursor = 0
-		case "1", "2", "3", "4":
+		case "1", "2", "3", "4", "5":
 			// Number keys jump straight to a tab. The mapping is derived from the key
 			// string so it stays correct if tabs are reordered, and it is bounded by the
-			// tab count rather than assumed to be four.
+			// tab count rather than assumed to be a fixed number.
 			for i := range tabs {
 				if msg.String() == fmt.Sprint(i+1) {
 					m.tab = i
 					m.cursor = 0
+					m.offset = 0
 					break
 				}
+			}
+		case "/":
+			// Filter the current list. It is a local narrowing of what is already fetched,
+			// so it is instant and asks the node for nothing.
+			if m.tab == 1 || m.tab == 2 {
+				m.editing = true
+				m.editingSubject = false
+				m.input = m.filter
+			}
+		case "s":
+			// Set the subject the Observations tab queries. This IS a fetch, because the
+			// node indexes observations by subject and cannot list them all.
+			if m.tab == 3 {
+				m.editing = true
+				m.editingSubject = true
+				m.input = m.subject
 			}
 		case "up", "k":
 			if m.cursor > 0 {
@@ -326,6 +387,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.listErr = msg.listErr
 		m.agents = msg.agents
 		m.tasks = msg.tasks
+		// Only accept observations for the subject still current, so a late reply for an
+		// old subject cannot replace the results for a newer one.
+		if msg.obsSubject == m.subject {
+			m.observations = msg.observations
+		}
 		// Clamp the cursor: a listing can shrink between polls, and a cursor past the
 		// end would leave nothing highlighted. The offset is clamped with it so the
 		// window does not start past the new end.
@@ -371,13 +437,85 @@ var (
 	errStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 )
 
+// updateEditing handles keys while the input line is open.
+//
+// The mode exists so a key that is normally a command becomes text: a reader filtering
+// for "task/1" must be able to type the slash. Enter commits, Esc cancels, and the
+// cursor is moved to the end of whatever was committed so a filtered list starts at the
+// top rather than at a stale position.
+func (m model) updateEditing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		if m.editingSubject {
+			m.subject = strings.TrimSpace(m.input)
+		} else {
+			m.filter = strings.TrimSpace(m.input)
+		}
+		m.editing = false
+		m.cursor = 0
+		m.offset = 0
+		// A new subject is a new query; a filter is local and needs no fetch.
+		if m.editingSubject {
+			return m, m.poll()
+		}
+		return m, nil
+	case tea.KeyEsc:
+		m.editing = false
+		return m, nil
+	case tea.KeyBackspace:
+		if len(m.input) > 0 {
+			r := []rune(m.input)
+			m.input = string(r[:len(r)-1])
+		}
+		return m, nil
+	case tea.KeyRunes, tea.KeySpace:
+		m.input += string(msg.Runes)
+		if msg.Type == tea.KeySpace {
+			m.input += " "
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+// filteredAgents and filteredTasks apply the local filter, case-insensitively.
+//
+// They return indices into the full slice so the cursor and the row it points at stay
+// consistent, and so the view can show a row without re-deriving which it is.
+func (m model) filteredAgents() []int {
+	needle := strings.ToLower(m.filter)
+	out := make([]int, 0, len(m.agents))
+	for i, c := range m.agents {
+		if needle == "" || strings.Contains(strings.ToLower(c.AgentID), needle) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+func (m model) filteredTasks() []int {
+	needle := strings.ToLower(m.filter)
+	out := make([]int, 0, len(m.tasks))
+	for i, t := range m.tasks {
+		if needle == "" ||
+			strings.Contains(strings.ToLower(t.TaskID), needle) ||
+			strings.Contains(strings.ToLower(t.Subject), needle) ||
+			strings.Contains(strings.ToLower(t.Requester), needle) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
 // rowCount is the number of selectable rows in the current tab.
 func (m model) rowCount() int {
 	switch m.tab {
 	case 1:
-		return len(m.agents)
+		return len(m.filteredAgents())
 	case 2:
-		return len(m.tasks)
+		return len(m.filteredTasks())
+	case 3:
+		return len(m.observations)
 	default:
 		return 0
 	}
@@ -450,14 +588,40 @@ func (m model) View() string {
 	case 2:
 		m.viewTasks(&b)
 	case 3:
+		m.viewObservations(&b)
+	case 4:
 		m.viewConfig(&b)
 	default:
 		m.viewOverview(&b)
 	}
 
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "%s\n", dimStyle.Render("  [Tab/1-4] section  [↑↓] select  [r] refresh  [?] help  [q] quit"))
+	// The input line replaces the footer when it is open, so what is being typed is
+	// always visible and never competes with the hint text.
+	if m.editing {
+		label := "filter"
+		if m.editingSubject {
+			label = "subject"
+		}
+		fmt.Fprintf(&b, "  %s %s%s\n", labelStyle.Render(label+":"), m.input, titleStyle.Render("▏"))
+		fmt.Fprintf(&b, "%s\n", dimStyle.Render("  [Enter] apply  [Esc] cancel"))
+		return b.String()
+	}
+	fmt.Fprintf(&b, "%s\n", dimStyle.Render("  [Tab/1-5] section  [↑↓] select  [/]"+m.filterHint()+"  [r] refresh  [?] help  [q] quit"))
 	return b.String()
+}
+
+// filterHint names the input key for the current tab, so the footer does not offer a
+// key that would do nothing.
+func (m model) filterHint() string {
+	switch m.tab {
+	case 1, 2:
+		return "filter"
+	case 3:
+		return "subject"
+	default:
+		return "—"
+	}
 }
 
 // viewHelp draws the key reference.
@@ -469,10 +633,12 @@ func (m model) viewHelp(b *strings.Builder) {
 	rows := [][2]string{
 		{"Tab / →", "next section"},
 		{"Shift-Tab / ←", "previous section"},
-		{"1 – 4", "jump to a section"},
+		{"1 – 5", "jump to a section"},
 		{"↑ ↓ / k j", "move the selection"},
 		{"PgUp / PgDn", "move a page at a time"},
 		{"g / G", "first / last row"},
+		{"/", "filter Agents / Tasks (local, instant)"},
+		{"s", "set the Observations subject (a query)"},
 		{"r", "refresh now"},
 		{"?", "toggle this help"},
 		{"q / Ctrl-C", "quit (the node keeps running)"},
@@ -528,9 +694,13 @@ func (m model) viewAgents(b *strings.Builder) {
 	// The note repeats the node's own: a directory is not an authority. A dashboard that
 	// dropped it would be the one place a reader forgets it.
 	fmt.Fprintf(b, "%s\n\n", dimStyle.Render("  a directory, not an authority: this node has not verified any proof"))
-	lo, hi := m.window(len(m.agents))
+	idx := m.filteredAgents()
+	if m.filter != "" {
+		fmt.Fprintf(b, "%s\n", dimStyle.Render(fmt.Sprintf("  filter %q → %d of %d", m.filter, len(idx), len(m.agents))))
+	}
+	lo, hi := m.window(len(idx))
 	for i := lo; i < hi; i++ {
-		c := m.agents[i]
+		c := m.agents[idx[i]]
 		line := fmt.Sprintf("%-46s  card %4dB  proof %4dB", orDash(short(c.AgentID, 46)), len(c.Card), len(c.Proof))
 		if i == m.cursor {
 			fmt.Fprintf(b, "%s\n", titleStyle.Render("  ▸ "+line))
@@ -538,7 +708,7 @@ func (m model) viewAgents(b *strings.Builder) {
 			fmt.Fprintf(b, "    %s\n", line)
 		}
 	}
-	m.scrollHint(b, len(m.agents), lo, hi)
+	m.scrollHint(b, len(idx), lo, hi)
 }
 
 // window returns the visible slice bounds [lo, hi) for a list of n rows.
@@ -572,9 +742,13 @@ func (m model) viewTasks(b *strings.Builder) {
 		return
 	}
 	fmt.Fprintf(b, "%s\n\n", dimStyle.Render("  a noticeboard, not an authority: no exclusivity, no expiry enforcement"))
-	lo, hi := m.window(len(m.tasks))
+	idx := m.filteredTasks()
+	if m.filter != "" {
+		fmt.Fprintf(b, "%s\n", dimStyle.Render(fmt.Sprintf("  filter %q → %d of %d", m.filter, len(idx), len(m.tasks))))
+	}
+	lo, hi := m.window(len(idx))
 	for i := lo; i < hi; i++ {
-		t := m.tasks[i]
+		t := m.tasks[idx[i]]
 		line := fmt.Sprintf("%-22s  claims %-3d  %s", orDash(short(t.TaskID, 22)), t.Claims, orDash(short(t.Subject, 40)))
 		if i == m.cursor {
 			fmt.Fprintf(b, "%s\n", titleStyle.Render("  ▸ "+line))
@@ -582,7 +756,40 @@ func (m model) viewTasks(b *strings.Builder) {
 			fmt.Fprintf(b, "    %s\n", line)
 		}
 	}
-	m.scrollHint(b, len(m.tasks), lo, hi)
+	m.scrollHint(b, len(idx), lo, hi)
+}
+
+// viewObservations shows observations for a subject. Unlike the other lists this is a
+// real query, because the node indexes observations by subject and has no "list all"
+// endpoint — so the view must show what it is querying for, including when none is set.
+func (m model) viewObservations(b *strings.Builder) {
+	if m.subject == "" {
+		fmt.Fprintf(b, "%s\n", dimStyle.Render("  no subject set — press [s] and type the URL an observation was made about"))
+		fmt.Fprintf(b, "%s\n", dimStyle.Render("  (the node indexes observations by subject, not by recency)"))
+		return
+	}
+	fmt.Fprintf(b, "%s\n", dimStyle.Render("  subject: "+m.subject))
+	fmt.Fprintf(b, "%s\n\n", dimStyle.Render("  raw claims, not verdicts: this node does not verify the receipts behind them"))
+	if m.listErr != nil {
+		fmt.Fprintf(b, "%s\n", errStyle.Render("  query failed: "+m.listErr.Error()))
+		return
+	}
+	if len(m.observations) == 0 {
+		fmt.Fprintf(b, "%s\n", dimStyle.Render("  no observations for this subject on this node"))
+		return
+	}
+	lo, hi := m.window(len(m.observations))
+	for i := lo; i < hi; i++ {
+		o := m.observations[i]
+		line := fmt.Sprintf("%-18s  %-8s  %-20s  %s",
+			orDash(short(o.ReceiptID, 18)), orDash(o.TaskType), orDash(short(o.AgentID, 20)), orDash(short(o.ContentHash, 20)))
+		if i == m.cursor {
+			fmt.Fprintf(b, "%s\n", titleStyle.Render("  ▸ "+line))
+		} else {
+			fmt.Fprintf(b, "    %s\n", line)
+		}
+	}
+	m.scrollHint(b, len(m.observations), lo, hi)
 }
 
 func (m model) viewConfig(b *strings.Builder) {
