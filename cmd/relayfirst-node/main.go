@@ -47,6 +47,8 @@ Flags:
   --public-url <url>     URL clients should reach this node at, reported in
                          /.well-known/relayfirst
   --max-payload <bytes>  Largest accepted message (default 1048576)
+  --report               Print a one-shot summary of the store and exit
+                         (does not bind the port, so it is safe while a node runs)
   --version              Print the version
 
 This node does not verify signatures and does not read any chain. It stores what
@@ -82,7 +84,22 @@ func run(args []string) error {
 	}
 	defer db.Close()
 
+	// `--report` opens the same store and prints a one-shot summary, without binding
+	// the port. An operator can see what a node holds (and confirm the database opens)
+	// without taking the node down.
+	if cfg.report {
+		printReport(cfg, snapshot(db))
+		return nil
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	// The banner is for a human at a terminal. Under `docker -d`, systemd or CI the
+	// writer is not a TTY, so the structured log line below is emitted instead and
+	// nothing changes for a log scraper.
+	if isTTY(os.Stderr) {
+		printBanner(os.Stderr, cfg, snapshot(db), true)
+	}
 
 	n, err := node.New(node.Config{
 		Store:           sqlite.NewMessageStore(db),
@@ -152,6 +169,7 @@ type config struct {
 	publicURL  string
 	maxPayload int64
 	version    bool
+	report     bool
 }
 
 // parseFlags is a tiny flag parser, matching the miner CLI's style.
@@ -197,6 +215,8 @@ func parseFlags(args []string) (config, error) {
 			cfg.maxPayload = n
 		case "version", "-v":
 			cfg.version = true
+		case "report":
+			cfg.report = true
 		default:
 			return cfg, fmt.Errorf("unknown flag %q", arg)
 		}

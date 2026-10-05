@@ -1,6 +1,10 @@
 # 终端体验规划 —— 节点 banner/report + CLI 定位
 
-> **状态：规划（未开工）。** 本文只做设计，不含实现。
+> **状态：节点部分【已实现】（2026-10-06）** —— 见 §7。CLI 部分仍规划中。
+>
+> 实现：`cmd/relayfirst-node/banner.go`（logo + banner + `--report`）+ `banner_test.go`。
+> **实测**：TTY 下打 logo/颜色；`--report > file` 与管道**零 ANSI**（测试锁定）；节点非 TTY 启动
+> **仍是单行结构化日志**。
 >
 > 相关：`TASKS.md` §11.2（UX-1 / PKG-*）、`MVP.md` §1 原则②（叙事 > 协议完整性）、
 > `ADR-0005`（CLI 手写风格）。
@@ -146,3 +150,25 @@ $ relayfirst-node report --storage ./relayfirst-node.db
 结论与设计见 [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md)。
 
 **一句话预告**：**协议层给 agent，UI 层给人** —— 两者**必须都保住**，因为判据 ① 是"**陌生人** 10 分钟出分"。
+
+---
+
+## 7. 实现记录（2026-10-06）
+
+| 项 | 位置 | 证据 |
+|---|---|---|
+| logo + 启动 banner（TTY） | `cmd/relayfirst-node/banner.go` `printBanner` | pty 下实测渲染 |
+| `--report`（一次性、不占端口） | 同上 `printReport` + `main.go` | `--report --storage x.db` 打印计数并退出 |
+| TTY 分支 | `isTTY`（`os.ModeCharDevice`，**零新依赖**） | `TestIsTTY_FalseForAPipe` |
+| 管道/重定向**零 ANSI** | `printReport` 判 **stdout** | `TestReportToAPipeHasNoANSI`（实测 `> file` 与管道均 0 个 `\033`） |
+| 非 TTY 启动**字节不变** | banner 只在 `isTTY(os.Stderr)` 时打 | 管道启动实测仍为单行 slog |
+
+### 一处**修正**（设计 vs 最初实现）
+
+最初把 `--report` 写 stderr、却按 stderr 判色 → `report > file` 时 **stderr 是终端、stdout 是文件**，
+文件里会**混入 ANSI**。已改为：**`--report` 写 stdout、按 stdout 判色**（因为它是**交付物**），
+banner 仍写 stderr。
+
+### 未做
+
+- `relayfirst`（矿工 CLI）侧的品牌层 —— 见 [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md)（仍规划）

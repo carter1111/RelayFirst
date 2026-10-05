@@ -824,7 +824,7 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 > **上线 Readiness 汇总**（六问 + 十条判据）：[`docs/notes/mvp2-launch-readiness.md`](docs/notes/mvp2-launch-readiness.md)。
 > **BLK-5（新增，待裁决）**：**节点激励** —— 现状无回报（A7 禁止排放）。
 > 选项与三问见 [`docs/notes/node-incentives-discussion.md`](docs/notes/node-incentives-discussion.md)。
-| **UX-1** | **终端体验**：节点 logo/report + `relayfirst` 品牌层 | 体验（提案） | 📋 **已有设计文档，未开工** | 设计见 [`terminal-experience-plan.md`](docs/notes/terminal-experience-plan.md)（节点）+ [`cli-role-and-ux-plan.md`](docs/notes/cli-role-and-ux-plan.md)（CLI）。**不属十条判据**；价值在**叙事**（`MVP.md §1` 原则②）。**约束见下** |
+| **UX-1** | **终端体验**：节点 logo/report + `relayfirst` 品牌层 | 体验（提案） | 🟡 **节点部分已实现**；CLI 部分仍规划 | **节点**：`cmd/relayfirst-node/banner.go`（logo + 启动 banner + `--report`，**TTY-gated**）。**证据**：TTY 渲染实测；管道/`> file` **零 ANSI**（`TestReportToPipeHasNoANSI`）；非 TTY 启动仍单行 slog。**CLI 部分**未做，见 [`cli-role-and-ux-plan.md`](docs/notes/cli-role-and-ux-plan.md)。**不属十条判据**；价值在**叙事**（`MVP.md §1` 原则②） |
 
 **UX-1 的设计约束（开工前先读）**：
 
