@@ -186,6 +186,12 @@ MVP.md          = 现在要造的    →  ✅ 唯一有工期
 ❌ 不改：全局配置（~/.cursor/rules、~/.claude 等）
 ```
 
+**⚠️ 工作区卫生：`relayfirst/` 与 `relayfirst-sdd/` 是工具脚手架，不是项目文件。**
+
+它们在某次会话中**自行出现**（只含 spec-kit 的 `.specify/`、`.github/skills/speckit-*/`，无项目代码），
+现由 `.gitignore` 忽略。**不要 `git add -A` 把它们带进来**（它们曾被短暂 stage 又 unstage —— 正是这种目录被误提交的方式）。
+清理它们是**独立决定**，不要顺手删（可能有工具依赖）。见 `.gitignore` 的说明段。
+
 ### 7.3 不确定时的动作
 
 **遇到以下情况，停下来问，不要自行决定：**
