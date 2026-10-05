@@ -51,6 +51,39 @@ A 一次性；B/C 常驻交互。**B/C 都放在独立模块**（§3）。
 > dashboard 是**纯 client**、走 Unix socket、退出不影响 worker；`pi-studio` CLI "never runs
 > daemon code in-process"；Claude Code 有 `daemon attach` 把 TUI 接到后台会话；裸 CC/Pi 的 TUI 同进程。
 
+### 2.1 为什么是 client-server —— 这是**通用做法**，不是我们的特例
+
+**判定标准（一句话）**：
+
+```text
+后端是否【长驻】+ 是否【别人依赖它 / 要能远程看 / 不该背 UI】？
+  → 是  → client-server（另开客户端）
+  → 否  → 单进程（UI 与逻辑装一起）
+```
+
+**同类先例（几乎覆盖所有长驻服务）**：
+
+| 后端（长驻） | 界面（另开、连它） |
+|---|---|
+| `postgres` | `psql` / pgAdmin / DBeaver |
+| `redis-server` | `redis-cli` / RedisInsight |
+| `dockerd` | `docker` CLI / **`lazydocker`** |
+| k8s API server | `kubectl` / **`k9s`** |
+| `bitcoind` | `bitcoin-cli` / 钱包 GUI |
+| `geth` | `geth attach` / 区块浏览器 |
+| **`tmux` server** | `tmux` client（**自身即分裂设计**） |
+| **VS Code Remote** | 本地 UI ↔ 远端 server |
+| **任何 Web App** | 浏览器 ↔ 后端 |
+
+**节点命中"是"的**：长驻 ✅ · 别人依赖 ✅ · 可能远端/容器 ✅ · 不该背 UI ✅ · GUI 要能另开/随关 ✅。
+
+**反例（该用单进程）**：一次性命令（`git`/`ls`）；纯本地单用户界面程序；
+**裸 CC/裸 Pi** —— 它们的"后端"就是**当前本地会话**，会话结束进程即消失（**没有独立于 UI 继续跑的服务**）。
+
+**结论**：`relayfirst-node`（主进程）+ `relayfirst-dashboard`（另开客户端）**与
+`postgres↔psql`、`dockerd↔lazydocker`、`k8s↔k9s` 同一模式**。**唯一要定的**只是 TUI 装哪个二进制
+（本文建议**独立**，让节点保持"小而哑"，与上述先例一致）。
+
 ---
 
 ## 3. 最优形状：独立模块 + HTTP 只读

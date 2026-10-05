@@ -27,7 +27,7 @@
 | [`explorer-indexer-plan.md`](explorer-indexer-plan.md) | Explorer 架构与红线 | Explorer |
 | [`decentralization-gap.md`](decentralization-gap.md) | 去中心化现状 vs 目标（G1–G5 / O1–O4） | 去中心化 |
 | [`terminal-experience-plan.md`](terminal-experience-plan.md) | 节点 logo/banner/report 设计 | 节点体验 |
-| [`node-tui-dashboard-plan.md`](node-tui-dashboard-plan.md) | **节点 TUI + 实时 Dashboard 架构**（交互控制台 / 事件源 / bubbletea） | 交互 + 实时数据 |
+| [`node-tui-dashboard-plan.md`](node-tui-dashboard-plan.md) | **节点 Dashboard/TUI 最优方案**：**独立 client-server**（`relayfirst-dashboard`）、HTTP 只读轮询、**节点安全 8 条**、任务 D1–D6 | 交互 + 实时数据 |
 | [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md) | `relayfirst` 定位与品牌层 | 矿工 UX |
 | [`node-incentives-discussion.md`](node-incentives-discussion.md) | 节点动机（BLK-5）选项 | 为何安节点 |
 | [`../gtm/blk-2-first-consumer-plan.md`](../gtm/blk-2-first-consumer-plan.md) | BLK-2 首个消费方行动方案 | 上线硬前置 |
