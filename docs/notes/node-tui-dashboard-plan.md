@@ -220,7 +220,7 @@ internal/tui              ← 新增：bubbletea 模型 + 视图（只依赖 nod
 | **D3** | `cmd/relayfirst-dashboard` 骨架 + Overview（轮询计数 + 吞吐 + sparkline） | D1,D2 | ✅ **done** —— 引入 `bubbletea`（**仅此二进制**）；实测连活节点渲染、吞吐随流量变化（`0→8→10 msg/s`，peak 跟踪）；`q` 退出不影响节点；**非 TTY 明确报错** |
 | **D4** | Agents / Tasks / Config 视图 | D3 | ⬜ todo |
 | **D5** | 键位/帮助/退出一致（部分已在 D3） | D3 | 🔸 部分（`r`/`q`/非 TTY 已做） |
-| **D6** | 安全回归：导入图断言 + 退避测试 | D1 | ✅ **done（部分）** —— 实测 `dashboard` **无签名代码**；`node` **无 bubbletea/noderead**；退避有测试。**待补 CI 门禁**（把 dashboard 的导入图检查写进 `ci.sh`） |
+| **D6** | 安全回归：导入图断言 + 退避测试 | D1 | ✅ **done** —— `ci.sh` 的 **Import-graph separation** 门禁新增两项：**dashboard 不得链接签名代码**（+ 构建 vacuity guard）、**node 不得链接 UI（`charmbracelet`）或 `noderead`**。**变异验证**：给 dashboard 加 `_ "internal/receipt"` → 链接出 `eip712`/`receipt`（会 FAIL）；给 node 加 `_ "lipgloss"` → 链接出 `charmbracelet/*`（会 FAIL）。域内另有退避单测 |
 
 ---
 

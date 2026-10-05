@@ -372,8 +372,40 @@ if [ -z "$verifier_assertion" ]; then
   separation_ok=0
 fi
 
+# The dashboard boundary (UX-1). Two properties, both about the node staying minimal:
+#
+#   1. The dashboard must not link signing code. It is a read-only viewer (it shows what
+#      the node has, it does not build or verify anything), so the ability to sign must
+#      be structurally absent -- the same reasoning as the node and the MCP server.
+#   2. The node must not link the TUI. The dashboard is a SEPARATE binary precisely so
+#      the node carries no UI dependency and can attach/close without affecting it. If
+#      bubbletea ever reached the node, that separation would have quietly been undone.
+#
+# Both are checked rather than trusted, because a single import re-links everything.
+dashboard_forbidden=$(CGO_ENABLED=0 go list -deps ./cmd/relayfirst-dashboard 2>/dev/null \
+  | grep -E 'relayfirst/internal/(eip712|receipt|publish|store|assertion|delegation|delegationsign|e2ee|mining|scoring)$' || true)
+if [ -n "$dashboard_forbidden" ]; then
+  fail "the dashboard links signing code, so a read-only viewer could sign:"
+  printf '%s\n' "$dashboard_forbidden" | sed 's/^/      /'
+  separation_ok=0
+fi
+
+# Vacuity guard: the check above is meaningless if the binary does not build.
+if ! CGO_ENABLED=0 go list -deps ./cmd/relayfirst-dashboard >/dev/null 2>&1; then
+  fail "cmd/relayfirst-dashboard does not build, so its separation check is vacuous"
+  separation_ok=0
+fi
+
+node_ui=$(CGO_ENABLED=0 go list -deps ./cmd/relayfirst-node 2>/dev/null \
+  | grep -E 'charmbracelet|relayfirst/internal/noderead$' || true)
+if [ -n "$node_ui" ]; then
+  fail "the node links UI or dashboard code, so it is no longer the minimal headless binary:"
+  printf '%s\n' "$node_ui" | sed 's/^/      /'
+  separation_ok=0
+fi
+
 if [ "$separation_ok" -eq 1 ]; then
-  pass "node cannot verify; mining core is A2A-free"
+  pass "node cannot verify; mining core is A2A-free; dashboard is read-only; node carries no UI"
 else
   failures=$((failures + 1))
 fi
