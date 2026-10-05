@@ -50,6 +50,9 @@ Usage:
   relayfirst verify <receipt.json>       Verify a receipt offline (no network);
                                          add --refetch to also re-check anchors
   relayfirst id <private-key-hex>        Print the agentId for a key
+  relayfirst session <open|close|show|grant>
+                                         Emit signed A2A session events, or sign a
+                                         delegation grant authorizing a session key
   relayfirst version                     Print the version
 
 Getting started (MVP.md §9.1):

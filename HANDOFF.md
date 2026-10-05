@@ -3,7 +3,7 @@
 > **给接手这个项目的人（或 agent）的交接说明。**
 > 先读本文件，再去读 `MVP.md`（范围）与 `TASKS.md`（任务）。
 >
-> 状态：**v2.0 范围已批准**（S1–S8 代码已实现，423 Go 测试 / 15 Solidity 测试 / 10 道 CI 门禁；**S9–S13 未开工**）。**非 git repo。**
+> 状态：**S1–S13 代码均已实现**（**834** 项 Go 顶层测试 / **41** 项 Solidity 测试 / **14** 道 CI 门禁全绿）。**判据 ①③ 的真人计时、BLK-1/BLK-2 外部接洽仍未完成**（见下）。**非 git repo。**
 > 未上线：受 BLK-1/2/3/4 与人工动作（`git init`、部署合约、真实消费方）所阻。
 >
 > **v2.0 变更：** 对外身份 = 去中心化 headless A2A 协议，挖矿是引流层。
@@ -104,6 +104,7 @@
 | **S13 E2EE（加密 + 委托 + 事件签名 + MCP + 端到端）** | ✅ **全部达成**（S13-1…S13-5 + S13-3b，均有变异验证）。**加密回执离线可验签**已实测 |
 | **SQLite 写路径：度量 + 第 14 道门禁 + 批量事务** | ✅（PH1-1/2、PH2-1/2/3；见 `docs/notes/sqlite-write-path.md`） |
 | **事件签名层（`internal/eventsign`）+ 事件生产者（`relayfirst session`）** | ✅（S13-3b/3c；**事件真的被生产了**，这是第 3 次"机制无引用"的收尾） |
+| **委托签发者 + 读侧授权者（`relayfirst session grant` + `AuthorizeDerivedScope`）** | ✅（S13-3d）—— 委托**可被签发、可被消费**，`AuthorizeEventWithGrant` **不再零引用**。identity 模型定格 **(ii)**：`actor`=session key（签名者），owner 身份随 grant 带外（与 `ARCHITECTURE.md` §4.2 的 `agentId`+`delegationId` 一致），**`eventsign.Verify` 一字未改**。 |
 | **超时边** | 6 条中实现 **4 条**；`RUNNING_HEARTBEAT` / `DISPUTE_TTL` 由 `TimeoutCoverage()` **显式报告为未实现** |
 | **BLK-1 / BLK-2** | 均**未解决**（见 §8） |
 
@@ -126,6 +127,7 @@
 | **去重账本作用域** | **域内全局，域间互不认**（ADR-0003） | A6 的"全局"= **单发行域内**；跨域不兑换 |
 | **节点身份** | **分二进制**（ADR-0004） | `relayfirst-node` **无密钥**（结构上不能伪造）；`relayfirst-verifier` 持密钥出**可归因**结论 |
 | **CLI 框架** | **标准库手写**（ADR-0005） | `MVP.md` §8.1 原写 cobra，实测从未使用；含 4 个重新评估触发条件 |
+| **事件身份模型** | **`actor` = 签名者（session key）**（S13-3d） | 与 `ARCHITECTURE.md` §4.2 的 `agentId`(签名者)+`delegationId`(被行使的 grant) 一致。owner 身份随 **grant 带外**，**不用 `actor` 承载**。因此 `eventsign.Verify` 的 `signer==actor` 检查**保持不变**；session key 签的委托事件由 `AuthorizeEventWithGrant` / `AuthorizeDerivedScope` 裁决。**若日后要改成 `actor`=owner，那是偏离 §4.2，须先写 ADR。** |
 | **Solidity 库** | **OpenZeppelin v5.7.0（vendored）**（ADR-0006） | 仓库**第一个** Solidity 依赖；ERC-721 不自研（合约不可变，写错付不起） |
 | **第一个场景** | **价格 / 可达性（喂交易机器人）** | 破 BLK-2 的入口 |
 | **代币效用** | **待定** | 故意不定。纯叙事驱动。 |

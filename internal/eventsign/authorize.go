@@ -98,6 +98,36 @@ func AuthorizeEventWithGrant(in AuthorizeInput) ([]byte, error) {
 	return signer, nil
 }
 
+// AuthorizeDerivedScope is AuthorizeEventWithGrant with the scope derived from the event type.
+//
+// # Why a reader should call this rather than the two functions separately
+//
+// A reader holding a delegated event has to answer one question, and answering it
+// correctly means three steps in a fixed order: establish the signer from the event's
+// own signature, map the event type to the scope it requires, and check that the grant
+// covers that scope for that signer. A caller assembling those will eventually derive
+// the scope from the wrong thing (the event type it MEANT, not the one on the wire) or
+// skip the derivation entirely, and a skipped derivation is an authorization bypass:
+// any event would be checked against whatever scope the caller happened to pass.
+//
+// So the derivation is folded in here, next to the check that consumes it. The caller
+// supplies the event, the grant, the owner's current nonce and a clock, and gets a
+// signer or a refusal.
+//
+// # What it does not establish
+//
+// The same thing AuthorizeEventWithGrant does not: that the event's content is true or
+// that the actor's work is valid. And the same honest limit as the nonce everywhere —
+// a caller with a STALE nonce cannot tell a revoked grant from a live one.
+func AuthorizeDerivedScope(in AuthorizeInput) ([]byte, error) {
+	scope, err := ScopeOfEvent(in.Event.Type)
+	if err != nil {
+		return nil, err
+	}
+	in.Scope = scope
+	return AuthorizeEventWithGrant(in)
+}
+
 // ScopeOfEvent maps an event type to the scope that covers it.
 //
 // # Why this is a function with no default

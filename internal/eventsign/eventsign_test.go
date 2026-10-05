@@ -306,6 +306,41 @@ func TestAuthorizeEventWithGrant_HasTwoIndependentRefusals(t *testing.T) {
 	}
 }
 
+// TestAuthorizeDerivedScope_AcceptsAndDerivesTheScope is the one-call path a reader uses.
+//
+// The scope is derived from the event type rather than supplied, so a caller cannot check
+// the event against a scope it did not actually require.
+func TestAuthorizeDerivedScope_AcceptsAndDerivesTheScope(t *testing.T) {
+	e := eventFor(t, idFor(t, sessionKey), a2a.EventSessionOpen, 1, "")
+	signed, err := eventsign.Sign(e, sessionKey, chainID)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	grant := grantFor(t, []delegation.Scope{delegation.ScopeSessionEvent})
+	if _, err := eventsign.AuthorizeDerivedScope(eventsign.AuthorizeInput{
+		Event: signed, Grant: grant, CurrentNonce: 1, Now: time.Unix(1791015900, 0),
+	}); err != nil {
+		t.Fatalf("a delegated session event must authorize through the derived-scope path: %v", err)
+	}
+}
+
+// TestAuthorizeDerivedScope_RefusesANonDelegableType closes the hole a supplied scope could
+// leave: a timeout event has no delegable scope, so the derived path must refuse it without
+// the caller having to know that.
+func TestAuthorizeDerivedScope_RefusesANonDelegableType(t *testing.T) {
+	e := eventFor(t, idFor(t, sessionKey), a2a.EventOfferTTLExpire, 1, "")
+	signed, err := eventsign.Sign(e, sessionKey, chainID)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	grant := grantFor(t, delegation.AllScopes())
+	if _, err := eventsign.AuthorizeDerivedScope(eventsign.AuthorizeInput{
+		Event: signed, Grant: grant, CurrentNonce: 1, Now: time.Unix(1791015900, 0),
+	}); err == nil {
+		t.Fatal("a timeout event has no delegable scope and must be refused even with every scope granted")
+	}
+}
+
 // TestScopeOfEvent_ClassifiesEveryDelegableType keeps the mapping from drifting.
 func TestScopeOfEvent_ClassifiesEveryDelegableType(t *testing.T) {
 	cases := map[a2a.EventType]delegation.Scope{

@@ -6,6 +6,24 @@ import (
 	"testing"
 )
 
+// TestKindGrantIsDistinctFromTheKindsANodeInterprets keeps a signed grant from being
+// mistaken for an event or a receipt.
+//
+// A grant carries no sequence and no chain, so feeding one to the event parser would fail
+// confusingly. Its own kind is what a reader keys on to route it, and it must not collide
+// with a kind the node gives special treatment.
+func TestKindGrantIsDistinctFromTheKindsANodeInterprets(t *testing.T) {
+	if KindGrant == KindEvent {
+		t.Fatal("a grant must not share the event kind; a reader would try to parse it as an event")
+	}
+	if KindGrant == KindReceipt {
+		t.Fatal("a grant must not share the receipt kind")
+	}
+	if KindGrant == "" {
+		t.Fatal("the grant kind must be a non-empty string")
+	}
+}
+
 // TestEnvelope_ZeroChainFieldsAreAbsentFromTheWire is the A9 property that makes
 // reserving the chain fields safe (S9-0e).
 //

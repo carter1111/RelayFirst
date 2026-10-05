@@ -113,6 +113,21 @@ const KindReceipt = "receipt"
 // hasher the node does not have.
 const KindEvent = "event"
 
+// KindGrant is the envelope kind used for a signed session delegation grant (S13-3d).
+//
+// # Why a grant travels as its own envelope kind
+//
+// A grant is an owner's signed authorization for a session key, and it is checked
+// alongside the events that key signs. It is not itself an event — it has no
+// sequence and no chain — so giving it the `event` kind would invite a reader to
+// feed it to the event parser, where it would fail in a confusing way.
+//
+// It is carried through a node exactly like an event or a receipt, and for the same
+// reason: one store, one dedup rule and one pull path already exist and are tested.
+// The node needs no new capability, and it still does not parse or verify the
+// payload (MVP.md §7.1). A node that cannot verify a grant cannot be tricked by one.
+const KindGrant = "grant"
+
 // LooksLikeEventID reports whether id has the shape of an event id.
 //
 // Event ids are opaque strings chosen by the actor, unlike receipt ids which are

@@ -13,8 +13,12 @@ import (
 	"time"
 
 	"github.com/relayfirst/relayfirst/internal/a2a"
+	"github.com/relayfirst/relayfirst/internal/agentid"
+	"github.com/relayfirst/relayfirst/internal/delegation"
+	"github.com/relayfirst/relayfirst/internal/delegationsign"
 	"github.com/relayfirst/relayfirst/internal/eip712"
 	"github.com/relayfirst/relayfirst/internal/eventsign"
+	"github.com/relayfirst/relayfirst/internal/protocol"
 )
 
 // The `session` command: the first producer of signed A2A events.
@@ -45,14 +49,16 @@ import (
 // minimum that works, and it is deliberately inspectable so an operator can see and fix it — a
 // database would hide the one thing that goes wrong.
 
-const sessionUsage = `relayfirst session — emit signed session events to a relay
+const sessionUsage = `relayfirst session — emit signed session events, and authorize a session key
 
   relayfirst session open  [flags]
   relayfirst session close [flags]
   relayfirst session show  [flags]     Print the local chain state and the next event
+  relayfirst session grant [flags]     OWNER-side: sign a delegation grant for a session key
 
 Flags:
-  --key <hex>        Session signing key. Also RELAYFIRST_SESSION_KEY.
+  --key <hex>        Session signing key for open/close. Also RELAYFIRST_SESSION_KEY.
+                     OWNER's key for grant. Also RELAYFIRST_OWNER_KEY.
   --chain-id <n>     EVM chain id for the identity (default 8453).
   --session <id>     Session id. Derived from the key and --nonce when omitted.
   --nonce <text>     Nonce for deriving a session id. Default: "default".
@@ -60,9 +66,22 @@ Flags:
   --relay <url>      Relay to POST to. Also RELAYFIRST_RELAY. Omit to print without sending.
   --state <path>     Chain state file. Default: .relayfirst-session-state.json
 
+Grant flags (OWNER-side; the owner authorizes a session key's scopes):
+  --session-key <id>  The delegated session key's agentId (from ` + "`relayfirst id`" + `). REQUIRED.
+  --scopes <list>     Comma-separated scopes to grant. Default: session:event
+                      (grantable: session:event, task:progress, task:lifecycle)
+  --valid-for <dur>   Window length, e.g. 24h. Default: 24h.
+  --grant-nonce <n>   Owner's monotonic nonce for this key. Default: 1.
+  --out <path>        Also write the signed grant JSON here.
+
 The chain matters: each actor's events carry a per-actor sequence and a link to the previous event's
 hash, and a repeat or a gap is rejected by every verifier. This command keeps that bookkeeping in a
 state file so it survives between invocations.
+
+A grant is the OWNER's signature over the delegation; it travels to whoever will authorize the
+session key's events. This command signs it and never holds the session key: the session key signs
+its own events, and the owner's grant is what makes them acceptable. A delegate can never sign a
+receipt (there is no such scope; invariant A9).
 
 Keys are NEVER written to the config file; --key would leak into shell history and the process table,
 so prefer the environment variable.
@@ -71,12 +90,14 @@ so prefer the environment variable.
 func runSession(args []string) error {
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, sessionUsage)
-		return fmt.Errorf("session needs a subcommand (open, close or show)")
+		return fmt.Errorf("session needs a subcommand (open, close, show or grant)")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
 	case "open", "close", "show":
 		return runSessionEmit(sub, rest)
+	case "grant":
+		return runSessionGrant(rest)
 	case "-h", "--help", "help":
 		fmt.Print(sessionUsage)
 		return nil
@@ -260,6 +281,223 @@ func runSessionEmit(sub string, args []string) error {
 	})
 }
 
+// runSessionGrant signs a delegation grant with the OWNER's key.
+//
+// # Why this is the producer that was missing
+//
+// A session key signs its own events, and `eventsign.AuthorizeEventWithGrant` decides
+// whether those events were authorized. That check needs a signed grant, and until now
+// nothing produced one — the delegation mechanism was complete and had nothing to
+// authorize. This is the owner's half: it signs the grant and stops. It never sees or
+// uses the session key, which is the point of a session key.
+//
+// # Why the owner and the session key are separate flags
+//
+// `--key` is the owner (the identity doing the delegating) and `--session-key` is the
+// delegated agentId. They are deliberately different names so a caller cannot pass one
+// key and have the tool quietly do the other thing, which is the failure that would
+// make a grant name the wrong signer.
+//
+// # What it validates before signing
+//
+// The grant's own shape (delegation.Grant.Validate) and that the owner key derives the
+// identity it claims. delegationsign.Sign enforces the latter too, but the error is
+// clearer when both values are in hand here.
+func runSessionGrant(args []string) error {
+	ownerKey := os.Getenv("RELAYFIRST_OWNER_KEY")
+	sessionKeyID := ""
+	relay := os.Getenv("RELAYFIRST_RELAY")
+	scopesArg := "session:event"
+	validFor := 24 * time.Hour
+	grantNonce := uint64(1)
+	chainID := uint64(8453)
+	outPath := ""
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "--") {
+			return fmt.Errorf("unexpected argument %q", a)
+		}
+		if i+1 >= len(args) {
+			return fmt.Errorf("%s needs a value", a)
+		}
+		v := args[i+1]
+		i++
+		switch a {
+		case "--key":
+			ownerKey = v
+		case "--session-key":
+			sessionKeyID = v
+		case "--relay":
+			relay = v
+		case "--scopes":
+			scopesArg = v
+		case "--out":
+			outPath = v
+		case "--valid-for":
+			d, err := time.ParseDuration(v)
+			if err != nil {
+				return fmt.Errorf("--valid-for must be a duration like 24h, got %q", v)
+			}
+			validFor = d
+		case "--grant-nonce":
+			var n uint64
+			if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+				return fmt.Errorf("--grant-nonce must be a number, got %q", v)
+			}
+			grantNonce = n
+		case "--chain-id":
+			var n uint64
+			if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+				return fmt.Errorf("--chain-id must be a number, got %q", v)
+			}
+			chainID = n
+		default:
+			return fmt.Errorf("unknown flag %q", a)
+		}
+	}
+
+	if strings.TrimSpace(ownerKey) == "" {
+		return fmt.Errorf("no owner key: pass --key or set RELAYFIRST_OWNER_KEY. A grant must be " +
+			"signed by the owner it delegates from, or it authorizes nothing")
+	}
+	if strings.TrimSpace(sessionKeyID) == "" {
+		return fmt.Errorf("--session-key <agentId> is required: it is the identity being delegated " +
+			"to, and a grant that named the wrong one would authorize nothing while looking valid")
+	}
+
+	// Normalize the scopes, rejecting an unknown one here rather than letting a
+	// typo produce a grant whose scope covers nothing.
+	scopes, err := parseScopes(scopesArg)
+	if err != nil {
+		return err
+	}
+
+	// The owner's declared identity comes from the key, so the grant names an owner
+	// that can actually sign it. This mirrors every other signing path (card, receipt,
+	// assertion): the identity is derived, never chosen.
+	ownerID, err := agentIDFromKey(ownerKey, chainID)
+	if err != nil {
+		return err
+	}
+
+	// Validate the session key's shape up front so the error names the bad input rather
+	// than surfacing from inside Sign.
+	if _, err := agentid.Parse(sessionKeyID); err != nil {
+		return fmt.Errorf("--session-key %q is not an agentId (derive it with `relayfirst id <hex>`): %w",
+			sessionKeyID, err)
+	}
+	if sessionKeyID == ownerID {
+		return fmt.Errorf("--session-key equals the owner key; a delegation must name a DIFFERENT " +
+			"key, or it grants nothing new and only creates a confusing second name for the owner")
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	g := delegationsign.SignedGrant{
+		Grant: delegation.Grant{
+			Owner:      ownerID,
+			SessionKey: sessionKeyID,
+			Scopes:     scopes,
+			ValidFrom:  now,
+			ValidUntil: now.Add(validFor),
+			Nonce:      grantNonce,
+		},
+	}
+	if err := g.Sign(ownerKey, chainID); err != nil {
+		return err
+	}
+
+	// Self-check before handing it out: a grant that does not verify would authorize
+	// nothing, and the mistake would surface far from here at an authorizer.
+	if err := g.Verify(); err != nil {
+		return fmt.Errorf("the grant we just signed does not verify, refusing to emit it: %w", err)
+	}
+
+	encoded, err := json.Marshal(g)
+	if err != nil {
+		return fmt.Errorf("marshal grant: %w", err)
+	}
+
+	if outPath != "" {
+		if err := os.WriteFile(outPath, append(encoded, '\n'), 0o644); err != nil {
+			return fmt.Errorf("write grant to %s: %w", outPath, err)
+		}
+	}
+
+	result := map[string]any{
+		"grant":      g,
+		"owner":      ownerID,
+		"sessionKey": sessionKeyID,
+		"scopes":     scopeNames(scopes),
+		"validFrom":  g.Grant.ValidFrom.Format(time.RFC3339),
+		"validUntil": g.Grant.ValidUntil.Format(time.RFC3339),
+		"nonce":      grantNonce,
+		"sent":       false,
+		"note": "this grant travels OUT OF BAND (the same bytes over any channel), so a relay " +
+			"cannot withhold or shred it and an authorizer reads it from wherever it trusts",
+	}
+
+	if strings.TrimSpace(relay) != "" {
+		// The id is derived from the grant's own bytes, so a retried publish is the same
+		// envelope and the node dedups it rather than storing a second copy. `grantId` is
+		// a reserved word elsewhere in SQL, hence `delegationId`.
+		envelopeID := "0x" + hex.EncodeToString(eip712.Keccak256(encoded))
+		if err := postEnvelope(strings.TrimRight(relay, "/"), envelopeID, ownerID, protocol.KindGrant, encoded); err != nil {
+			return err
+		}
+		result["sent"] = true
+		result["relay"] = relay
+		result["envelopeId"] = envelopeID
+	}
+
+	if outPath != "" {
+		result["writtenTo"] = outPath
+	}
+	return printJSON(result)
+}
+
+// parseScopes splits a comma-separated scope list and rejects anything not grantable.
+//
+// # Why an unknown scope is an error rather than a skip
+//
+// A silently dropped scope produces a grant that authorizes less than the caller asked
+// for, and the failure appears later as a rejected event with no hint about the grant.
+// The grantable set is closed (delegation.Scope.Valid), so an unknown value is always a
+// caller's typo or a mistaken assumption, and both deserve an immediate message.
+func parseScopes(raw string) ([]delegation.Scope, error) {
+	parts := strings.Split(raw, ",")
+	scopes := make([]delegation.Scope, 0, len(parts))
+	seen := map[delegation.Scope]bool{}
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		s := delegation.Scope(p)
+		if !s.Valid() {
+			return nil, fmt.Errorf("scope %q is not grantable (grantable: %s)", p, strings.Join(scopeNames(delegation.AllScopes()), ", "))
+		}
+		if seen[s] {
+			return nil, fmt.Errorf("scope %q is listed twice", p)
+		}
+		seen[s] = true
+		scopes = append(scopes, s)
+	}
+	if len(scopes) == 0 {
+		return nil, fmt.Errorf("no scopes given; a grant without scopes authorizes nothing")
+	}
+	return scopes, nil
+}
+
+// scopeNames renders scopes as strings for output and messages.
+func scopeNames(scopes []delegation.Scope) []string {
+	names := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		names = append(names, string(s))
+	}
+	return names
+}
+
 // keccakHasher adapts eip712.Keccak256 to a2a.Hasher.
 //
 // The signature must match exactly, and Keccak256 is variadic, so a direct reference does not
@@ -285,8 +523,23 @@ func postEvent(relay string, e a2a.Event) error {
 	if err != nil {
 		return fmt.Errorf("marshal event: %w", err)
 	}
+	return postEnvelope(relay, e.EventID, e.Actor, protocol.KindEvent, raw)
+}
+
+// postEnvelope sends an opaque payload to a relay under an id/agentId/kind header.
+//
+// # Why this is shared with the event and grant producers
+//
+// A relay stores an envelope without interpreting its payload (MVP.md §7.1), so the
+// delivery half is identical for any kind: id, addressee, kind, opaque bytes. Keeping
+// one copy means a change to how a delivery is reported (a timeout, a status detail)
+// cannot drift between the producers that use it.
+//
+// The payload is passed as bytes and is base64-encoded by encoding/json on the wire,
+// exactly as before — the caller's bytes are not decoded, re-encoded or inspected.
+func postEnvelope(relay, id, agentID, kind string, payload []byte) error {
 	body, err := json.Marshal(map[string]any{
-		"id": e.EventID, "agentId": e.Actor, "kind": "event", "payload": raw,
+		"id": id, "agentId": agentID, "kind": kind, "payload": payload,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal envelope: %w", err)
