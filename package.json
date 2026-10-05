@@ -2,14 +2,16 @@
   "name": "relayfirst",
   "version": "0.5.0",
   "type": "module",
-  "description": "RelayFirst \u2014 Proof of Agent Work. Zero-install CLI and MCP server for the permissionless multi-relay A2A network. The CLI is Go; the TypeScript side only generates the cross-language EIP-712 KAT vectors (CODING_RULES.md \u00a74) and launches the prebuilt binaries.",
+  "description": "RelayFirst \u2014 Proof of Agent Work. Zero-install CLI, MCP server and node dashboard for the permissionless multi-relay A2A network. The tools are Go; the TypeScript side only generates the cross-language EIP-712 KAT vectors (CODING_RULES.md \u00a74) and launches the prebuilt binaries.",
   "bin": {
     "relayfirst": "scripts/npx-relayfirst.mjs",
-    "relayfirst-mcp": "scripts/npx-relayfirst-mcp.mjs"
+    "relayfirst-mcp": "scripts/npx-relayfirst-mcp.mjs",
+    "relayfirst-dashboard": "scripts/npx-relayfirst-dashboard.mjs"
   },
   "files": [
     "scripts/npx-relayfirst.mjs",
     "scripts/npx-relayfirst-mcp.mjs",
+    "scripts/npx-relayfirst-dashboard.mjs",
     "bin/npm",
     "README.md"
   ],
@@ -18,7 +20,8 @@
     "build:binaries": "bash scripts/build-npm-binaries.sh",
     "prepublishOnly": "bash scripts/build-npm-binaries.sh",
     "relayfirst": "node scripts/npx-relayfirst.mjs",
-    "relayfirst-mcp": "node scripts/npx-relayfirst-mcp.mjs"
+    "relayfirst-mcp": "node scripts/npx-relayfirst-mcp.mjs",
+    "relayfirst-dashboard": "node scripts/npx-relayfirst-dashboard.mjs"
   },
   "engines": {
     "node": ">=18"

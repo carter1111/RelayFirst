@@ -42,13 +42,16 @@ Usage:
   relayfirst-dashboard [flags]
 
 Flags:
-  --url <url>        Node to observe. Default: http://localhost:8080, which is
-                     where a node listening on its own default :8080 is reachable.
-                     Point it elsewhere for a node on another port or another host:
+  --url <url>        Node to observe. Also RELAYFIRST_RELAY (the same variable
+                     ` + "`relayfirst session`" + ` uses). Default: http://localhost:8080,
+                     where a node on its own default :8080 is reachable. Point it
+                     elsewhere for another port or host:
                        --url http://localhost:9000
                        --url https://relay.example.com
   --interval <dur>   Poll interval (default 1.5s)
   --version          Print the version
+
+Precedence: flag > environment > default.
 
 Nothing is required when the node runs locally on its defaults: run the node with
 ` + "`relayfirst-node`" + ` and this with no flags.
@@ -67,7 +70,10 @@ func main() {
 }
 
 func run(args []string) error {
-	url := "http://localhost:8080"
+	// Precedence is flag > environment > default. RELAYFIRST_RELAY is the same variable
+	// `relayfirst session` uses to name a node, so a shell that already exports it
+	// points the dashboard at the same node with no extra flag — one name, one meaning.
+	url := envOr("RELAYFIRST_RELAY", "http://localhost:8080")
 	interval := 1500 * time.Millisecond
 
 	for i := 0; i < len(args); i++ {
@@ -161,16 +167,23 @@ type model struct {
 	listErr error // a listing failed on a reachable node
 	lastAt2 time.Time
 
-	// tab selects the view; cursor selects a row within a list view.
+	// tab selects the view; cursor selects a row within a list view, offset is the
+	// first row shown so a list longer than the window scrolls instead of overflowing.
 	tab    int
 	cursor int
+	offset int
+
+	// help shows the key reference. It is a mode: while it is up, the keys that would
+	// otherwise act are consumed by closing it.
+	help bool
 
 	// agents and tasks are the active listings. They are refreshed on every poll so
 	// switching tabs shows current data without a separate fetch path.
 	agents []noderead.Card
 	tasks  []noderead.Task
 
-	width int
+	width  int
+	height int
 }
 
 const historyLen = 48
@@ -232,9 +245,23 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// While help is up it swallows everything except the keys that dismiss it, so a
+		// stray 'r' or 'j' cannot act on a view the user cannot fully see.
+		if m.help {
+			switch msg.String() {
+			case "?", "esc", "q", "enter", " ":
+				m.help = false
+			case "ctrl+c":
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
+		case "?":
+			m.help = true
 		case "r":
 			return m, m.poll()
 		case "tab", "right":
@@ -262,10 +289,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < m.rowCount()-1 {
 				m.cursor++
 			}
+		case "pgdown", "ctrl+f":
+			m.cursor += m.pageSize()
+			if m.cursor > m.rowCount()-1 {
+				m.cursor = m.rowCount() - 1
+			}
+		case "pgup", "ctrl+b":
+			m.cursor -= m.pageSize()
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+		case "home", "g":
+			m.cursor = 0
+		case "end", "G":
+			m.cursor = m.rowCount() - 1
 		}
+		m.clampOffset()
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
+		m.clampOffset()
 
 	case tickMsg:
 		return m, tea.Batch(m.poll(), m.tick())
@@ -283,10 +327,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.agents = msg.agents
 		m.tasks = msg.tasks
 		// Clamp the cursor: a listing can shrink between polls, and a cursor past the
-		// end would leave nothing highlighted.
+		// end would leave nothing highlighted. The offset is clamped with it so the
+		// window does not start past the new end.
 		if m.cursor >= m.rowCount() {
 			m.cursor = 0
 		}
+		m.clampOffset()
 
 		// Throughput from the count delta. The FIRST poll establishes a baseline and
 		// yields no rate, because a delta against an unknown previous value would be a
@@ -337,6 +383,45 @@ func (m model) rowCount() int {
 	}
 }
 
+// listHeight is how many rows the list area can show.
+//
+// It is derived from the window and the fixed chrome above the list (header, tab bar,
+// the note line, the footer). A minimum keeps a tiny window usable rather than showing
+// zero rows.
+func (m model) listHeight() int {
+	const chrome = 9
+	h := m.height - chrome
+	if h < 3 {
+		return 3
+	}
+	return h
+}
+
+func (m model) pageSize() int { return m.listHeight() }
+
+// clampOffset keeps the cursor inside the visible window: if it moved past the bottom
+// the window follows, and if it moved above the top the window follows up. This is what
+// makes a long list scroll instead of drawing past the screen.
+func (m *model) clampOffset() {
+	h := m.listHeight()
+	if m.cursor < m.offset {
+		m.offset = m.cursor
+	}
+	if m.cursor >= m.offset+h {
+		m.offset = m.cursor - h + 1
+	}
+	if m.offset < 0 {
+		m.offset = 0
+	}
+	// If the list shrank, the window may now start past the end.
+	if max := m.rowCount() - h; m.offset > max {
+		m.offset = max
+	}
+	if m.offset < 0 {
+		m.offset = 0
+	}
+}
+
 func (m model) View() string {
 	var b strings.Builder
 
@@ -347,6 +432,11 @@ func (m model) View() string {
 	}
 	fmt.Fprintf(&b, "%s  %s   %s\n", titleStyle.Render("RELAY dashboard"), orDash(m.base), dot)
 	fmt.Fprintf(&b, "  %s\n\n", m.tabBar())
+
+	if m.help {
+		m.viewHelp(&b)
+		return b.String()
+	}
 
 	if m.pollErr != nil {
 		fmt.Fprintf(&b, "%s\n\n", errStyle.Render("  "+m.pollErr.Error()))
@@ -366,8 +456,31 @@ func (m model) View() string {
 	}
 
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "%s\n", dimStyle.Render("  [Tab/1-4] section  [↑↓] select  [r] refresh  [q] quit"))
+	fmt.Fprintf(&b, "%s\n", dimStyle.Render("  [Tab/1-4] section  [↑↓] select  [r] refresh  [?] help  [q] quit"))
 	return b.String()
+}
+
+// viewHelp draws the key reference.
+//
+// It is a mode rather than a line because the key set is larger than one line and a
+// dashboard is used occasionally enough that a reference beats recall.
+func (m model) viewHelp(b *strings.Builder) {
+	fmt.Fprintf(b, "  %s\n\n", labelStyle.Render("keys"))
+	rows := [][2]string{
+		{"Tab / →", "next section"},
+		{"Shift-Tab / ←", "previous section"},
+		{"1 – 4", "jump to a section"},
+		{"↑ ↓ / k j", "move the selection"},
+		{"PgUp / PgDn", "move a page at a time"},
+		{"g / G", "first / last row"},
+		{"r", "refresh now"},
+		{"?", "toggle this help"},
+		{"q / Ctrl-C", "quit (the node keeps running)"},
+	}
+	for _, r := range rows {
+		fmt.Fprintf(b, "    %-16s %s\n", titleStyle.Render(r[0]), r[1])
+	}
+	fmt.Fprintf(b, "\n%s\n", dimStyle.Render("  this dashboard is read-only: it never writes to or controls the node"))
 }
 
 // tabBar renders the tab strip with the active one highlighted.
@@ -415,7 +528,9 @@ func (m model) viewAgents(b *strings.Builder) {
 	// The note repeats the node's own: a directory is not an authority. A dashboard that
 	// dropped it would be the one place a reader forgets it.
 	fmt.Fprintf(b, "%s\n\n", dimStyle.Render("  a directory, not an authority: this node has not verified any proof"))
-	for i, c := range m.agents {
+	lo, hi := m.window(len(m.agents))
+	for i := lo; i < hi; i++ {
+		c := m.agents[i]
 		line := fmt.Sprintf("%-46s  card %4dB  proof %4dB", orDash(short(c.AgentID, 46)), len(c.Card), len(c.Proof))
 		if i == m.cursor {
 			fmt.Fprintf(b, "%s\n", titleStyle.Render("  ▸ "+line))
@@ -423,6 +538,28 @@ func (m model) viewAgents(b *strings.Builder) {
 			fmt.Fprintf(b, "    %s\n", line)
 		}
 	}
+	m.scrollHint(b, len(m.agents), lo, hi)
+}
+
+// window returns the visible slice bounds [lo, hi) for a list of n rows.
+func (m model) window(n int) (int, int) {
+	lo := m.offset
+	if lo > n {
+		lo = n
+	}
+	hi := lo + m.listHeight()
+	if hi > n {
+		hi = n
+	}
+	return lo, hi
+}
+
+// scrollHint says how many rows are hidden, so a scrolled list does not look complete.
+func (m model) scrollHint(b *strings.Builder, n, lo, hi int) {
+	if n <= hi-lo {
+		return
+	}
+	fmt.Fprintf(b, "%s\n", dimStyle.Render(fmt.Sprintf("  showing %d–%d of %d", lo+1, hi, n)))
 }
 
 func (m model) viewTasks(b *strings.Builder) {
@@ -435,7 +572,9 @@ func (m model) viewTasks(b *strings.Builder) {
 		return
 	}
 	fmt.Fprintf(b, "%s\n\n", dimStyle.Render("  a noticeboard, not an authority: no exclusivity, no expiry enforcement"))
-	for i, t := range m.tasks {
+	lo, hi := m.window(len(m.tasks))
+	for i := lo; i < hi; i++ {
+		t := m.tasks[i]
 		line := fmt.Sprintf("%-22s  claims %-3d  %s", orDash(short(t.TaskID, 22)), t.Claims, orDash(short(t.Subject, 40)))
 		if i == m.cursor {
 			fmt.Fprintf(b, "%s\n", titleStyle.Render("  ▸ "+line))
@@ -443,6 +582,7 @@ func (m model) viewTasks(b *strings.Builder) {
 			fmt.Fprintf(b, "    %s\n", line)
 		}
 	}
+	m.scrollHint(b, len(m.tasks), lo, hi)
 }
 
 func (m model) viewConfig(b *strings.Builder) {
@@ -503,6 +643,14 @@ func sparkline(vals []float64) string {
 		sb.WriteRune([]rune(blocks)[idx])
 	}
 	return sb.String()
+}
+
+// envOr returns the environment value for key, or fallback when it is unset or blank.
+func envOr(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
 }
 
 func orDash(s string) string {

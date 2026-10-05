@@ -40,8 +40,9 @@ targets=(
 
 # relayfirst-node is deliberately NOT built here: it is a long-lived server with a
 # persistent volume, which npm is a poor fit for. Its distribution is the container
-# image. Only the two on-demand user tools ship to npm.
-commands=(relayfirst relayfirst-mcp)
+# image. The on-demand user tools ship to npm: the miner CLI, the MCP server, and the
+# node's read-only dashboard (which is a client, so it is on-demand like the others).
+commands=(relayfirst relayfirst-mcp relayfirst-dashboard)
 
 export CGO_ENABLED=0
 built=0

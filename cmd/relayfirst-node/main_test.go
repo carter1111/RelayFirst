@@ -131,3 +131,43 @@ func TestNodeBinary_WritesItsDatabaseToTheStorageFlag(t *testing.T) {
 		t.Errorf("the database must exist at the path given to --storage, got: %v", err)
 	}
 }
+
+// TestParseFlags_EnvThenFlagPrecedence pins the configuration order: a flag beats the
+// environment, which beats the default. The environment step exists for containers and
+// systemd units, where an env var is how a copy is configured without editing its
+// command line.
+func TestParseFlags_EnvThenFlagPrecedence(t *testing.T) {
+	t.Setenv("RELAYFIRST_LISTEN", ":9100")
+	t.Setenv("RELAYFIRST_STORAGE", "/from/env.db")
+
+	// Environment alone.
+	cfg, err := parseFlags(nil)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cfg.listen != ":9100" || cfg.storage != "/from/env.db" {
+		t.Errorf("env must be read, got listen=%q storage=%q", cfg.listen, cfg.storage)
+	}
+
+	// A flag overrides the environment.
+	cfg, err = parseFlags([]string{"--listen", ":9200"})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cfg.listen != ":9200" {
+		t.Errorf("a flag must beat the env, got %q", cfg.listen)
+	}
+	if cfg.storage != "/from/env.db" {
+		t.Errorf("unrelated env must still apply, got %q", cfg.storage)
+	}
+
+	// A blank env falls back rather than binding nothing.
+	t.Setenv("RELAYFIRST_LISTEN", "  ")
+	cfg, err = parseFlags(nil)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cfg.listen != ":8080" {
+		t.Errorf("a blank env must fall back to the default, got %q", cfg.listen)
+	}
+}

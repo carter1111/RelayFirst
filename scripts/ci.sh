@@ -510,8 +510,15 @@ if [ "$npm_ok" -eq 1 ]; then
       fail "the launcher did not run the prebuilt binary:"
       sed 's/^/      /' /tmp/rf-ci-npm-run.log | tail -10
       npm_ok=0
+    elif [ ! -f "bin/npm/relayfirst-dashboard-$os-$arch" ]; then
+      fail "the cross-build did not produce the dashboard binary for $os/$arch"
+      npm_ok=0
+    elif ! node scripts/npx-relayfirst-dashboard.mjs --version >/tmp/rf-ci-npm-dash.log 2>&1; then
+      fail "the dashboard launcher did not run the prebuilt binary:"
+      sed 's/^/      /' /tmp/rf-ci-npm-dash.log | tail -10
+      npm_ok=0
     else
-      pass "npx launcher runs a prebuilt platform binary ($os/$arch)"
+      pass "npx launchers run prebuilt platform binaries ($os/$arch)"
     fi
   else
     fail "scripts/build-npm-binaries.sh failed:"

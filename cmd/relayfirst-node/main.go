@@ -47,12 +47,17 @@ Usage:
   relayfirst-node inspect <what> [flags]  List what the store holds, offline.
 
 Flags (server, and shared by report/inspect):
-  --listen <addr>        Address to listen on (default :8080)
-  --storage <path>       SQLite database file (default ./relayfirst-node.db)
+  --listen <addr>        Address to listen on. Also RELAYFIRST_LISTEN. (default :8080)
+  --storage <path>       SQLite database file. Also RELAYFIRST_STORAGE.
+                         (default ./relayfirst-node.db)
   --public-url <url>     URL clients should reach this node at, reported in
                          /.well-known/relayfirst
   --max-payload <bytes>  Largest accepted message (default 1048576)
   --version              Print the version
+
+Precedence for every setting: flag > environment > default. There is no config
+file: a node ships as pinned copies (a container, a systemd unit), where an env var
+or a flag is unambiguous and a file is one more thing to get wrong.
 
 status flags:
   --url <url>            Node to check (default http://localhost:8080)
@@ -217,8 +222,14 @@ type config struct {
 // parsing convention means an operator learns one set of rules.
 func parseFlags(args []string) (config, error) {
 	cfg := config{
-		listen:     ":8080",
-		storage:    "./relayfirst-node.db",
+		// Precedence is flag > environment > default. The environment step matters for
+		// the deployment the node is built for: `docker run -e RELAYFIRST_LISTEN=…` and
+		// systemd `Environment=` are how a container or unit is configured without
+		// rewriting its command line, and there is deliberately no config file (a
+		// server shipping pinned copies misconfigures badly with one). See
+		// docs/notes/planning.md §D2.
+		listen:     envOr("RELAYFIRST_LISTEN", ":8080"),
+		storage:    envOr("RELAYFIRST_STORAGE", "./relayfirst-node.db"),
 		maxPayload: node.MaxPayloadBytes,
 	}
 
@@ -263,3 +274,15 @@ func parseFlags(args []string) (config, error) {
 
 // errStop signals that help was printed and nothing more should run.
 var errStop = errors.New("stop")
+
+// envOr returns the environment value for key, or fallback when it is unset or blank.
+//
+// A blank value counts as unset: `RELAYFIRST_LISTEN=` in a shell or an empty
+// Environment= line would otherwise silently bind nothing, which is a worse failure
+// than falling back to the default.
+func envOr(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}

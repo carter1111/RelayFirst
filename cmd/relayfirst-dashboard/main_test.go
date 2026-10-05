@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -97,6 +98,100 @@ var errUnreachable = &unreachableErr{}
 type unreachableErr struct{}
 
 func (*unreachableErr) Error() string { return "connection refused" }
+
+// TestHelpIsAMode: while help is up, other keys must not act on the view.
+func TestHelpIsAMode(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	if !m.help {
+		t.Fatal("? must open help")
+	}
+	// A tab key while help is up must not change the tab.
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.tab != 0 {
+		t.Errorf("keys other than the dismiss set must be swallowed by help, tab moved to %d", m.tab)
+	}
+	if v := m.View(); !strings.Contains(v, "keys") {
+		t.Errorf("the help view must list keys, got:\n%s", v)
+	}
+	// A dismiss key closes it.
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyEscape})
+	if m.help {
+		t.Error("esc must close help")
+	}
+}
+
+// TestScroll_KeepsCursorInWindow: a list longer than the window must scroll rather
+// than draw past the screen.
+func TestScroll_KeepsCursorInWindow(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m.height = 20 // listHeight = 11
+	m.tab = 2
+	for i := 0; i < 50; i++ {
+		m.tasks = append(m.tasks, noderead.Task{TaskID: fmt.Sprintf("t%d", i)})
+	}
+	// Move past the first page.
+	for i := 0; i < 15; i++ {
+		m = step(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if m.cursor != 15 {
+		t.Fatalf("cursor = %d, want 15", m.cursor)
+	}
+	if m.offset == 0 {
+		t.Fatal("the window must have scrolled once the cursor passed the first page")
+	}
+	if m.cursor < m.offset || m.cursor >= m.offset+m.listHeight() {
+		t.Errorf("cursor %d must be inside the window [%d,%d)", m.cursor, m.offset, m.offset+m.listHeight())
+	}
+	// And the render must not include a row outside the window.
+	v := m.View()
+	if strings.Contains(v, "t0 ") || strings.Contains(v, "t0\n") {
+		t.Errorf("a scrolled view must not render the first (off-screen) row, got:\n%s", v)
+	}
+	if !strings.Contains(v, "showing") {
+		t.Errorf("a scrolled view must say how many rows are hidden, got:\n%s", v)
+	}
+}
+
+// TestScroll_EndAndHome covers the jump keys.
+func TestScroll_EndAndHome(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m.height = 20
+	m.tab = 2
+	for i := 0; i < 30; i++ {
+		m.tasks = append(m.tasks, noderead.Task{TaskID: fmt.Sprintf("t%d", i)})
+	}
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	if m.cursor != 29 {
+		t.Errorf("G must go to the last row, got %d", m.cursor)
+	}
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	if m.cursor != 0 {
+		t.Errorf("g must go to the first row, got %d", m.cursor)
+	}
+	if m.offset != 0 {
+		t.Errorf("home must reset the window, got offset %d", m.offset)
+	}
+}
+
+// TestEnvOr covers the precedence rule's building block: an env value wins over the
+// fallback, and a blank one counts as unset so an empty `RELAYFIRST_RELAY=` does not
+// silently point the dashboard at nothing.
+func TestEnvOr(t *testing.T) {
+	const key = "RELAYFIRST_TEST_RELAY"
+	t.Setenv(key, "http://from-env:9")
+	if got := envOr(key, "http://fallback"); got != "http://from-env:9" {
+		t.Errorf("env must win, got %q", got)
+	}
+	t.Setenv(key, "   ")
+	if got := envOr(key, "http://fallback"); got != "http://fallback" {
+		t.Errorf("a blank env must fall back, got %q", got)
+	}
+	t.Setenv(key, "")
+	if got := envOr(key, "http://fallback"); got != "http://fallback" {
+		t.Errorf("an empty env must fall back, got %q", got)
+	}
+}
 
 // TestTabs_CycleAndClamp checks the tab selection stays in range.
 func TestTabs_CycleAndClamp(t *testing.T) {
