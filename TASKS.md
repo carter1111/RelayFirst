@@ -804,8 +804,27 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 
 **"Explorer"** 是 **G1 的产品化形态**（+ UI），**不是新缺口**：设计见 `explorer-indexer-plan.md`。
 
-**发布动作（非缺口，登记备查）**：`relayfirst` / `relayfirst-mcp` 未发 npm；`relayfirst/node` 未发 registry。
-见 [`docs/notes/remaining-actions.md`](docs/notes/remaining-actions.md) C 节。
+**发布动作（非缺口，登记备查）**：`relayfirst` / `relayfirst-mcp` **打包已就绪、未 `npm publish`**；
+`relayfirst/node` 未发 registry。见 [`docs/notes/remaining-actions.md`](docs/notes/remaining-actions.md) C 节。
+
+### 11.2 打包与终端体验（登记，未排期）
+
+| id | 项 | 类别 | 现状 | 备注 |
+|---|---|---|---|---|
+| **PKG-1** | npm **按平台分包**（或 `postinstall` 下载单平台） | 发布优化 | ⬜ **未做** | 现在 tarball 含 5 平台二进制 → **~42MB**。改法：`optionalDependencies` + `os`/`cpu` 子包 |
+| **PKG-2** | macOS 二进制**签名 / 公证** | 发布 | ⬜ **未做** | 交叉编译产物未签名 → Gatekeeper 可能拦。首次发布可先发 linux/windows |
+| **PKG-3** | `npm publish` 本体 | 发布（外部凭据） | ⏳ 打包就绪 | 需 npm 帐号；步骤见 `remaining-actions.md` C1 |
+| **UX-1** | **终端 TUI / 品牌体验**（大 logo + 专用命令行，类 Claude Code / Hermes） | 体验（提案） | ⬜ **讨论中** | **不属十条判据**；价值在**叙事/传播**（对齐 `MVP.md` §1 原则②）。**设计约束见下** |
+
+**UX-1 的设计约束（讨论后若开工，先读这条）**：
+
+- **节点必须保持 headless-first**：它要在 Docker（`-d` 分离）、systemd、CI 里跑。
+  一个**要求 TTY** 的节点是**坏的**。所以 TUI 只能**在检测到 stdout 是 TTY 时**启用（可选 `--tui`），
+  且**日志与退出码行为不变**（否则 `docker logs` / 编排会坏）。
+- **真正适合"Claude Code 体验"的是【矿工 CLI】`relayfirst`，不是节点**：判据 ① 的
+  "陌生人 10 分钟出分" 是**用户面**的事，品牌化的首启/状态面板价值最高。
+- **依赖**：Go TUI 生态（`charmbracelet/bubbletea` + `lipgloss`）是**纯 Go**，
+  不违反 A3；但它是**新依赖**，需按 `MVP.md §8.0` 记录理由。
 
 ---
 
