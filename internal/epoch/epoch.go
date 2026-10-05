@@ -50,8 +50,34 @@ import "time"
 // invalidates every receipt signed under the old one. Do it before opening the
 // protocol to real mining, not after.
 //
+// # The decision (2026-10-05): genesis == the launch date
+//
+// The value below is DECIDED to be the public launch date's 00:00:00Z (BLK-4,
+// option A; see docs/notes/blk-4-genesis-decision.md). Launching at epoch 0 with
+// the full B0 budget is the intended behaviour, and it is the late/safe half of
+// the asymmetry above.
+//
+// It is NOT YET SET, because the launch date is a human decision that has not
+// been made. Until it is, this stays the development placeholder and
+// IsProvisional reports true. ReleaseGuardError refuses a `-tags mainnet` build
+// while that is the case, so a shipped binary cannot carry the placeholder by
+// accident.
+//
 // 1790841600 == 2026-10-01T00:00:00Z.
 const GenesisValue int64 = 1790841600
+
+// placeholderGenesis is the development value GenesisValue carries until the
+// launch date is pinned. It is a separate name so the guard can compare against
+// it without repeating the literal, and so "is this still provisional?" is one
+// question in one place.
+const placeholderGenesis int64 = 1790841600
+
+// IsProvisional reports whether GenesisValue is still the development placeholder.
+//
+// It is true in development and must be false in a release. It exists so callers
+// (the -tags mainnet guard, and tests) ask the question rather than comparing the
+// literal themselves, which is how a second spelling of the placeholder appears.
+func IsProvisional() bool { return GenesisValue == placeholderGenesis }
 
 // Genesis returns epoch 0's start as a UTC time.
 func Genesis() time.Time { return time.Unix(GenesisValue, 0).UTC() }

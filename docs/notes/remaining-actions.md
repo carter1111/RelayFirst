@@ -8,12 +8,17 @@
 
 ## A. 需要你【裁决】的（我做不了，因为它是业务决策）
 
-| 项 | 要决定什么 | 决策包 | 决定后我要做什么 |
+| 项 | 决定 | 决策包 | 还缺什么 |
 |---|---|---|---|
-| **BLK-4 genesis** | **epoch 起点取哪个日期**（不可逆：在签名载荷内） | [`blk-4-genesis-decision.md`](blk-4-genesis-decision.md) | 改 `internal/epoch/epoch.go` **一行常量** + 跑回归 |
-| **BLK-3 指派策略** | 选 A/B/C/D 哪种验证者指派随机源 | [`blk-3-assignment-policy.md`](blk-3-assignment-policy.md) | **机制零改动**；定候选集 + seed 来源 |
+| **BLK-4 genesis** | **✅ A：genesis = 公开发布日 00:00 UTC** | [`blk-4-genesis-decision.md`](blk-4-genesis-decision.md) | **仅缺"具体哪天"** → 我改一行常量 + 跑回归 + 用 `-tags mainnet` 验防呆解除 |
+| **BLK-3 指派策略** | **✅ A：确定性种子** | [`blk-3-assignment-policy.md`](blk-3-assignment-policy.md) | 部署配置（候选集 + seed 来源）；**机制零改动** |
 
-> 这两项**都是"选一个 + 填配置"**，不是写代码。给了我日期/选项，我当轮即可闭环。
+> **两项方向都已裁决。** BLK-3 **机制上已关闭**（现参考实现即 A）；BLK-4 只等你给发布日。
+
+### 已做的防呆（BLK-4）
+
+`-tags mainnet` 构建在 genesis 仍为占位符时**启动即 panic**（`internal/epoch/release*.go`），
+所以占位符**不可能被误带上线**。实测见 `blk-4-genesis-decision.md` §6。
 
 ---
 

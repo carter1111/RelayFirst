@@ -1,9 +1,12 @@
 # BLK-4 决策包：epoch 起点（genesis）取哪个日期
 
-> **这是要你裁决的决策，不是实现任务。** 机制已就位（`internal/epoch.GenesisValue`），
-> 当前值 `1790841600`（2026-10-01T00:00:00Z）是**开发期占位符**。
+> **✅ 已裁决（2026-10-05）：取 A —— genesis = 公开发布日 00:00 UTC。**
 >
-> 关闭 BLK-4 = **你选定一个日历日期** + 我改一行常量。见 §5。
+> 因发布日是**人的决定**且尚未给出，`GenesisValue` **暂维持占位符**
+> `1790841600`（2026-10-01T00:00:00Z）。**已加防呆**：`-tags mainnet` 构建在
+> genesis 仍是占位符时**启动即 panic**，所以占位符**不可能被误带上线**（见 §6）。
+>
+> **关闭 BLK-4 的剩余一步**：你给我发布日 → 我改一行常量。
 >
 > 背景与根因：`docs/notes/epoch-anchoring.md`（权威）。本文只做"选哪个日期"的决策。
 
@@ -75,13 +78,14 @@
 ## 5. 关闭条件
 
 ```text
-① 你选定一个日历日期 D（公开发布日，或偏晚的固定下界）   ← 你裁决
-② 我改 internal/epoch/epoch.go: GenesisValue = Unix(D 00:00:00Z)
-③ 跑 internal/epoch 与 internal/scoring 测试（含 TestEpochOf_IsAnchoredAtGenesis）
-④ 确认 release 清单含 "genesis == 发布日" 一条
+① 选定 genesis = 公开发布日（00:00 UTC）          ← ✅ 你已裁决：A
+② 给出具体发布日 D                                ← ⬜ 待你（业务日期，我无法代选）
+③ 我改 internal/epoch/epoch.go: GenesisValue = Unix(D 00:00:00Z)
+④ 跑 internal/epoch 与 internal/scoring 测试
+⑤ 用 -tags mainnet 构建一次，确认不再 panic（防呆解除）
 ```
 
-① 是你的事（**发布日是业务日期，我无法代选**）；②–④ 我立刻能做。
+① 已完成。**② 是唯一还缺的输入**；③–⑤ 我当轮立即做。
 
 ---
 
@@ -91,3 +95,23 @@
 - 调用方：`receipt.NewEpoch` 与 `scoring.EpochOf`（都改为引用它）。
 - 回归保护：`internal/scoring` 的 `TestEpochOf_IsAnchoredAtGenesis`（锚点被移除即失败）。
 - 复现工具：`go run internal/devtools/epochprobe.go`。
+
+### 防呆（本轮新增）
+
+| 文件 | 作用 |
+|---|---|
+| `internal/epoch/release.go` | `assertReleaseGenesis(value)` —— 占位符则 panic（**不带 tag，故普通测试可覆盖**） |
+| `internal/epoch/release_mainnet.go` | `//go:build mainnet` —— `init()` 调用上面的函数 |
+| `internal/epoch/release_dev.go` | `//go:build !mainnet` —— 开发构建，不拦 |
+
+**实测**：
+
+```
+$ CGO_ENABLED=0 go build ./...                       # 开发构建：ok
+$ CGO_ENABLED=0 go run -tags mainnet ./cmd/relayfirst version
+panic: epoch: refusing to run a mainnet build with the provisional genesis
+       1790841600 (2026-10-01); set GenesisValue to the public launch date ...
+```
+
+非空转：`TestReleaseGuard_RefusesAProvisionalMainnetBuild` 同时验证**拒绝**与**接受**
+（pinned genesis 不 panic），否则一个恒 panic 的守卫会伪装成有效。

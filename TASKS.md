@@ -36,8 +36,8 @@
 |---|---|---|---|---|
 | **BLK-1** | **agent 订阅能否程序化驱动？** | 决定叙事成立与否。若不能，产品退化为"再买一份 API key 来挖矿" | ⬜ **todo（最高优先级）** | 整套 §10.1 叙事 |
 | **BLK-2** | 第一个真实消费方是谁？ | 上线**硬性前置条件**（`MVP.md` §10.3） | 🟡 **行动方案已就绪** — 见 [`docs/notes/blk-2-first-consumer-plan.md`](docs/notes/blk-2-first-consumer-plan.md)（价格/可达性 → 交易机器人；含买家画像/demo/首封信/8 周时间盒）。**接洽属人工动作，未开始** | 上线许可 |
-| **BLK-3** | 验证者指派策略（随机种子 / 防串谋） | S4 实现前必须定 | 🟡 **⚖️ 待你裁决** —— 决策包已就绪：[`docs/notes/blk-3-assignment-policy.md`](docs/notes/blk-3-assignment-policy.md)（A/B/C/D 候选 + 推荐 + 关闭条件）。**机制零改动**（`verification.Policy` 已就位；任何候选都可直接替换）；选定后只需填候选集 + seed 来源 | 验证者指派 |
-| **BLK-4** | **epoch 起点取哪个日期？** | epoch 号在**签名载荷**内，公布后不可改；改则旧回执全部失效 | 🟡 **⚖️ 待你裁决** —— 决策包已就绪：[`docs/notes/blk-4-genesis-decision.md`](docs/notes/blk-4-genesis-decision.md)（候选 + 量化影响表 + 风险不对称：**宁晚勿早**）。占位符 `2026-10-01` **不是发布日**，**禁止**带它上线。选定后我改 `internal/epoch/epoch.go` **一行常量** | 开放真实挖矿前必须定稿 |
+| **BLK-3** | 验证者指派策略（随机种子 / 防串谋） | S4 实现前必须定 | 🟢 **✅ 已裁决（2026-10-05）：取 A —— 确定性种子**（现参考实现 `EligiblePolicy`）。**机制零改动**。决策包：[`docs/notes/blk-3-assignment-policy.md`](docs/notes/blk-3-assignment-policy.md)。**剩余为部署配置**（候选集 + seed 来源 + 自动路径不用 `AllowAll`），非代码 | 验证者指派 |
+| **BLK-4** | **epoch 起点取哪个日期？** | epoch 号在**签名载荷**内，公布后不可改；改则旧回执全部失效 | 🟢 **✅ 已裁决（2026-10-05）：A —— genesis = 公开发布日 00:00 UTC**。**⏳ 仅缺"具体是哪天"**（业务日期，待给）。**已加防呆**：`-tags mainnet` 构建在 genesis 仍为占位符时**启动 panic**（`internal/epoch/release*.go`），占位符**不可能误带上线**。决策包：[`docs/notes/blk-4-genesis-decision.md`](docs/notes/blk-4-genesis-decision.md) | 开放真实挖矿前 |
 
 **开工建议：** BLK-1 第 1 天就开始核实；S1 可以并行推进（回执结构与 KAT 不依赖它）。
 BLK-4 直到"开放真实挖矿"之前都不阻塞开发，但**必须在那一刻之前定稿**，所以别拖到最后一刻。

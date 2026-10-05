@@ -18,6 +18,43 @@ func TestGenesis_IsTheEpochZeroInstant(t *testing.T) {
 	}
 }
 
+// TestReleaseGuard_RefusesAProvisionalMainnetBuild is the non-vacuity proof for the
+// mainnet genesis guard (BLK-4).
+//
+// The guard's whole value is that a release cannot silently ship the development
+// placeholder: the genesis is inside a receipt's signed payload, so receipts minted
+// under the wrong origin cannot be re-signed afterwards. This test drives the same
+// function the guard runs, so the reasoning is checkable without a tagged binary.
+func TestReleaseGuard_RefusesAProvisionalMainnetBuild(t *testing.T) {
+	// Provisional genesis must be refused.
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("a provisional genesis must refuse a mainnet build; the guard is vacuous")
+			}
+		}()
+		assertReleaseGenesis(placeholderGenesis)
+	}()
+
+	// A pinned genesis (the real launch date) must NOT be refused, or the guard
+	// would make every legitimate release impossible.
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("a pinned genesis must be accepted, got panic: %v", r)
+			}
+		}()
+		assertReleaseGenesis(placeholderGenesis + 86400)
+	}()
+
+	// And the current value is still provisional, which is what makes the guard
+	// meaningful today rather than a no-op.
+	if !IsProvisional() {
+		t.Fatal("this test assumes the genesis is still provisional; if the launch " +
+			"date has been pinned, update this test to assert the opposite")
+	}
+}
+
 func TestOf_CountsFromGenesis(t *testing.T) {
 	const hour = time.Hour
 
