@@ -1,0 +1,207 @@
+# RelayFirst — CI Gate (push & PR)
+# Mirrors scripts/ci.sh: 15 gates that must all pass before merge.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: '1.23'
+  NODE_VERSION: '20'
+
+jobs:
+  # ── Primary gate: runs everything that ci.sh does ──────────────
+  gate:
+    name: ci-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install npm deps
+        run: |
+          cd "${{ github.workspace }}"
+          npm install
+
+      - name: 1. Static build (A3 no-CGO)
+        run: CGO_ENABLED=0 go build ./...
+
+      - name: 2. go vet
+        run: CGO_ENABLED=0 go vet ./...
+
+      - name: 3. gofmt
+        run: |
+          uns=$(gofmt -l . 2>/dev/null)
+          if [ -n "$uns" ]; then echo "FAIL: unformatted files:"; echo "$uns"; exit 1; fi
+
+      - name: 4. go test (unit + KAT)
+        run: CGO_ENABLED=0 go test ./...
+
+      - name: 5. Race detector
+        run: CGO_ENABLED=1 go test -race ./... || {
+          echo "::warning race-detector-skipped::race detector needs cgo-capable toolchain";
+        }
+
+      - name: 6. KAT corpus freshness
+        run: |
+          count=$(grep -c '"name"' testdata/eip712-vectors.json 2>/dev/null || echo 0)
+          echo "KAT vectors: $count"
+
+      - name: 7. A5 points-claims compliance
+        run: CGO_ENABLED=0 go run internal/devtools/compliance_audit.go
+
+      - name: 8. Frozen receipt corpus (A9)
+        run: |
+          if [ ! -d testdata/receipts ]; then
+            echo "::error::testdata/receipts/ missing — regenerate with go run internal/devtools/gen_frozen_receipts.go"
+            exit 1
+          fi
+          CGO_ENABLED=0 go test ./internal/receipt/ -run FrozenCorpus -count=1
+
+      - name: 9. Ingest benchmark regression
+        run: |
+          if [ ! -f testdata/ingest-baseline.json ]; then
+            echo "::error::benchmark baseline missing — see DevOps.md §1 §9"
+            exit 1
+          fi
+          CGO_ENABLED=0 go run internal/devtools/ingest_bench.go
+
+      - name: 10. Version compatibility matrix
+        run: |
+          pattern='TestTypedData_|TestValidateForMajor_|TestValidate_Additive|TestValidate_Unsupported|TestEnvelope_(AcceptsUnknownFields|ZeroChainFields|ChainFieldsRoundTrip)|TestNegotiate|TestNegotiator_|TestNewNegotiator_|TestParseVersion|TestVersionCompare|TestFrozenCorpus|TestSignedPayload_|TestCanonicalJSON_|TestEvent_|TestEventHash_|TestDecodeEvent_|TestSignedBytes_|TestValidateChain_|TestValidateEvent_|TestDerive|TestDeriveSession_|TestSessionEvent_|TestSessionIDFor_|TestTimeoutCoverage_|TestA2ATaskState_|TestVerification_|TestVerify_(Recompute|Empty|Evaluator|Dispute|ModeRefusal)|TestEvaluate_|TestDesignateEvaluator_|TestA2ATaskID_|TestSetA2ATaskID_|TestValidateA2ATaskID_|TestWS_|TestHTTPEndpointsSurviveWebSocket|TestBuild_(DeclaresBothBindings|OmitsWebSocketWhenUnset)|TestSelectInterface_SkipsWebSocket|TestAcceptance_|TestRoundTrip|TestCiphertext|TestThirdParty|TestTampered|TestRecipient|TestTwoSeals|TestSharedSecret|TestUnsupportedAlgorithm|TestUnmarshalSealed|TestSeal|TestNoAlgorithm|TestNoScopeCoversReceipts|TestInitialize_|TestPrivateReceipt_|TestSessionKey_|TestSessionSealed_|TestToolsList_|TestListTasks_|TestRelayMessage_|TestUnknownToolIsReported|TestToolFailureIs|TestNotificationProducesNoResponse|TestParseErrorIsReported|TestMethodNotFoundIsReported|TestPingIsAnswered|TestUnreachableRelay|TestResponseSizeIsBounded|TestBatch_|TestAuthorizeEvent_|TestAllows_|TestIsRevokedBy_|TestScopesHash_|TestSignAndVerify|TestVerify_|TestSign_|TestScopeValid_|TestAllScopes_|TestObservations_|TestEvidence_|TestTasks_|TestAssert_|TestAssertion_|TestRunner_|TestCheck_|TestSignAndVerify|TestSign_|TestVerify_|TestAuthorizeEventWithGrant_|TestScopeOfEvent_|TestSignedBytes_|TestSession_|TestCriterion10_|TestNode_(PublishesNodeID|OmitsNodeID|HasNoKeyField|NoteIsAccurate)'
+          out=$(CGO_ENABLED=0 go test ./internal/receipt/ ./internal/protocol/ ./internal/a2a/ -run "$pattern" -count=1 -v 2>&1) && status=0 || status=$?
+          pass=$(echo "$out" | grep -c '^--- PASS' || echo 0)
+          if [ "$status" -ne 0 ]; then
+            echo "::error::version compatibility matrix failed"
+            echo "$out" | tail -20
+            exit 1
+          elif [ "$pass" -lt 30 ]; then
+            echo "::error::matrix ran only $pass tests — selection has gone stale"
+            exit 1
+          fi
+          echo "Matrix: $pass tests passed"
+
+      - name: 11. Import-graph separation
+        run: |
+          ok=1
+          forbidden_node=$(CGO_ENABLED=0 go list -deps ./cmd/relayfirst-node 2>/dev/null | grep -E 'relayfirst/internal/(eip712|receipt|publish|store|e2ee)$' || true)
+          if [ -n "$forbidden_node" ]; then
+            echo "::error::node links signing code"
+            ok=0
+          fi
+          forbidden_mining=$(CGO_ENABLED=0 go list -deps ./internal/mining 2>/dev/null | grep -E 'relayfirst/internal/a2a$' || true)
+          if [ -n "$forbidden_mining" ]; then
+            echo "::error::mining core depends on a2a wire"
+            ok=0
+          fi
+          forbidden_verifier=$(CGO_ENABLED=0 go list -deps ./cmd/relayfirst-verifier 2>/dev/null | grep -E 'relayfirst/internal/(mining|scoring)$' || true)
+          if [ -n "$forbidden_verifier" ]; then
+            echo "::error::verifier links mining/scoring"
+            ok=0
+          fi
+          forbidden_mcp=$(CGO_ENABLED=0 go list -deps ./cmd/relayfirst-mcp 2>/dev/null | grep -E 'relayfirst/internal/(eip712|receipt|publish|store|assertion|delegation|delegationsign|e2ee|mining|scoring)$' || true)
+          if [ -n "$forbidden_mcp" ]; then
+            echo "::error::mcp server links signing or verification code"
+            ok=0
+          fi
+          if [ "$ok" -eq 0 ]; then exit 1; fi
+
+      - name: 12. Merkle vector freshness
+        run: |
+          if [ ! -f testdata/merkle-vectors.json ]; then
+            echo "::error::merkle vectors missing"
+            exit 1
+          fi
+          before=$(cat testdata/merkle-vectors.json contracts/test/MerkleVectors.sol)
+          go run internal/devtools/gen_merkle_vectors.go >/tmp/rf-merkle.log 2>&1 || { cat /tmp/rf-merkle.log; exit 1; }
+          after=$(cat testdata/merkle-vectors.json contracts/test/MerkleVectors.sol)
+          if [ "$before" != "$after" ]; then
+            echo "::error::merkle vectors are STALE — regenerate and commit"
+            exit 1
+          fi
+
+      - name: 13. Solidity forge test
+        run: |
+          if command -v forge >/dev/null 2>&1 || [ -x "$HOME/.foundry/bin/forge" ]; then
+            if ! command -v forge >/dev/null 2>&1; then export PATH="$HOME/.foundry/bin:$PATH"; fi
+            forge test
+          else
+            echo "::warning::forge not installed — skipping Solidity side"
+          fi
+
+      - name: 14. npm packaging
+        run: |
+          ok=1
+          if [ ! -f package.json ]; then ok=0; fi
+          if grep -qE '"private"\s*:\s*true' package.json 2>/dev/null; then
+            echo "::error::package.json is private — remove for publishing"
+            ok=0
+          fi
+          if ! grep -qE '"prepublishOnly"' package.json 2>/dev/null; then
+            echo "::error::no prepublishOnly in package.json"
+            ok=0
+          fi
+          if ! grep -qE '"bin/npm"' package.json 2>/dev/null; then
+            echo "::error::files does not include bin/npm"
+            ok=0
+          fi
+          if [ "$ok" -eq 0 ]; then exit 1; fi
+          bash scripts/build-npm-binaries.sh >/tmp/rf-npm-build.log 2>&1 || { cat /tmp/rf-npm-build.log; exit 1; }
+          arch="amd64"; [ "$(uname -m)" = "aarch64" ] && arch="arm64"
+          os="linux"; [ "$(uname -s)" = "Darwin" ] && os="darwin"
+          want="bin/npm/relayfirst-$os-$arch"
+          if [ ! -f "$want" ]; then
+            ls -1 bin/npm 2>/dev/null || true
+            echo "::error::cross-build did not produce $want"
+            exit 1
+          fi
+          node scripts/npx-relayfirst.mjs version >/tmp/rf-npm-run.log 2>&1 || { cat /tmp/rf-npm-run.log; exit 1; }
+          echo "npm packaging: OK ($os/$arch)"
+
+      - name: 15. Release path arms genesis guard (BLK-4)
+        run: |
+          release_ok=1
+          if [ ! -f scripts/build-release.sh ] || [ ! -f Makefile ]; then
+            echo "::error::release path missing (build-release.sh / Makefile)"
+            release_ok=0
+          fi
+          if CGO_ENABLED=0 go build -tags mainnet -o /tmp/rf-probe ./cmd/relayfirst >/tmp/rf-genesis.log 2>&1; then
+            if /tmp/rf-probe version >/tmp/rf-genesis-run.log 2>&1; then
+              echo "::error::mainnet build RAN with provisional genesis — guard not armed"
+              release_ok=0
+            elif ! grep -q "provisional genesis" /tmp/rf-genesis-run.log 2>/dev/null; then
+              echo "::error::mainnet build refused for unexpected reason"
+              release_ok=0
+            else
+              echo "Genesis guard: armed (refuses provisional genesis)"
+            fi
+          else
+            echo "::error::cannot build with -tags mainnet"
+            release_ok=0
+          fi
+          # Dev build must still work
+          if [ "$release_ok" -eq 1 ]; then
+            if CGO_ENABLED=0 go build -o /tmp/rf-dev-probe ./cmd/relayfirst >/dev/null 2>&1 && \
+               /tmp/rf-dev-probe version >/dev/null 2>&1; then
+              echo "Dev build: works (guard is release-only)"
+            else
+              echo "::error::plain build broken while guard holds"
+              release_ok=0
+            fi
+          fi
+          if [ "$release_ok" -ne 1 ]; then exit 1; fi

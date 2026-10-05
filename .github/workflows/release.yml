@@ -1,0 +1,145 @@
+# RelayFirst — Release
+# Triggered by git tag v*.
+# Does three things: cross-compile binaries, npm publish, deploy Solidity to Sepolia.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write     # Create GitHub Release
+  packages: write     # npm publish
+
+env:
+  GO_VERSION: '1.27'
+  NODE_VERSION: '20'
+
+jobs:
+  # ── 1. Cross-compile all binaries ───────────────────────────────
+  cross-compile:
+    name: cross-compile
+    strategy:
+      matrix:
+        include:
+          - { GOOS: linux,   GOARCH: amd64,  ext: '' }
+          - { GOOS: linux,   GOARCH: arm64,  ext: '' }
+          - { GOOS: darwin,  GOARCH: amd64,  ext: '' }
+          - { GOOS: darwin,  GOARCH: arm64,  ext: '' }
+          - { GOOS: windows, GOARCH: amd64,  ext: '.exe' }
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build ${{ matrix.GOOS }}/${{ matrix.GOARCH }}
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.GOOS }}
+          GOARCH: ${{ matrix.GOARCH }}
+        run: |
+          go build -trimpath -ldflags="-s -w" -tags mainnet \
+            -o relayfirst-${GOOS}-${GOARCH}${{ matrix.ext }} \
+            ./cmd/relayfirst
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.GOOS }}-${{ matrix.GOARCH }}
+          path: relayfirst-*${{ matrix.ext }}
+          retention-days: 5
+
+  # ── 2. npm publish ──────────────────────────────────────────────
+  npm-publish:
+    name: npm publish
+    needs: [cross-compile]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Install deps & build platform binaries
+        run: |
+          npm install
+          bash scripts/build-npm-binaries.sh
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── 3. Deploy Solidity to Sepolia ───────────────────────────────
+  solidity-deploy:
+    name: deploy solidity
+    needs: [cross-compile]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Forge build
+        run: forge build
+
+      - name: Deploy RelayPoints to Sepolia
+        run: |
+          forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" \
+            --private-key "$DEPLOY_KEY" --broadcast --verify \
+            --etherscan-api-key "$ETHERSCAN_API_KEY" --sender "$DEPLOY_ADDR"
+        env:
+          SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+          DEPLOY_ADDR: ${{ secrets.DEPLOY_ADDRESS }}
+
+  # ── 4. Create GitHub Release ────────────────────────────────────
+  gh-release:
+    name: create release
+    needs: [cross-compile, npm-publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: sha256sum * > checksums.txt
+
+      - name: Extract changelog entry
+        id: changelog
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [ -f CHANGELOG.md ]; then
+            awk "/^## ${tag}/,/^## /" CHANGELOG.md | head -n -1 | sed '/^$/d' > release-notes.md
+          fi
+          if [ ! -s release-notes.md ]; then
+            echo "# $tag" > release-notes.md
+            echo "" >> release-notes.md
+            echo "Release artifacts generated at $(date -u '+%Y-%m-%dT%H:%M:%SZ')." >> release-notes.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            relayfirst-*
+            checksums.txt
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') }}

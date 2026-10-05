@@ -57,6 +57,8 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`AGENTS.md`](AGENTS.md) | — | L5 | AI agent 操作契约 | agent 行为出现系统性问题时 |
 | [`DOCS.md`](DOCS.md) | — | 元 | 本文件（文档地图） | 新增/删除文档时 |
 | [`README.md`](README.md) | — | **门面** | 一句话定位 + 10 分钟上手 + 不变式 + 命令表 + **诚实边界** | 上手路径 / 命令变化时 |
+| [`DevOps.md`](DevOps.md) | — | **操作** | CI gate / Release workflow / npm publish / Sepolia deploy — 协议类项目（无 Staging/Prod） | 门禁数 / 部署目标变化时 |
+| [`CHANGELOG.md`](CHANGELOG.md) | — | **门面** | Keep a Changelog 格式，语义化版本号 | 每个 release tag |
 | [`docs/requirements.md`](docs/requirements.md) | — | **派生** | **需求汇总索引**（可追溯；权威仍在 `MVP.md`） | 需求变化或阶段推进时 |
 | [`docs/getting-started.md`](docs/getting-started.md) | — | **指南** | 从零到首次出分；**明确说明密钥为何由用户自备** | 上手路径变化时 |
 | [`docs/notes/inference-cost-gap.md`](docs/notes/inference-cost-gap.md) | — | **笔记** | 调研：挖矿不消耗推理额度的断层 | 已被 ADR-0002 修复，保留为决策依据 |
@@ -146,6 +148,9 @@ CODING_RULES.md     编码规范
 AGENTS.md           agent 契约
 DOCS.md             本文件
 README.md           门面（可选，后期补）
+DevOps.md           DevOps 指南（CI/Release/npm）
+CHANGELOG.md        变更记录（Keep a Changelog）
+SECURITY.md         安全披露渠道（待定）
 ```
 
 **除上述之外，任何新文档不得放根目录。** 用 `docs/`。
