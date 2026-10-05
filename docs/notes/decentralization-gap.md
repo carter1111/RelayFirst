@@ -44,38 +44,70 @@ NET-4  Agent 自己选择与切换 Relay set；多 relay 冗余是默认行为�
 
 ---
 
-## 2. 还差的（目标 = §17 三层发现 + §18 反滥用 + 联邦/复制）
+## 2. 缺口清单（按维度分，避免拿错尺子）
 
-### ① 发现层 —— **最大的缺口**
+> **正确性维度一条都不缺**（NET-1..4 + 签名有效性）。
+> 下面按【是否影响去中心化】重新分类 —— 上一版把两件 operator 事务错列成了去中心化缺口。
 
-§17 定义了**三层**，只做了第 1 层：
+### 2A. 真正属于【去中心化 / 可用性】的缺口
 
-| §17 层 | 状态 | 说明 |
+| # | 缺口 | 状态 | 证据 | 影响 |
+|---|---|---|---|---|
+| **G1** | **发现层 L2：多 Indexer 生态** | ❌ 未做 | `cmd/` 仅 4 个二进制，无 indexer；节点自带 `GET /agents` 是**单节点便利** | "任何人能跑节点" ≠ "别人找得到" |
+| **G2** | **relay 查询 filter**（`since`/`until`/`kinds`） | ❌ 未做 | `internal/sqlite/mailbox.go` `ByAgent` 仅支持 `limit`；`internal/node` 也只解析 limit | 客户端**无法增量轮询**，只能取最新 N 条自行去重；relay 无法高效服务时间窗查询。Nostr 的 `REQ` 有全套 filter |
+| **G3** | **发现层 L3：`cardHash` EVM anchor** | ❌ 未做（**§17.3 自述"可选"**） | 无 registry 合约；`RelayAnchor.sol` 锚的是**回执 Merkle root**，非 cardHash | indexer 全挂时**无 fallback 发现** |
+| **G4** | **联邦 / 跨 relay 路由** | ❌ 未做（Phase 7） | 无节点间路由 | 每个 relay 是**孤岛**，客户端只扇出到**已知**节点 |
+| **G5** | **可用性复制 / anti-entropy** | ❌ 未做 | 无节点间复制 | 一个 relay 挂了数据就丢（除非有人**自愿**镜像） |
+
+### 2B. **不是**去中心化缺口 —— 是【operator 事务】（Nostr 同样不解决）
+
+| # | 项 | 状态 | 说明 |
+|---|---|---|---|
+| **O1** | **反滥用**（rate limit / hashcash / PoW） | ❌ 未做 | **Nostr 也没有**：反垃圾交给**每个 operator 自选**（付费 relay / 白名单 / 自扛）。RF 已有 `MaxPayloadBytes`；rate limit 属 operator 决策，**不是协议能力** |
+| **O2** | **镜像 / 复制策略** | ❌ 未做 | **Nostr 也不 gossip**：镜像是**自愿的**，不是协议要求 |
+| **O3** | **存储无上界 / 无 pruning** | ⚠️ | `ByAgent` 非破坏性（✅ 与 Nostr 一致），但**无 TTL/pruning** → 公共 relay 的磁盘会无限增长。属 operator 策略 |
+| **O4** | **TLS** | ⚠️ | 节点只提供 HTTP；生产需放在反向代理后。属部署 |
+
+### 2C. 已具备（不要误列为缺口）
+
+| 项 | 证据 |
+|---|---|
+| **持久化、非破坏性拉取** | `ByAgent` 无 `DELETE`；重复拉取重复返回（同 Nostr relay） |
+| **多 relay 客户端**（quorum/健康/failover） | `internal/publish/policy.go` |
+| **哑节点 + 不可伪造** | 导入图隔离 + `well-known` 自述 |
+| **自签身份 + 自签 relay set** | `internal/a2a/relayset.go` |
+
+### 2D. 结论：还差什么
+
+```text
+好用（真正还差，按杠杆排序）：
+   G1  L2 发现层 / Indexer        ← 主要缺口（也解释了"没有 explorer"）
+   G2  relay 查询 filter          ← 上一版漏掉的
+   G3  L3 cardHash anchor         ← 可选 fallback
+   G4 联邦 / G5 复制              ← Phase 7
+运营（operator 自决，非去中心化缺口）：
+   O1 反滥用 / O2 镜像 / O3 pruning / O4 TLS
+```
+
+### 2E. 与 "Explorer" 的关系（关键）
+
+**以太坊有 etherscan，RelayFirst 目前没有等价的统一视图。** 原因和 G1 是**同一个**：
+
+```text
+"Explorer" = L2 Indexer + 一个 UI
+```
+
+现在只有**每个节点各自的 JSON API**，且**视角是局部的**：
+
+| 端点 | 看得见什么 | 局限 |
 |---|---|---|
-| **L1 签名 Agent Card + relay set** | ✅ **已做** | `internal/a2a/relayset.go`。有效性来自 **agent 自己的签名**，不来自任何目录（§17.1） |
-| **L2 多个可替换的 Indexer** | ❌ **未做** | **没有 Indexer 二进制**（`cmd/` 仅 `relayfirst`/`-node`/`-verifier`/`-mcp`）。节点自带的 card 目录（`GET /agents`）是**单节点便利**，**不是**网络发现 |
-| **L3 可选 EVM bootstrap anchor** | ❌ **未做** | 无 registry 合约。`RelayAnchor.sol` 锚的是**回执 Merkle root**，**不是** §17.3 的 `cardHash` |
+| `GET /agents` | **本节点**收到的 Agent Card | 单节点；无跨节点聚合 |
+| `GET /observations` | **本节点**索引的回执 | 单节点；无 validity 列（故意的） |
+| `GET /tasks` | **本节点**的中转任务 | 单节点 |
 
-**后果（§17 开篇的警告）：**
-
-> "每个人可以运行节点" **不等于** "其他人自动知道如何找到它"。
-
-今天你必须**带外知道节点 URL**。节点找不到节点，客户端也**无法从网络发现一个陌生 agent**。
-
-### ② 联邦 / 跨 relay 路由（Phase 7）
-
-每个 relay 的存储是**孤岛**：客户端扇出到它**已知**的 N 个节点，但**节点之间不互相路由/复制**。
-无跨 operator 联邦、无 indexer 生态、无可选 Nostr adapter（`ARCHITECTURE.md` Phase 7）。
-
-### ③ 反滥用（§18）
-
-"完全 permissionless" 的代价是**没法靠官方审核防垃圾**。grep 全 `internal/`：
-**无 rate limit、无 hashcash / adaptive PoW**。目前每个 operator 自己扛。
-
-### ④ 可用性 / 复制（无 gossip）
-
-一个 relay 挂了，其数据就丢了，除非有人镜像。**无节点间 gossip/复制** —— 只有**客户端侧** failover。
-"网络自愈"这一层不存在。
+所以"统一节点/agent action 的 explorer"**今天不存在**，它就是 **G1（L2 Indexer）** 的产品化形态。
+`ARCHITECTURE.md` 把这角色叫 "Indexer / Explorer"（§15 拓扑图、Phase 7 "Indexer 生态"），
+**但没有任何实现**。
 
 ---
 
@@ -83,12 +115,12 @@ NET-4  Agent 自己选择与切换 Relay set；多 relay 冗余是默认行为�
 
 | 优先 | 动作 | 解开什么 |
 |---|---|---|
-| **1** | **L2：最小 Indexer**（或聚合多个节点的 card 目录） | 解开"必须带外给 URL" |
-| **2** | **L3：`cardHash` 上链**（§17.3，canonical bootstrap + fallback） | indexer 全挂时仍能找到 agent |
-| 3 | **反滥用**（per-operator rate limit / hashcash） | 公共 relay 可开放而不被打爆 |
-| 4 | **联邦 / 跨 relay 路由** | 多 operator 网络真正的互操作 |
+| **1** | **G2：relay 查询 filter**（`since`/`until`/`kinds`） | 增量轮询；是 Indexer 与 Explorer 的**前置**（没有它，聚合器只能拉全量） |
+| **2** | **G1：最小 Indexer**（聚合多节点 `GET /agents`，只读） | 解开"必须带外给 URL"；**也是 Explorer 的后端** |
+| **3** | **G3：`cardHash` 上链**（§17.3，canonical bootstrap + fallback） | indexer 全挂时仍能找到 agent |
+| 4 | **G4 联邦 / G5 复制** | 多 operator 网络真正的互操作与自愈 |
 
-**1 和 2 做完，"任何人都能跑节点"才真的变成"任何人都能被找到"。**
+**G2 + G1 做完，"任何人都能跑节点"才真的变成"任何人都能被找到"，也才谈得上一个统一 explorer。**
 
 ---
 
