@@ -382,3 +382,78 @@ func TestListErrorDoesNotLookUnreachable(t *testing.T) {
 		t.Errorf("the list view must explain its failure, got:\n%s", v)
 	}
 }
+
+// TestPalette_OpensFiltersAndRuns covers the menu's whole interaction: open, filter by
+// typing, and run the selection. It is the way a reader is meant to reach actions, so
+// it is tested as the path it is.
+func TestPalette_OpensFiltersAndRuns(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyCtrlP})
+	if !m.palette {
+		t.Fatal("ctrl+p must open the command menu")
+	}
+	// Filter to the tasks entries.
+	for _, r := range "task" {
+		m = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	items := m.paletteFiltered()
+	if len(items) == 0 {
+		t.Fatal("filtering for 'task' must match something")
+	}
+	for _, it := range items {
+		if !strings.Contains(strings.ToLower(it.label+" "+it.desc), "task") {
+			t.Errorf("a filtered entry must match the query, got %q", it.label)
+		}
+	}
+	// The first match for "task" is "go to Tasks"; Enter must run it.
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.palette {
+		t.Error("enter must close the menu")
+	}
+	if m.tab != 2 {
+		t.Errorf("running 'go to Tasks' must select that tab, got %d", m.tab)
+	}
+}
+
+// TestPalette_EscCloses keeps a menu from being a trap.
+func TestPalette_EscCloses(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyCtrlP})
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.palette {
+		t.Error("esc must close the menu")
+	}
+	// And with the menu closed, keys act normally again.
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.tab != 1 {
+		t.Errorf("after closing, tab must work again, got %d", m.tab)
+	}
+}
+
+// TestPalette_EveryTabIsReachable guards the menu against drifting from the tab set.
+func TestPalette_EveryTabIsReachable(t *testing.T) {
+	m := newModel(nil, time.Second)
+	labels := map[string]bool{}
+	for _, c := range m.paletteCommands() {
+		labels[c.label] = true
+	}
+	for _, name := range tabs {
+		if !labels["go to "+name] {
+			t.Errorf("the menu must offer a command for the %q tab", name)
+		}
+	}
+}
+
+// TestOverview_ShowsTheLogo keeps the wordmark where it was asked for.
+func TestOverview_ShowsTheLogo(t *testing.T) {
+	m := newModel(nil, time.Second)
+	v := m.View()
+	if !strings.Contains(v, "██████") {
+		t.Errorf("the Overview must show the logo, got:\n%s", v)
+	}
+	// Lists do not repeat it, or the data would be pushed off screen.
+	m.tab = 2
+	if strings.Contains(m.View(), "██████") {
+		t.Error("a list view must not repeat the logo")
+	}
+}

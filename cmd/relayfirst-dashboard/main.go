@@ -202,6 +202,12 @@ type model struct {
 	// use the same input line.
 	editingSubject bool
 
+	// palette is the command menu (Ctrl+P / Ctrl+K): open, its query, and the selection.
+	// It is the primary way to reach actions, so a reader is not expected to recall keys.
+	palette      bool
+	paletteQuery string
+	paletteSel   int
+
 	// agents and tasks are the active listings. They are refreshed on every poll so
 	// switching tabs shows current data without a separate fetch path.
 	agents []noderead.Card
@@ -216,6 +222,103 @@ const historyLen = 48
 // The tabs, in order. Kept as a slice so the header and the key handler agree on how
 // many there are and what they are called.
 var tabs = []string{"Overview", "Agents", "Tasks", "Observations", "Config"}
+
+// logo is the wordmark, shown at the top of Overview (the home view) rather than on
+// every frame: a dashboard is mostly lists, and six lines of art above each one would
+// push the data off the screen. The compact header keeps the brand visible everywhere.
+const logo = `██████╗ ███████╗██╗      █████╗ ██╗   ██╗
+██╔══██╗██╔════╝██║     ██╔══██╗╚██╗ ██╔╝
+██████╔╝█████╗  ██║     ███████║ ╚████╔╝
+██╔══██╗██╔══╝  ██║     ██╔══██║  ╚██╔╝
+██║  ██║███████╗███████╗██║  ██║   ██║
+╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝`
+
+// paletteCmd is one entry of the command palette.
+//
+// The palette is the menu: rather than expecting a reader to remember keys, Ctrl+P
+// opens a searchable list of everything the dashboard can do, in the shape Pi and
+// Claude Code use (and VS Code before them). It is a menu, not a command line — there
+// are no arguments to type, only entries to pick.
+type paletteCmd struct {
+	label string
+	desc  string
+	run   func(m model) (model, tea.Cmd)
+}
+
+// paletteCommands is the full, ordered menu.
+func (m model) paletteCommands() []paletteCmd {
+	cmds := make([]paletteCmd, 0, len(tabs)+6)
+	for i, name := range tabs {
+		idx := i
+		cmds = append(cmds, paletteCmd{
+			label: "go to " + name,
+			desc:  "section",
+			run: func(m model) (model, tea.Cmd) {
+				m.tab = idx
+				m.cursor, m.offset = 0, 0
+				return m, nil
+			},
+		})
+	}
+	return append(cmds,
+		paletteCmd{
+			label: "filter agents",
+			desc:  "narrow the Agents list locally",
+			run: func(m model) (model, tea.Cmd) {
+				m.tab, m.cursor, m.offset, m.editing, m.editingSubject, m.input = 1, 0, 0, true, false, m.filter
+				return m, nil
+			},
+		},
+		paletteCmd{
+			label: "filter tasks",
+			desc:  "narrow the Tasks list locally",
+			run: func(m model) (model, tea.Cmd) {
+				m.tab, m.cursor, m.offset, m.editing, m.editingSubject, m.input = 2, 0, 0, true, false, m.filter
+				return m, nil
+			},
+		},
+		paletteCmd{
+			label: "set observation subject",
+			desc:  "query observations for a URL",
+			run: func(m model) (model, tea.Cmd) {
+				m.tab, m.cursor, m.offset, m.editing, m.editingSubject, m.input = 3, 0, 0, true, true, m.subject
+				return m, nil
+			},
+		},
+		paletteCmd{
+			label: "refresh now",
+			desc:  "poll the node immediately",
+			run:   func(m model) (model, tea.Cmd) { return m, m.poll() },
+		},
+		paletteCmd{
+			label: "toggle help",
+			desc:  "show the key reference",
+			run:   func(m model) (model, tea.Cmd) { m.help = true; return m, nil },
+		},
+		paletteCmd{
+			label: "quit",
+			desc:  "leave the dashboard (the node keeps running)",
+			run:   func(m model) (model, tea.Cmd) { return m, tea.Quit },
+		},
+	)
+}
+
+// paletteFiltered narrows the menu to entries matching the query, across label and
+// description, so a reader can find an action by what it does and not only its name.
+func (m model) paletteFiltered() []paletteCmd {
+	all := m.paletteCommands()
+	q := strings.ToLower(strings.TrimSpace(m.paletteQuery))
+	if q == "" {
+		return all
+	}
+	out := make([]paletteCmd, 0, len(all))
+	for _, c := range all {
+		if strings.Contains(strings.ToLower(c.label), q) || strings.Contains(strings.ToLower(c.desc), q) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
 
 func newModel(client *noderead.Client, interval time.Duration) model {
 	m := model{client: client, interval: interval, history: make([]float64, 0, historyLen)}
@@ -294,6 +397,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// The palette is the outermost mode: while it is open it owns the keyboard, so
+		// typing filters the menu rather than triggering the key it would otherwise be.
+		if m.palette {
+			return m.updatePalette(msg)
+		}
+
 		// The input line is a mode too: while it is open, printable keys edit the buffer
 		// rather than acting as commands. A `/` typed into a filter is text, not a second
 		// command, which is the behaviour a reader expects.
@@ -302,6 +411,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
+		case "ctrl+p", "ctrl+k":
+			m.openPalette()
+			return m, nil
 		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
 		case "?":
@@ -437,6 +549,80 @@ var (
 	errStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 )
 
+// openPalette opens the command menu at the top.
+func (m *model) openPalette() {
+	m.palette = true
+	m.paletteQuery = ""
+	m.paletteSel = 0
+}
+
+// updatePalette handles keys while the command menu is open.
+//
+// The interaction is the one Pi and Claude Code use: type to filter, arrows to move,
+// Enter to run, Esc to close. It is a menu, so there is nothing to memorise and no
+// arguments to type — only entries to pick.
+func (m model) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	items := m.paletteFiltered()
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.palette = false
+		return m, nil
+	case tea.KeyEnter:
+		if len(items) == 0 {
+			m.palette = false
+			return m, nil
+		}
+		chosen := items[m.paletteSel]
+		m.palette = false
+		return chosen.run(m)
+	case tea.KeyUp:
+		if m.paletteSel > 0 {
+			m.paletteSel--
+		}
+		return m, nil
+	case tea.KeyDown:
+		if m.paletteSel < len(items)-1 {
+			m.paletteSel++
+		}
+		return m, nil
+	case tea.KeyBackspace:
+		if len(m.paletteQuery) > 0 {
+			r := []rune(m.paletteQuery)
+			m.paletteQuery = string(r[:len(r)-1])
+			m.paletteSel = 0
+		}
+		return m, nil
+	case tea.KeyRunes, tea.KeySpace:
+		m.paletteQuery += string(msg.Runes)
+		if msg.Type == tea.KeySpace {
+			m.paletteQuery += " "
+		}
+		m.paletteSel = 0
+		return m, nil
+	}
+	return m, nil
+}
+
+// viewPalette draws the command menu as an overlay over the current view.
+func (m model) viewPalette(b *strings.Builder) {
+	fmt.Fprintf(b, "  %s\n", labelStyle.Render("Commands"))
+	fmt.Fprintf(b, "  %s%s\n\n", titleStyle.Render("> "), m.paletteQuery)
+	items := m.paletteFiltered()
+	if len(items) == 0 {
+		fmt.Fprintf(b, "%s\n", dimStyle.Render("  no matching command"))
+	} else {
+		for i, c := range items {
+			line := fmt.Sprintf("%-30s %s", c.label, dimStyle.Render(c.desc))
+			if i == m.paletteSel {
+				fmt.Fprintf(b, "%s\n", titleStyle.Render("  ▸ "+line))
+			} else {
+				fmt.Fprintf(b, "    %s\n", line)
+			}
+		}
+	}
+	fmt.Fprintf(b, "\n%s\n", dimStyle.Render("  [↑↓] select  [Enter] run  [Esc] close"))
+}
+
 // updateEditing handles keys while the input line is open.
 //
 // The mode exists so a key that is normally a command becomes text: a reader filtering
@@ -568,9 +754,16 @@ func (m model) View() string {
 	if m.pollErr != nil {
 		dot = errStyle.Render("● unreachable")
 	}
-	fmt.Fprintf(&b, "%s  %s   %s\n", titleStyle.Render("RELAY dashboard"), orDash(m.base), dot)
+	fmt.Fprintf(&b, "%s  %s   %s\n", titleStyle.Render("RELAY"), orDash(m.base), dot)
 	fmt.Fprintf(&b, "  %s\n\n", m.tabBar())
 
+	// The palette and help are overlays: they take over the body so the menu is
+	// unobstructed, which is how Pi and Claude Code present a command list or a help
+	// panel.
+	if m.palette {
+		m.viewPalette(&b)
+		return b.String()
+	}
 	if m.help {
 		m.viewHelp(&b)
 		return b.String()
@@ -607,7 +800,7 @@ func (m model) View() string {
 		fmt.Fprintf(&b, "%s\n", dimStyle.Render("  [Enter] apply  [Esc] cancel"))
 		return b.String()
 	}
-	fmt.Fprintf(&b, "%s\n", dimStyle.Render("  [Tab/1-5] section  [↑↓] select  [/]"+m.filterHint()+"  [r] refresh  [?] help  [q] quit"))
+	fmt.Fprintf(&b, "%s\n", dimStyle.Render("  [Ctrl+P] commands  [Tab/1-5] section  [↑↓] select  [/]"+m.filterHint()+"  [?] help  [q] quit"))
 	return b.String()
 }
 
@@ -631,6 +824,7 @@ func (m model) filterHint() string {
 func (m model) viewHelp(b *strings.Builder) {
 	fmt.Fprintf(b, "  %s\n\n", labelStyle.Render("keys"))
 	rows := [][2]string{
+		{"Ctrl+P / Ctrl+K", "open the command menu (the easy way to do anything here)"},
 		{"Tab / →", "next section"},
 		{"Shift-Tab / ←", "previous section"},
 		{"1 – 5", "jump to a section"},
@@ -663,6 +857,9 @@ func (m model) tabBar() string {
 }
 
 func (m model) viewOverview(b *strings.Builder) {
+	// The logo lives here, on the home view: the lists need the vertical space, and this
+	// is the screen a reader lands on.
+	fmt.Fprintf(b, "%s\n\n", titleStyle.Render(logo))
 	fmt.Fprintf(b, "  %-14s %s\n", labelStyle.Render("node"), orDash(m.well.Name))
 	fmt.Fprintf(b, "  %-14s %s\n", labelStyle.Render("version"), orDash(m.well.Version))
 	fmt.Fprintf(b, "  %-14s %s\n", labelStyle.Render("protocol"), orDash(m.well.Protocol))
