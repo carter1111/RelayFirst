@@ -81,7 +81,8 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 
 | [`docs/notes/decentralization-gap.md`](docs/notes/decentralization-gap.md) | — | **规划**（→ planning） | **去中心化现状 vs 目标**（目标 = `ARCHITECTURE.md` §1.6 Nostr 式 permissionless）；NET-1..4 已做对照 + **完整缺口清单 G1–G5 / O1–O4**；含范围声明 | 发现层推进后 |
 | [`docs/notes/explorer-indexer-plan.md`](docs/notes/explorer-indexer-plan.md) | — | **规划**（→ planning） | **Indexer / Explorer 功能与架构**（独立组件）：不定义真相的红线、crawler+read model+只读 UI、v0→v2 分层、反模式、依赖 G2/G3 | 开工时 |
-| [`docs/notes/terminal-experience-plan.md`](docs/notes/terminal-experience-plan.md) | — | **规划**（→ planning） | **节点终端体验**：headless-first 约束、TTY 分支（非 TTY 字节不变）、logo、`relayfirst-node report`、必要命令 | 开工时 |
+| [`docs/notes/terminal-experience-plan.md`](docs/notes/terminal-experience-plan.md) | — | **规划**（→ planning） | **节点终端体验**：headless-first 约束、TTY 分支（非 TTY 字节不变）、logo、`relayfirst-node report/status/inspect`、必要命令 | 开工时 |
+| [`docs/notes/node-tui-dashboard-plan.md`](docs/notes/node-tui-dashboard-plan.md) | — | **规划**（→ planning） | **节点 TUI + 实时 Dashboard 架构**：交互控制台、五视图线框、实时事件源（同进程读 hub，无公开端点）、bubbletea 依赖理由、任务分解 | 开工时 |
 | [`docs/notes/cli-role-and-ux-plan.md`](docs/notes/cli-role-and-ux-plan.md) | — | **规划**（→ planning） | **`relayfirst` 定位与品牌体验**：既给 agent 也给给人（判据①是"陌生人"）、TTY 分支、`mine`/`status` 设计、依赖取舍、反模式 | 开工时 |
 | [`docs/notes/mvp2-launch-readiness.md`](docs/notes/mvp2-launch-readiness.md) | — | **规划**（→ planning） | **MVP 2.0 上线前 Readiness 一览**：十条判据状态 + 六问（去中心化/explorer/节点/激励/矿工 UX/缺什么） | 每次推进后 |
 | [`docs/notes/discovery-plan.md`](docs/notes/discovery-plan.md) | — | **规划**（→ planning） | **发现层实施计划（G2→G1→G3）**：relay filter 任务分解、Indexer/Explorer 任务分解、顺序与里程碑、开工前置 | 获批进工期时 |
