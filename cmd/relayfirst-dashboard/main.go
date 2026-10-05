@@ -111,11 +111,22 @@ func run(args []string) error {
 }
 
 // pollMsg carries one poll's result to the model.
+//
+// Agents and tasks are fetched in the same poll as the counts: a second, independent
+// refresh path would let the header and the list disagree, and there is no reason to
+// spend two round trips on one node when one will do.
 type pollMsg struct {
 	health noderead.Health
 	well   noderead.WellKnown
-	err    error
-	at     time.Time
+	agents []noderead.Card
+	tasks  []noderead.Task
+
+	// err is a CONNECTIVITY failure (health or well-known): the node is unreachable.
+	// listErr is a listing failure on a reachable node, which must not be shown as
+	// "unreachable" — the counts are still live.
+	err     error
+	listErr error
+	at      time.Time
 }
 
 // model is the dashboard state.
@@ -139,13 +150,27 @@ type model struct {
 
 	health  noderead.Health
 	well    noderead.WellKnown
-	pollErr error
+	pollErr error // connectivity: the node is unreachable
+	listErr error // a listing failed on a reachable node
 	lastAt2 time.Time
+
+	// tab selects the view; cursor selects a row within a list view.
+	tab    int
+	cursor int
+
+	// agents and tasks are the active listings. They are refreshed on every poll so
+	// switching tabs shows current data without a separate fetch path.
+	agents []noderead.Card
+	tasks  []noderead.Task
 
 	width int
 }
 
 const historyLen = 48
+
+// The tabs, in order. Kept as a slice so the header and the key handler agree on how
+// many there are and what they are called.
+var tabs = []string{"Overview", "Agents", "Tasks", "Config"}
 
 func newModel(client *noderead.Client, interval time.Duration) model {
 	m := model{client: client, interval: interval, history: make([]float64, 0, historyLen)}
@@ -155,7 +180,14 @@ func newModel(client *noderead.Client, interval time.Duration) model {
 	return m
 }
 
+// listLimit caps each listing. A dashboard shows a working view, not an archive; the
+// node is asked for a bounded page so a large store does not become a large render.
+const listLimit = 50
+
 // poll fires one poll immediately, then on the interval.
+//
+// The listings are fetched here rather than on tab switch so the data is already
+// present when a tab is shown, and so a slow request cannot make a tab appear to hang.
 func (m model) poll() tea.Cmd {
 	return func() tea.Msg {
 		h, err := m.client.Health()
@@ -163,7 +195,20 @@ func (m model) poll() tea.Cmd {
 			return pollMsg{err: err, at: time.Now()}
 		}
 		wk, err := m.client.WellKnown()
-		return pollMsg{health: h, well: wk, err: err, at: time.Now()}
+		if err != nil {
+			return pollMsg{health: h, err: err, at: time.Now()}
+		}
+		// A listing failure is not fatal to the overview: counts still render. The
+		// error is carried so the list views can show why they are empty.
+		agents, aErr := m.client.Agents(listLimit)
+		tasks, tErr := m.client.Tasks("", listLimit)
+		var lErr error
+		if aErr != nil {
+			lErr = aErr
+		} else if tErr != nil {
+			lErr = tErr
+		}
+		return pollMsg{health: h, well: wk, agents: agents, tasks: tasks, listErr: lErr, at: time.Now()}
 	}
 }
 
@@ -185,6 +230,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "r":
 			return m, m.poll()
+		case "tab", "right":
+			m.tab = (m.tab + 1) % len(tabs)
+			m.cursor = 0
+		case "shift+tab", "left":
+			m.tab = (m.tab - 1 + len(tabs)) % len(tabs)
+			m.cursor = 0
+		case "1", "2", "3", "4":
+			// Number keys jump straight to a tab. The mapping is derived from the key
+			// string so it stays correct if tabs are reordered, and it is bounded by the
+			// tab count rather than assumed to be four.
+			for i := range tabs {
+				if msg.String() == fmt.Sprint(i+1) {
+					m.tab = i
+					m.cursor = 0
+					break
+				}
+			}
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < m.rowCount()-1 {
+				m.cursor++
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -202,6 +272,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pollErr = nil
 		m.health = msg.health
 		m.well = msg.well
+		m.listErr = msg.listErr
+		m.agents = msg.agents
+		m.tasks = msg.tasks
+		// Clamp the cursor: a listing can shrink between polls, and a cursor past the
+		// end would leave nothing highlighted.
+		if m.cursor >= m.rowCount() {
+			m.cursor = 0
+		}
 
 		// Throughput from the count delta. The FIRST poll establishes a baseline and
 		// yields no rate, because a delta against an unknown previous value would be a
@@ -240,6 +318,18 @@ var (
 	errStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 )
 
+// rowCount is the number of selectable rows in the current tab.
+func (m model) rowCount() int {
+	switch m.tab {
+	case 1:
+		return len(m.agents)
+	case 2:
+		return len(m.tasks)
+	default:
+		return 0
+	}
+}
+
 func (m model) View() string {
 	var b strings.Builder
 
@@ -248,43 +338,130 @@ func (m model) View() string {
 	if m.pollErr != nil {
 		dot = errStyle.Render("● unreachable")
 	}
-	fmt.Fprintf(&b, "%s  %s   %s\n\n",
-		titleStyle.Render("RELAY dashboard"),
-		orDash(m.base),
-		dot)
+	fmt.Fprintf(&b, "%s  %s   %s\n", titleStyle.Render("RELAY dashboard"), orDash(m.base), dot)
+	fmt.Fprintf(&b, "  %s\n\n", m.tabBar())
 
 	if m.pollErr != nil {
 		fmt.Fprintf(&b, "%s\n\n", errStyle.Render("  "+m.pollErr.Error()))
-		fmt.Fprintf(&b, "%s\n", dimStyle.Render("  the node may be down; retrying with backoff. press r to retry now, q to quit"))
+		fmt.Fprintf(&b, "%s\n", dimStyle.Render("  the node may be down; retrying with backoff. [r] retry now, [q] quit"))
 		return b.String()
 	}
 
-	// Identity block.
-	fmt.Fprintf(&b, "  %-14s %s\n", labelStyle.Render("node"), orDash(m.well.Name))
-	fmt.Fprintf(&b, "  %-14s %s\n", labelStyle.Render("version"), orDash(m.well.Version))
-	fmt.Fprintf(&b, "  %-14s %s\n", labelStyle.Render("protocol"), orDash(m.well.Protocol))
-	fmt.Fprintf(&b, "  %-14s %s\n", labelStyle.Render("verifies"),
-		errStyle.Render("false")+dimStyle.Render(" (holds no key)"))
-	fmt.Fprintf(&b, "\n")
-
-	// Counts.
-	fmt.Fprintf(&b, "  %s\n", labelStyle.Render("holds"))
-	fmt.Fprintf(&b, "    messages      %d\n", m.well.Messages)
-	fmt.Fprintf(&b, "    agents        %d\n", m.well.Agents)
-	fmt.Fprintf(&b, "    agent cards   %d\n", m.well.AgentCards)
-	fmt.Fprintf(&b, "    observations  %d\n", m.well.Observations)
-	fmt.Fprintf(&b, "    tasks         %d\n\n", m.well.Tasks)
-
-	// Throughput, derived from count deltas.
-	fmt.Fprintf(&b, "  %s  %s\n", labelStyle.Render("throughput"),
-		fmt.Sprintf("%.1f msg/s   peak %.1f", m.throughput, m.peak))
-	fmt.Fprintf(&b, "  %s\n", sparkline(m.history))
-	fmt.Fprintf(&b, "%s\n", dimStyle.Render("  derived from count deltas, not a message stream (the node has no node-wide stream)"))
+	switch m.tab {
+	case 1:
+		m.viewAgents(&b)
+	case 2:
+		m.viewTasks(&b)
+	case 3:
+		m.viewConfig(&b)
+	default:
+		m.viewOverview(&b)
+	}
 
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "%s\n", dimStyle.Render("  [r] refresh  [q] quit"))
-
+	fmt.Fprintf(&b, "%s\n", dimStyle.Render("  [Tab/1-4] section  [↑↓] select  [r] refresh  [q] quit"))
 	return b.String()
+}
+
+// tabBar renders the tab strip with the active one highlighted.
+func (m model) tabBar() string {
+	parts := make([]string, 0, len(tabs))
+	for i, name := range tabs {
+		if i == m.tab {
+			parts = append(parts, titleStyle.Render("["+name+"]"))
+		} else {
+			parts = append(parts, dimStyle.Render(name))
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func (m model) viewOverview(b *strings.Builder) {
+	fmt.Fprintf(b, "  %-14s %s\n", labelStyle.Render("node"), orDash(m.well.Name))
+	fmt.Fprintf(b, "  %-14s %s\n", labelStyle.Render("version"), orDash(m.well.Version))
+	fmt.Fprintf(b, "  %-14s %s\n", labelStyle.Render("protocol"), orDash(m.well.Protocol))
+	fmt.Fprintf(b, "  %-14s %s\n\n", labelStyle.Render("verifies"),
+		errStyle.Render("false")+dimStyle.Render(" (holds no key)"))
+
+	fmt.Fprintf(b, "  %s\n", labelStyle.Render("holds"))
+	fmt.Fprintf(b, "    messages      %d\n", m.well.Messages)
+	fmt.Fprintf(b, "    agents        %d\n", m.well.Agents)
+	fmt.Fprintf(b, "    agent cards   %d\n", m.well.AgentCards)
+	fmt.Fprintf(b, "    observations  %d\n", m.well.Observations)
+	fmt.Fprintf(b, "    tasks         %d\n\n", m.well.Tasks)
+
+	fmt.Fprintf(b, "  %s  %s\n", labelStyle.Render("throughput"),
+		fmt.Sprintf("%.1f msg/s   peak %.1f", m.throughput, m.peak))
+	fmt.Fprintf(b, "  %s\n", sparkline(m.history))
+	fmt.Fprintf(b, "%s\n", dimStyle.Render("  derived from count deltas; the node has no node-wide message stream"))
+}
+
+func (m model) viewAgents(b *strings.Builder) {
+	if m.listErr != nil {
+		fmt.Fprintf(b, "%s\n", errStyle.Render("  listing failed: "+m.listErr.Error()))
+		return
+	}
+	if len(m.agents) == 0 {
+		fmt.Fprintf(b, "%s\n", dimStyle.Render("  no agent cards published to this node"))
+		return
+	}
+	// The note repeats the node's own: a directory is not an authority. A dashboard that
+	// dropped it would be the one place a reader forgets it.
+	fmt.Fprintf(b, "%s\n\n", dimStyle.Render("  a directory, not an authority: this node has not verified any proof"))
+	for i, c := range m.agents {
+		line := fmt.Sprintf("%-46s  card %4dB  proof %4dB", orDash(short(c.AgentID, 46)), len(c.Card), len(c.Proof))
+		if i == m.cursor {
+			fmt.Fprintf(b, "%s\n", titleStyle.Render("  ▸ "+line))
+		} else {
+			fmt.Fprintf(b, "    %s\n", line)
+		}
+	}
+}
+
+func (m model) viewTasks(b *strings.Builder) {
+	if m.listErr != nil {
+		fmt.Fprintf(b, "%s\n", errStyle.Render("  listing failed: "+m.listErr.Error()))
+		return
+	}
+	if len(m.tasks) == 0 {
+		fmt.Fprintf(b, "%s\n", dimStyle.Render("  no tasks on this node's board"))
+		return
+	}
+	fmt.Fprintf(b, "%s\n\n", dimStyle.Render("  a noticeboard, not an authority: no exclusivity, no expiry enforcement"))
+	for i, t := range m.tasks {
+		line := fmt.Sprintf("%-22s  claims %-3d  %s", orDash(short(t.TaskID, 22)), t.Claims, orDash(short(t.Subject, 40)))
+		if i == m.cursor {
+			fmt.Fprintf(b, "%s\n", titleStyle.Render("  ▸ "+line))
+		} else {
+			fmt.Fprintf(b, "    %s\n", line)
+		}
+	}
+}
+
+func (m model) viewConfig(b *strings.Builder) {
+	fmt.Fprintf(b, "  %-14s %s\n", labelStyle.Render("node url"), orDash(m.base))
+	fmt.Fprintf(b, "  %-14s %s\n", labelStyle.Render("poll"), m.interval.String())
+	fmt.Fprintf(b, "  %-14s %s\n", labelStyle.Render("node name"), orDash(m.well.Name))
+	fmt.Fprintf(b, "  %-14s %s\n", labelStyle.Render("version"), orDash(m.well.Version))
+	fmt.Fprintf(b, "  %-14s %s\n", labelStyle.Render("publicUrl"), orDash(m.well.PublicURL))
+	fmt.Fprintf(b, "  %-14s %s\n\n", labelStyle.Render("nodeId"), orDash(m.well.NodeID))
+	if m.well.Note != "" {
+		fmt.Fprintf(b, "  %s\n", labelStyle.Render("node's own note"))
+		fmt.Fprintf(b, "%s\n", dimStyle.Render("    "+m.well.Note))
+	}
+}
+
+// short truncates s to n runes with an ellipsis, so a long id does not push the rest
+// of a row off screen.
+func short(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	if n <= 1 {
+		return string(r[:n])
+	}
+	return string(r[:n-1]) + "…"
 }
 
 // sparkline renders recent throughput as block characters.

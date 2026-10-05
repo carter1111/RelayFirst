@@ -97,3 +97,106 @@ var errUnreachable = &unreachableErr{}
 type unreachableErr struct{}
 
 func (*unreachableErr) Error() string { return "connection refused" }
+
+// TestTabs_CycleAndClamp checks the tab selection stays in range.
+func TestTabs_CycleAndClamp(t *testing.T) {
+	m := newModel(nil, time.Second)
+	if m.tab != 0 {
+		t.Fatalf("must start on Overview, got %d", m.tab)
+	}
+	// Tab past the end wraps to 0.
+	for i := 0; i < len(tabs); i++ {
+		m = step(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	}
+	if m.tab != 0 {
+		t.Errorf("tabbing %d times must wrap to 0, got %d", len(tabs), m.tab)
+	}
+	// Shift+tab from 0 wraps to the last.
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.tab != len(tabs)-1 {
+		t.Errorf("shift+tab from 0 must wrap to %d, got %d", len(tabs)-1, m.tab)
+	}
+}
+
+// TestViewTasks_ShowsRowsAndTheCaveat: the list must show data AND repeat the node's
+// "not an authority" note, because a dashboard is where a reader most easily forgets it.
+func TestViewTasks_ShowsRowsAndTheCaveat(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m.tab = 2
+	m.tasks = []noderead.Task{
+		{TaskID: "tsk_1", Subject: "https://a.example/x", Claims: 3},
+		{TaskID: "tsk_2", Subject: "https://b.example/y", Claims: 0},
+	}
+	v := m.View()
+	for _, want := range []string{"tsk_1", "tsk_2", "claims", "not an authority"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("tasks view must contain %q, got:\n%s", want, v)
+		}
+	}
+}
+
+// TestViewAgents_EmptyIsExplained keeps an empty directory from looking broken.
+func TestViewAgents_EmptyIsExplained(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m.tab = 1
+	v := m.View()
+	if !strings.Contains(v, "no agent cards") {
+		t.Errorf("an empty agents view must say so, got:\n%s", v)
+	}
+}
+
+// TestViewConfig_ShowsConnectionAndNote keeps the config tab useful: it must show what
+// it is connected to and repeat the node's own trust note.
+func TestViewConfig_ShowsConnectionAndNote(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m.base = "http://localhost:8080"
+	m.tab = 3
+	m.well = noderead.WellKnown{Name: "relayfirst-node", Note: "holds no key"}
+	v := m.View()
+	for _, want := range []string{"http://localhost:8080", "holds no key", "poll"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("config view must contain %q, got:\n%s", want, v)
+		}
+	}
+}
+
+// TestCursor_ClampsToRowCount keeps a shrinking list from leaving the cursor past the
+// end, where nothing would be highlighted.
+func TestCursor_ClampsToRowCount(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m.tab = 2
+	m.tasks = []noderead.Task{{TaskID: "a"}, {TaskID: "b"}}
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	m = step(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	if m.cursor != 1 {
+		t.Errorf("cursor must clamp to the last row (1), got %d", m.cursor)
+	}
+	// A poll that returns fewer rows resets the cursor.
+	m = step(t, m, pollMsg{well: noderead.WellKnown{}, tasks: nil, at: time.Now()})
+	if m.cursor != 0 {
+		t.Errorf("cursor must reset when the listing shrinks, got %d", m.cursor)
+	}
+}
+
+// TestListErrorDoesNotLookUnreachable is the distinction that matters: a reachable node
+// whose listing failed must not be shown as down, because the counts are still live.
+func TestListErrorDoesNotLookUnreachable(t *testing.T) {
+	m := newModel(nil, time.Second)
+	m = step(t, m, pollMsg{
+		well:    noderead.WellKnown{Name: "relayfirst-node"},
+		listErr: errUnreachable,
+		at:      time.Now(),
+	})
+	if m.pollErr != nil {
+		t.Fatal("a listing error must not set the connectivity error")
+	}
+	v := m.View()
+	if strings.Contains(v, "unreachable") {
+		t.Errorf("a listing failure must not read as unreachable, got:\n%s", v)
+	}
+	m.tab = 2
+	if v := m.View(); !strings.Contains(v, "listing failed") {
+		t.Errorf("the list view must explain its failure, got:\n%s", v)
+	}
+}
