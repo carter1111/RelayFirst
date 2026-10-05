@@ -190,6 +190,7 @@ relayfirst-node inspect <what>  [flags]  离线列内容：agents/tasks/observat
 | TTY 分支 | `isTTY`（`os.ModeCharDevice`，**零新依赖**） | `TestIsTTY_FalseForAPipe` |
 | 管道/重定向**零 ANSI** | `printReport` 判 **stdout** | `TestReportToAPipeHasNoANSI`（`> file` 与管道均 0 个 `\033`） |
 | 非 TTY 启动**字节不变** | banner 只在 `isTTY(os.Stderr)` 时打 | 管道启动实测仍为单行 slog |
+| **TTY 上二者只出一个** | banner **取代**那行 slog（非 `!interactive` 才打） | pty 启动实测 `starting` 行数 = **0**（否则每个字段打两遍） |
 | 无子命令不误判 | `run()` 的首参判定 | `TestRun_LeadingFlagIsNotASubcommand` |
 
 ### 一处**修正**（过程中发现）

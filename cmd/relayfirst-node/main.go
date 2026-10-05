@@ -126,7 +126,12 @@ func run(args []string) error {
 	// The banner is for a human at a terminal. Under `docker -d`, systemd or CI the
 	// writer is not a TTY, so the structured log line below is emitted instead and
 	// nothing changes for a log scraper.
-	if isTTY(os.Stderr) {
+	//
+	// Exactly one of the two runs: on a TTY the banner already carries version,
+	// listen, storage and verify, so also emitting the structured line would print
+	// every field twice.
+	interactive := isTTY(os.Stderr)
+	if interactive {
 		printBanner(os.Stderr, cfg, snapshot(db), true)
 	}
 
@@ -156,11 +161,17 @@ func run(args []string) error {
 
 	// Report the storage path rather than the full public URL, which may contain
 	// a hostname but never a secret. No credential is ever logged.
-	logger.Info("relayfirst-node starting",
-		"version", version,
-		"listen", cfg.listen,
-		"storage", cfg.storage,
-		"verify", false)
+	//
+	// Skipped on a TTY because the banner above already prints every one of these
+	// fields; the structured line is the non-interactive substitute, not an
+	// addition to it.
+	if !interactive {
+		logger.Info("relayfirst-node starting",
+			"version", version,
+			"listen", cfg.listen,
+			"storage", cfg.storage,
+			"verify", false)
+	}
 
 	// Shut down cleanly on interrupt so SQLite closes its write-ahead log rather
 	// than leaving it for the next start to recover.
