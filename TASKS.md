@@ -820,6 +820,7 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 | **PKG-1** | npm **按平台分包**（或 `postinstall` 下载单平台） | 发布优化 | ⬜ **未做** | 现在 tarball 含 5 平台二进制 → **~42MB**。改法：`optionalDependencies` + `os`/`cpu` 子包 |
 | **PKG-2** | macOS 二进制**签名 / 公证** | 发布 | ⬜ **未做** | 交叉编译产物未签名 → Gatekeeper 可能拦。首次发布可先发 linux/windows |
 | **PKG-3** | `npm publish` 本体 | 发布（外部凭据） | ⏳ 打包就绪 | 需 npm 帐号；步骤见 `planning.md` C1。**用户 2026-10-06 已确认"npm 也要做"** |
+| **PKG-4** | **`relayfirst-dashboard` 纳入 npm 打包** | 发布 | ⬜ **待做**（`TASKS.md` UX-1 的 dashboard 落地后） | 用户 2026-10-06 确认 **dashboard 也要能 `npm install`**：`package.json` 加 `bin` + `scripts/build-npm-binaries.sh` 加该命令。**依赖 dashboard 二进制先存在** |
 
 > **上线 Readiness 汇总**（六问 + 十条判据）：[`docs/notes/mvp2-launch-readiness.md`](docs/notes/mvp2-launch-readiness.md)。
 > **BLK-5（新增，待裁决）**：**节点激励** —— 现状无回报（A7 禁止排放）。

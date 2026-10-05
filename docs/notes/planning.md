@@ -83,6 +83,7 @@
 |---|---|---|
 | `relayfirst` CLI | `npx relayfirst …` 零安装挖矿/验证 | ✅ **打包就绪**；⏳ 未 `npm publish` |
 | `relayfirst-mcp` | IDE 一行配置（MCP stdio） | ✅ **打包就绪**；⏳ 未 `npm publish` |
+| **`relayfirst-dashboard`** | `npx relayfirst-dashboard` 连节点看面板 | ⬜ **待打包**（**PKG-4**；依赖 dashboard 二进制先存在，见 [`node-tui-dashboard-plan.md`](node-tui-dashboard-plan.md)）。用户 2026-10-06：**dashboard 也要能 npm 安装** |
 | ~~`relayfirst-node`~~ | **刻意不发 npm** | 它是**长驻服务**：npm/npx 适合按需启动的 CLI/MCP（stdio），不适合守护进程 + 持久卷。**节点用 Docker** |
 
 **已修（2026-10-06）**：原 4 个阻塞项 —— `private:true`、`bin/` 被 gitignore、tarball 只有单平台单二进制、版本过期 —— 全部处理：
