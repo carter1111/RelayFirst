@@ -66,6 +66,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/upgrade-architecture-plan.md`](docs/notes/upgrade-architecture-plan.md) | 651 | **笔记** | **MVP 2.0 → 全架构升级方案**：反分叉版本化（A9 论证）、升级顺序、库采用表、风险登记册 | 版本化地基（S9-0）落地后 |
 | [`docs/notes/blk-2-first-consumer-plan.md`](docs/notes/blk-2-first-consumer-plan.md) | 200 | **行动方案** | **BLK-2：找第一个真实消费方**（价格/可达性 → 交易机器人）—— 买家画像 / demo 形态 / 首封信 / 反自我欺骗判据 / 8 周时间盒 | 拿到第一个使用者后 |
 | [`docs/notes/emission-model-conflict.md`](docs/notes/emission-model-conflict.md) | — | **笔记** | **计分公式（§5.3）与 epoch 发行模型（§6.2）互相矛盾**——需人裁决 | 用户裁决后 |
+| [`docs/notes/delegation-quickstart.md`](docs/notes/delegation-quickstart.md) | — | **指南** | **Session Delegation 操作指南**：`session grant`（owner 签发）/ `session verify`（消费方授权）/ nonce 撤销 / 常见错误。**回执永不可委派**是硬边界 | 委托命令 / scope 集合变化时 |
 | [`docs/mvp-2.0-proposal.md`](docs/mvp-2.0-proposal.md) | 611 | **决策依据** | **MVP 2.0 提案（已 accepted）** —— 论证过程；范围权威在 `MVP.md` v2.0 | 已归档（合并完成） |
 | [`docs/archive/mvp-1.0.md`](docs/archive/mvp-1.0.md) | 884 | **归档** | **MVP 1.0 原文逐字副本**（SHA-256 `259469ad…`）—— 仓库无 git 历史，故显式归档 | 不再更新 |
 | [`docs/decisions/ADR-0001-*.md`](docs/decisions/ADR-0001-eip712-in-house-thin-layer.md) | — | **决策** | EIP-712 用自研薄层而非 `apitypes`（S1-4） | 已 accepted |
