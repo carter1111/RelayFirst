@@ -133,6 +133,50 @@
 
 ---
 
+## D2. 节点/dashboard 的**配置方式**（设计已定，未做）
+
+> **问题（用户 2026-10-06）**：端口是不是应该让用户配置比较好？
+> **结论**：**flag（已有）+ 环境变量（建议加）+ 【不加】config 文件。** 端口**不是写死**，是**默认值**。
+
+### 现状（实测）
+
+| 二进制 | 现在怎么配 |
+|---|---|
+| `relayfirst-node` | **只读 flag**（`--listen/--storage/--public-url/--max-payload`）；**无 env、无 config 文件** |
+| `relayfirst-dashboard` | **只读 flag**（`--url/--interval`）；**无 env** |
+| 项目其他工具 | **有** `RELAYFIRST_RELAY` / `RELAYFIRST_SESSION_KEY` / `RELAYFIRST_GRANT_NONCE` / `RELAYFIRST_OWNER_KEY` / `RELAYFIRST_VERIFIER_KEY` / `RELAYFIRST_PRIVATE_KEY` / `RELAYFIRST_CONFIG_DIR` |
+
+→ **节点/dashboard 是当前唯一不读 env 的两个** —— 这本身是个**不一致**。
+
+### 最优方案（三层）
+
+| 层 | 做不做 | 内容 |
+|---|---|---|
+| **① flag** | ✅ **已有，保留** | `--listen` / `--url` —— **唯一正确的"一次性覆盖"**，也是 `docker run … --listen :9000` 的用法 |
+| **② env** | ✅ **建议加** | `RELAYFIRST_LISTEN` / `RELAYFIRST_STORAGE`（node）；dashboard 的 `--url` 默认**先读 `RELAYFIRST_RELAY`**（**复用现有名字，零新概念**） |
+| **③ config 文件** | ❌ **不加** | 见下 |
+
+**优先级**（两个 `--help` 都要写明）：`flag > env > default`。
+
+### 为什么**不加** config 文件（依据充分）
+
+| 理由 | 依据 |
+|---|---|
+| **节点是服务器，服务器不该带状态文件** | 发钉死的副本（Docker/systemd/多实例）用一个文件极易配错 —— 用户刚被"旧进程 + 旧端口"坑过，**状态是 bug 来源** |
+| **flag 是标准** | `docker run nginx -g …`、`redis-server --port` 都用**命令行**，不用文件 |
+| **env 已覆盖"长驻/容器"** | `docker run -e RELAYFIRST_LISTEN=:9000` 比挂载 config **更干净** |
+| **避免第二个真相源** | 现有 config 是**矿工 CLI** 的（`relayfirst config set`），**不是节点的**；混用会让"节点配置"失去单一来源（违反 `DOCS.md §6` SSoT 原则） |
+
+### 若做（改动很小）
+
+1. `cmd/relayfirst-node`：`--listen`/`--storage` 默认值改为**先读 env**（flag 优先）
+2. `cmd/relayfirst-dashboard`：`--url` 默认值 `RELAYFIRST_RELAY` → `http://localhost:8080`
+3. 两个 `--help` 增加"优先级 flag > env > default"一行 + 换端口/主机示例
+
+**状态**：⬜ **未做**（用户 2026-10-06：**先记下，后面决定再做**）。
+
+---
+
 ## E. 已闭环（本轮及近期完成，登记备查）
 
 - **S13-3d** 委托签发者 + 消费者（`session grant` / `session verify`）
