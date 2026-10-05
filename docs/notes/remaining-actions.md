@@ -38,25 +38,30 @@
 
 ## C. 需要【发布动作】的（一次性命令，但要有凭据）
 
-### C1. npm —— **只发两个用户工具，不发节点**
+### C1. npm —— **只发两个用户工具，不发节点**（**打包已修好，只剩 `npm publish`**）
 
 | 物 | 目的 | 现状 |
 |---|---|---|
-| `relayfirst` CLI | `npx relayfirst …` 零安装挖矿/验证 | **未发布**（S6-7） |
-| `relayfirst-mcp` | IDE 一行配置（MCP stdio） | **未发布** |
+| `relayfirst` CLI | `npx relayfirst …` 零安装挖矿/验证 | ✅ **打包就绪**；⏳ 未 `npm publish` |
+| `relayfirst-mcp` | IDE 一行配置（MCP stdio） | ✅ **打包就绪**；⏳ 未 `npm publish` |
 | ~~`relayfirst-node`~~ | **刻意不发 npm** | 它是**长驻服务**：npm/npx 适合按需启动的 CLI/MCP（stdio），不适合守护进程 + 持久卷。**节点用 Docker** |
 
-**⚠️ 发布前必须先修的 4 个阻塞项（实测）**：
+**已修（2026-10-06）**：原 4 个阻塞项 —— `private:true`、`bin/` 被 gitignore、tarball 只有单平台单二进制、版本过期 —— 全部处理：
 
-| # | 阻塞 | 证据 | 后果 |
-|---|---|---|---|
-| 1 | `package.json` 是 `"private": true` | `package.json:3` | **根本发不出去** |
-| 2 | `bin/*` 被 **gitignore** | `git check-ignore bin/relayfirst` 命中 | 干净检出后 `npm publish` **不包含二进制** → wrapper **静默回退到 `go build`** → "零安装"变成**需要 Go 工具链** |
-| 3 | tarball 里**只有 `bin/relayfirst`，没有 `bin/relayfirst-mcp`** | `npm pack --dry-run`（总 5 文件） | `npx relayfirst-mcp` 同样回退到 `go build` |
-| 4 | 版本仍是 `0.4.0` | `package.json` | 与当前状态不符 |
+- `package.json`：去掉 `private`，版本 → `0.5.0`，加 `prepublishOnly` → `scripts/build-npm-binaries.sh`，`files` 含 `bin/npm`。
+- `scripts/build-npm-binaries.sh`：**交叉编译 5 平台 × 2 工具**（linux/darwin × amd64/arm64 + windows/amd64）。
+- 两个 launcher：优先选 **`bin/npm/<name>-<os>-<arch>`**（按 `process.platform`/`arch`），
+  找不到才回退 `go build`，并把**平台名**写进错误信息。
+- **CI 新增门禁**：`private`/`prepublishOnly`/`files` 三查 + 真跑一次交叉编译 + 真跑 launcher。
+- **实测**：`env -i PATH=<only node> node scripts/npx-relayfirst.mjs version` → 输出 `0.5.0-s6`
+  （**PATH 里没有 `go`**，证明用的是预编译二进制，而非回退构建）。
 
-**单平台问题**：一个 tarball 里塞的是**本机架构**的二进制。要真正做到"零安装"，
-需要**多平台二进制**（或 `postinstall` 下载对应平台）。**未决**。
+**⚠️ 诚实的两个未决点（不阻塞发布，但要知情）**：
+
+| 点 | 说明 |
+|---|---|
+| **tarball 体积** | 含 5 平台二进制 → **~42MB**（`npm pack --dry-run`）。若嫌大，可改**按平台分包**（`optionalDependencies` + `os`/`cpu`），或用 `postinstall` 下载单个平台。**未做** |
+| **macOS 未签名** | 交叉编译出的 macOS 二进制**未签名/未公证** → Gatekeeper 可能拦截。首次发布建议先发 linux/windows，或补签名流程 |
 
 > 相关代码：`scripts/npx-relayfirst.mjs` / `scripts/npx-relayfirst-mcp.mjs`（**启动器，不是重实现** ——
 > 委托给 Go 二进制，避免 EIP-712 双实现漂移，不变量 A4）。

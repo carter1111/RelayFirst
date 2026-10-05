@@ -285,7 +285,7 @@ mine --once --relay http://127.0.0.1:9（全部不可达）
 | S6-4 | **实时反馈**（本 epoch 积分 / 任务数 / 有效 anchor） | S6-3 | 农民**立刻看到分数在涨** | ✅ **done** — `liveProgress`；数字**从账本读回**而非本地计数（避免与实际记账漂移）；`anchors` 排除 inline 合成 anchor |
 | S6-5 | `relayfirst status` | S3-7 | 积分可查 | ✅ **done** — 积分（本 epoch + 终身）/ 回执 / 去重 artifact / **有效 anchor** / epoch 结束时间；`stats` 保留为别名（单一实现） |
 | S6-6 | `relayfirst receipts --export` | S1-9 | **能带走全部回执** | ✅ **done** — `store.ExportReceipts`；写**规范签名字节**，按 receiptId 命名（幂等）；**实测导出 3/3 离线验签通过，篡改副本被拒** |
-| S6-7 | `npx relayfirst@latest` 零安装入口 | S6-1 | 无需预装 | 🟡 **部分** — `scripts/npx-relayfirst.mjs` + `package.json` 的 `bin` 已就位；**未发布到 npm**（发布是外部动作）。启动器**委托**给 Go 二进制而非重写协议，避免 EIP-712 双实现漂移（不变量 A4） |
+| S6-7 | `npx relayfirst@latest` 零安装入口 | S6-1 | 无需预装 | 🟢 **打包已就绪**（2026-10-06），**仅剩 `npm publish`**（外部凭据）。**已修原 4 个阻塞**：`private:true`、`bin/` 被 gitignore、tarball 只有单平台单二进制、版本过期。现：`prepublishOnly` → `scripts/build-npm-binaries.sh`（**5 平台 × 2 工具**：linux/darwin×amd64/arm64 + windows/amd64）；launcher 按 `platform/arch` 选 **`bin/npm/<name>-<os>-<arch>`**，找不到才回退 `go build`；**CI 新增 npm 打包门禁**。**实测**：`env -i PATH=<只含 node> node …/npx-relayfirst.mjs version` → `0.5.0-s6`（**PATH 无 `go`**，证明走的是预编译二进制）。启动器**委托**给 Go 二进制而非重写协议（不变量 A4）。**⚠️ 未决**：tarball ~42MB（未做按平台分包）；macOS 二进制未签名/公证 |
 | S6-8 | **端到端计时测试** | S6-1..7 | **陌生用户 ≤10 分钟出分** | ⬜ **未做** — 需真人计时；机器实测整条路径 < 3 秒，但判据①要求的是**陌生人**无协助完成，属 S8 |
 
 **S6 完成定义：** 找一个没接触过项目的人，计时，**10 分钟内出分**。→ ⬜ **未验证**（需真人；且 S6-1 被阻断）

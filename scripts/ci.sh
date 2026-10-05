@@ -434,6 +434,64 @@ else
   run "node scripts/verify-merkle-viem.mjs" node scripts/verify-merkle-viem.mjs
 fi
 
+# The npm packaging surface. `npx relayfirst` is the zero-install story (MVP.md §9.2),
+# and it depends on the tarball CONTAINING a binary: the launchers only select and
+# spawn one. When bin/ was gitignored and no cross-build ran, a clean checkout
+# published no binary and the launcher silently fell back to `go build` — zero-install
+# that required a toolchain. This gate keeps the packaging honest.
+step "npm packaging (MVP.md §9.2: npx must work without a Go toolchain)"
+npm_ok=1
+
+if [ ! -f package.json ]; then
+  fail "package.json is missing"
+  npm_ok=0
+else
+  # (1) It must be publishable. `private: true` blocks publish outright.
+  if grep -qE '"private"\s*:\s*true' package.json; then
+    fail "package.json is private, so npm publish would refuse:"
+    printf '      remove "private": true to ship the npx entry points\n'
+    npm_ok=0
+  fi
+
+  # (2) The binary build must run at publish time, and bin/npm must be in `files`.
+  if ! grep -qE '"prepublishOnly"' package.json; then
+    fail "package.json has no prepublishOnly, so the platform binaries would not be built before publish"
+    npm_ok=0
+  fi
+  if ! grep -qE '"bin/npm"' package.json; then
+    fail "package.json 'files' does not include bin/npm, so the tarball would ship no binary"
+    npm_ok=0
+  fi
+fi
+
+# (3) The build must actually produce the binaries, and the launcher must resolve one.
+if [ "$npm_ok" -eq 1 ]; then
+  if bash scripts/build-npm-binaries.sh >/tmp/rf-ci-npm-build.log 2>&1; then
+    arch="amd64"; [ "$(uname -m)" = "arm64" ] && arch="arm64"
+    os="linux"; [ "$(uname -s)" = "Darwin" ] && os="darwin"
+    want="bin/npm/relayfirst-$os-$arch"
+    if [ ! -f "$want" ]; then
+      fail "the cross-build did not produce $want (the platform this gate runs on):"
+      ls -1 bin/npm 2>/dev/null | sed 's/^/      /' | head || true
+      npm_ok=0
+    elif ! node scripts/npx-relayfirst.mjs version >/tmp/rf-ci-npm-run.log 2>&1; then
+      fail "the launcher did not run the prebuilt binary:"
+      sed 's/^/      /' /tmp/rf-ci-npm-run.log | tail -10
+      npm_ok=0
+    else
+      pass "npx launcher runs a prebuilt platform binary ($os/$arch)"
+    fi
+  else
+    fail "scripts/build-npm-binaries.sh failed:"
+    sed 's/^/      /' /tmp/rf-ci-npm-build.log | tail -10
+    npm_ok=0
+  fi
+fi
+
+if [ "$npm_ok" -ne 1 ]; then
+  failures=$((failures + 1))
+fi
+
 # The release path must exist AND carry the mainnet tag, or the epoch genesis guard
 # (internal/epoch) is decorative: nothing would build with -tags mainnet, so nothing
 # would ever trigger it, and a release assembled by hand with a plain `go build`

@@ -8,16 +8,23 @@
 // cross-language drift that the KAT corpus exists to catch (invariant A4) and that
 // nobody should be maintaining twice.
 //
-// So this file does one thing: find or build the Go binary and hand it the
-// arguments. Delegating means there is one implementation of the protocol, and the
-// KAT corpus remains the only thing that has to stay in sync across languages.
+// So this file does one thing: select a prebuilt binary for the user's platform and
+// hand it the arguments. Delegating means there is one implementation of the
+// protocol, and the KAT corpus remains the only thing that has to stay in sync.
 //
-// # Why it fails loudly when Go is missing
+// # Where the platform binary comes from
 //
-// It could fall back to a prebuilt binary download, and that would be a worse
-// experience to debug: a silent download failure looks identical to a protocol
-// error. A first run that needs the toolchain is a clear, fixable message; a
-// mystery failure later is not.
+// The tarball ships one binary per supported platform (bin/npm/<name>-<os>-<arch>),
+// built by scripts/build-npm-binaries.sh at publish time. Selection is by
+// process.platform / process.arch, so a user with no Go toolchain runs a real
+// binary.
+//
+// # Why it still falls back to `go` when no binary matches
+//
+// The fallback is last, not first. It used to be the ONLY path (bin/ was gitignored,
+// so nothing shipped), which made "zero-install" silently require a toolchain. Now a
+// missing platform binary is a clear message naming the platform, and the Go build
+// is an explicit secondary path for a source checkout.
 //
 // Usage:
 //   npx relayfirst mine --source https://example.com
@@ -31,11 +38,19 @@ import { spawnSync } from "node:child_process";
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
 
-// Prefer a prebuilt binary when one is present, so an installed copy does not need
-// the toolchain.
+const NAME = "relayfirst";
+const EXE = process.platform === "win32" ? ".exe" : "";
+// process.arch is "x64" on Intel/AMD and "arm64" on Apple silicon and ARM servers;
+// Go's GOARCH names differ only for x64 -> amd64.
+const GOARCH = process.arch === "x64" ? "amd64" : process.arch;
+const platformBinary = join(repoRoot, "bin", "npm", `${NAME}-${process.platform}-${GOARCH}${EXE}`);
+
+// A source checkout may have bin/<name> from `go build -o bin/<name>`; prefer the
+// platform-specific tarball binary, then that.
 const candidates = [
-  join(repoRoot, "bin", "relayfirst"),
-  join(repoRoot, "relayfirst"),
+  platformBinary,
+  join(repoRoot, "bin", NAME),
+  join(repoRoot, NAME),
 ];
 
 function findPrebuilt() {
@@ -51,14 +66,13 @@ function haveGo() {
 }
 
 function buildBinary() {
-  const out = join(repoRoot, "bin", "relayfirst");
-  const built = spawnSync(
-    "go",
-    ["build", "-o", out, "./cmd/relayfirst"],
-    { cwd: repoRoot, stdio: "inherit" },
-  );
+  const out = join(repoRoot, "bin", NAME);
+  const built = spawnSync("go", ["build", "-o", out, `./cmd/${NAME}`], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
   if (built.status !== 0) {
-    console.error("relayfirst: go build failed");
+    console.error(`${NAME}: go build failed`);
     process.exit(built.status ?? 1);
   }
   return out;
@@ -70,13 +84,15 @@ function main() {
   let binary = findPrebuilt();
   if (!binary) {
     if (!haveGo()) {
+      // Name the platform so the message is actionable. A silent download failure
+      // would be indistinguishable from a protocol error, so there is no download.
       console.error(
         [
-          "relayfirst: no prebuilt binary found and the Go toolchain is not available.",
+          `${NAME}: no binary for this platform (${process.platform}/${GOARCH}) and the Go toolchain is not available.`,
           "",
           "Either:",
-          "  - install Go 1.27+ (https://go.dev/dl/), or",
-          "  - build the binary yourself: go build -o bin/relayfirst ./cmd/relayfirst",
+          `  - install Go 1.27+ (https://go.dev/dl/) and re-run, or`,
+          `  - build the binary yourself: go build -o bin/${NAME} ./cmd/${NAME}`,
           "",
           "A node operator does not need this launcher:",
           "  docker run -d -p 8080:8080 relayfirst/node:latest",

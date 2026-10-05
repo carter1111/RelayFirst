@@ -60,7 +60,8 @@ CI 会跑这条断言，所以这个性质**不会因为后来一次"顺手"的�
 }
 ```
 
-> **⚠️ 本仓库尚未把 `relayfirst-mcp` 发布到 npm**（发布是外部动作，见 `TASKS.md` S6-7）。
+> **⚠️ 发布状态**：打包**已就绪**（跨平台二进制会随 tarball 发布，`npx` 无需 Go 工具链），
+> 但**尚未 `npm publish`**（见 [`remaining-actions.md`](remaining-actions.md) C1）。
 > 在发布之前，用**本地二进制**代替 `npx`：
 >
 > ```json
@@ -75,6 +76,7 @@ CI 会跑这条断言，所以这个性质**不会因为后来一次"顺手"的�
 > ```
 >
 > 本地构建：`CGO_ENABLED=0 go build -o bin/relayfirst-mcp ./cmd/relayfirst-mcp`
+> （或在仓库内直接跑 `scripts/build-npm-binaries.sh`，产物在 `bin/npm/`。）
 
 ### 唯一的环境变量
 
