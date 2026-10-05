@@ -71,6 +71,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/blk-3-assignment-policy.md`](docs/notes/blk-3-assignment-policy.md) | — | **决策包** | **BLK-3 裁决包**：验证者指派策略的 A/B/C/D 候选 + 取舍 + 推荐；机制已就位、零改动 | 策略选定后 |
 | [`docs/notes/blk-4-genesis-decision.md`](docs/notes/blk-4-genesis-decision.md) | — | **决策包** | **BLK-4 裁决包**：epoch 起点候选 + 量化影响表（不可逆，在签名载荷内）；改动 = 一行常量 | 起点日期选定后 |
 | [`docs/notes/remaining-actions.md`](docs/notes/remaining-actions.md) | — | **索引** | **剩余动作清单**：分【你裁决】/【外部人工】/【发布动作】三类，写明谁做 | 每次推进后 |
+| [`docs/notes/decentralization-gap.md`](docs/notes/decentralization-gap.md) | — | **笔记** | **去中心化现状 vs 目标**（目标 = `ARCHITECTURE.md` §1.6 Nostr 式 permissionless）；NET-1..4 已做对照 + 差距（发现层 L2/L3、联邦、反滥用、复制）；含范围声明 | 发现层推进后 |
 | [`docs/mvp-2.0-proposal.md`](docs/mvp-2.0-proposal.md) | 611 | **决策依据** | **MVP 2.0 提案（已 accepted）** —— 论证过程；范围权威在 `MVP.md` v2.0 | 已归档（合并完成） |
 | [`docs/archive/mvp-1.0.md`](docs/archive/mvp-1.0.md) | 884 | **归档** | **MVP 1.0 原文逐字副本**（SHA-256 `259469ad…`）—— 仓库无 git 历史，故显式归档 | 不再更新 |
 | [`docs/decisions/ADR-0001-*.md`](docs/decisions/ADR-0001-eip712-in-house-thin-layer.md) | — | **决策** | EIP-712 用自研薄层而非 `apitypes`（S1-4） | 已 accepted |
