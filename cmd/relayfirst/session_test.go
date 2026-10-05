@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +19,115 @@ import (
 	"github.com/relayfirst/relayfirst/internal/eip712"
 	"github.com/relayfirst/relayfirst/internal/eventsign"
 )
+
+// eventRelay is a relay that stores envelopes and serves them back, so a producer and a reader
+// can be exercised against the same store the way two separate machines would.
+//
+// It is deliberately dumb, like the real node: it keys envelopes by the addressee and returns
+// them verbatim, without decoding or checking the payload. That is the property the reader has
+// to work with (MVP.md §7.1), so a test relay that validated would be testing the wrong thing.
+type eventRelay struct {
+	mu      sync.Mutex
+	byAgent map[string][]map[string]json.RawMessage
+}
+
+func newEventRelay() *eventRelay {
+	return &eventRelay{byAgent: map[string][]map[string]json.RawMessage{}}
+}
+
+func (r *eventRelay) handler() http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case req.Method == http.MethodPost && req.URL.Path == "/messages":
+			var env map[string]json.RawMessage
+			if err := json.NewDecoder(req.Body).Decode(&env); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			var agent string
+			_ = json.Unmarshal(env["agentId"], &agent)
+			r.mu.Lock()
+			r.byAgent[agent] = append(r.byAgent[agent], env)
+			r.mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true}`))
+
+		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/messages/"):
+			agent := strings.TrimPrefix(req.URL.Path, "/messages/")
+			r.mu.Lock()
+			msgs := append([]map[string]json.RawMessage(nil), r.byAgent[agent]...)
+			r.mu.Unlock()
+			type outMsg struct {
+				ID      string          `json:"id"`
+				AgentID string          `json:"agentId"`
+				Kind    string          `json:"kind"`
+				Payload json.RawMessage `json:"payload"`
+			}
+			out := make([]outMsg, 0, len(msgs))
+			for _, env := range msgs {
+				var id, agentID, kind string
+				_ = json.Unmarshal(env["id"], &id)
+				_ = json.Unmarshal(env["agentId"], &agentID)
+				_ = json.Unmarshal(env["kind"], &kind)
+				out = append(out, outMsg{ID: id, AgentID: agentID, Kind: kind, Payload: env["payload"]})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"agentId": agent, "count": len(out), "messages": out,
+			})
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}
+}
+
+// inject stores a raw envelope under an agent, so a test can place a non-event message in a
+// stream without going through a producer.
+func (r *eventRelay) inject(agent, kind string, payload []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.byAgent[agent] = append(r.byAgent[agent], map[string]json.RawMessage{
+		"id":      mustJSON(kind + "-1"),
+		"agentId": mustJSON(agent),
+		"kind":    mustJSON(kind),
+		"payload": mustJSON(payload), // []byte marshals to base64, as on the wire
+	})
+}
+
+func mustJSON(v any) json.RawMessage {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// captureOutput runs fn with stdout redirected and returns the decoded JSON it printed.
+func captureOutput(t *testing.T, fn func() error) (map[string]any, error) {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	runErr := fn()
+	_ = w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	_ = r.Close()
+	if buf.Len() == 0 {
+		return nil, runErr
+	}
+	var out map[string]any
+	if jerr := json.Unmarshal(buf.Bytes(), &out); jerr != nil {
+		return nil, fmt.Errorf("printed output is not JSON (%v): %s", jerr, buf.String())
+	}
+	return out, runErr
+}
 
 // These tests cover the session producer, which is the first thing in the repository that CREATES a
 // signed A2A event.
@@ -497,4 +609,204 @@ func eventForTest(t *testing.T, actor string) a2a.Event {
 		t.Fatalf("SessionEvent: %v", err)
 	}
 	return e
+}
+
+// writeGrant signs a grant from ownerTestKey to the session key (sessionTestKey) and writes it.
+func writeGrant(t *testing.T, scopes string) string {
+	t.Helper()
+	out := filepath.Join(t.TempDir(), "grant.json")
+	sessionID := idForTest(t, sessionTestKey)
+	if err := runSession([]string{
+		"grant", "--key", ownerTestKey, "--session-key", sessionID,
+		"--scopes", scopes, "--valid-for", "1h", "--out", out,
+	}); err != nil {
+		t.Fatalf("session grant: %v", err)
+	}
+	return out
+}
+
+// TestSessionVerify_AuthorizesARealDelegatedEvent is the end-to-end the delegation layer was
+// missing: a session key signs an event, and a reader that never saw the key accepts it because
+// the owner's grant says it may.
+func TestSessionVerify_AuthorizesARealDelegatedEvent(t *testing.T) {
+	relay := newEventRelay()
+	srv := httptest.NewServer(relay.handler())
+	defer srv.Close()
+
+	agent := idForTest(t, sessionTestKey)
+	state := filepath.Join(t.TempDir(), "state.json")
+	if err := runSession([]string{"open", "--key", sessionTestKey, "--relay", srv.URL, "--state", state}); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+
+	grantPath := writeGrant(t, "session:event")
+	out, err := captureOutput(t, func() error {
+		return runSession([]string{"verify", "--relay", srv.URL, "--agent", agent, "--grant", grantPath})
+	})
+	if err != nil {
+		t.Fatalf("session verify: %v", err)
+	}
+	summary := out["summary"].(map[string]any)
+	if summary["authorized"].(float64) != 1 {
+		t.Fatalf("summary = %v, want 1 authorized", summary)
+	}
+	if summary["refused"].(float64) != 0 {
+		t.Fatalf("summary = %v, want 0 refused", summary)
+	}
+}
+
+// TestSessionVerify_RefusesAnUndelegatedScope is the authority half, end to end: the same event
+// signed by the same key is refused when the grant does not cover its scope.
+func TestSessionVerify_RefusesAnUndelegatedScope(t *testing.T) {
+	relay := newEventRelay()
+	srv := httptest.NewServer(relay.handler())
+	defer srv.Close()
+
+	agent := idForTest(t, sessionTestKey)
+	state := filepath.Join(t.TempDir(), "state.json")
+	if err := runSession([]string{"open", "--key", sessionTestKey, "--relay", srv.URL, "--state", state}); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+
+	// A grant that does NOT cover session events.
+	grantPath := writeGrant(t, "task:progress")
+	out, err := captureOutput(t, func() error {
+		return runSession([]string{"verify", "--relay", srv.URL, "--agent", agent, "--grant", grantPath})
+	})
+	if err != nil {
+		t.Fatalf("verify should not error on a refusal; it should report it: %v", err)
+	}
+	summary := out["summary"].(map[string]any)
+	if summary["refused"].(float64) != 1 {
+		t.Fatalf("summary = %v, want 1 refused", summary)
+	}
+	results := out["results"].([]any)
+	reason, _ := results[0].(map[string]any)["reason"].(string)
+	if !strings.Contains(reason, "not granted") {
+		t.Errorf("the refusal must name the scope problem, got: %q", reason)
+	}
+}
+
+// TestSessionVerify_RefusesARevokedGrant keeps freshness reachable through the reader: a fresher
+// nonce than the grant carries must make every event refuse.
+func TestSessionVerify_RefusesARevokedGrant(t *testing.T) {
+	relay := newEventRelay()
+	srv := httptest.NewServer(relay.handler())
+	defer srv.Close()
+
+	agent := idForTest(t, sessionTestKey)
+	state := filepath.Join(t.TempDir(), "state.json")
+	if err := runSession([]string{"open", "--key", sessionTestKey, "--relay", srv.URL, "--state", state}); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	grantPath := writeGrant(t, "session:event")
+
+	out, err := captureOutput(t, func() error {
+		return runSession([]string{"verify", "--relay", srv.URL, "--agent", agent, "--grant", grantPath, "--grant-nonce", "2"})
+	})
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	results := out["results"].([]any)
+	reason, _ := results[0].(map[string]any)["reason"].(string)
+	if !strings.Contains(reason, "revoked") {
+		t.Errorf("a higher current nonce must read as revoked, got: %q", reason)
+	}
+}
+
+// TestSessionVerify_RefusesAnEventFromAnotherKey proves the reader checks the signature, not
+// just the grant: an event from a key the grant did not name must be refused.
+func TestSessionVerify_RefusesAnEventFromAnotherKey(t *testing.T) {
+	relay := newEventRelay()
+	srv := httptest.NewServer(relay.handler())
+	defer srv.Close()
+
+	// The grant names the session key, but the relay holds an event signed by a THIRD key.
+	thirdID := idForTest(t, ownerTestKey)
+	e := eventForTest(t, thirdID)
+	signed, err := eventsign.Sign(e, ownerTestKey, 8453)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	raw, _ := json.Marshal(signed)
+	relay.inject(thirdID, "event", raw)
+
+	grantPath := writeGrant(t, "session:event")
+	out, err := captureOutput(t, func() error {
+		return runSession([]string{"verify", "--relay", srv.URL, "--agent", thirdID, "--grant", grantPath})
+	})
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	results := out["results"].([]any)
+	reason, _ := results[0].(map[string]any)["reason"].(string)
+	if !strings.Contains(reason, "not this grant's session key") {
+		t.Errorf("an event from a key the grant did not name must be refused as a signer problem, got: %q", reason)
+	}
+}
+
+// TestSessionVerify_SkipsNonEventKinds keeps a stream that also carries grants (or receipts)
+// from being misread: the reader keeps only events and counts the rest.
+func TestSessionVerify_SkipsNonEventKinds(t *testing.T) {
+	relay := newEventRelay()
+	srv := httptest.NewServer(relay.handler())
+	defer srv.Close()
+
+	agent := idForTest(t, sessionTestKey)
+	relay.inject(agent, "grant", []byte(`{"not":"an event"}`))
+
+	state := filepath.Join(t.TempDir(), "state.json")
+	if err := runSession([]string{"open", "--key", sessionTestKey, "--relay", srv.URL, "--state", state}); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	grantPath := writeGrant(t, "session:event")
+
+	out, err := captureOutput(t, func() error {
+		return runSession([]string{"verify", "--relay", srv.URL, "--agent", agent, "--grant", grantPath})
+	})
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	summary := out["summary"].(map[string]any)
+	if summary["events"].(float64) != 1 {
+		t.Errorf("events = %v, want 1", summary["events"])
+	}
+	if summary["nonEvents"].(float64) != 1 {
+		t.Errorf("nonEvents = %v, want 1: the grant in the stream must be counted, not parsed as an event", summary["nonEvents"])
+	}
+}
+
+// TestSessionVerify_AcceptsAnInlineGrant keeps the paste-a-grant path usable.
+func TestSessionVerify_AcceptsAnInlineGrant(t *testing.T) {
+	relay := newEventRelay()
+	srv := httptest.NewServer(relay.handler())
+	defer srv.Close()
+
+	agent := idForTest(t, sessionTestKey)
+	state := filepath.Join(t.TempDir(), "state.json")
+	if err := runSession([]string{"open", "--key", sessionTestKey, "--relay", srv.URL, "--state", state}); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	grantPath := writeGrant(t, "session:event")
+	raw, err := os.ReadFile(grantPath)
+	if err != nil {
+		t.Fatalf("read grant: %v", err)
+	}
+
+	out, err := captureOutput(t, func() error {
+		return runSession([]string{"verify", "--relay", srv.URL, "--agent", agent, "--grant", string(raw)})
+	})
+	if err != nil {
+		t.Fatalf("verify with inline grant: %v", err)
+	}
+	if out["summary"].(map[string]any)["authorized"].(float64) != 1 {
+		t.Fatalf("an inline grant must authorize the same as a file, got %v", out["summary"])
+	}
+}
+
+// TestSessionVerify_RequiresTheGrant keeps the authority question from being skipped.
+func TestSessionVerify_RequiresTheGrant(t *testing.T) {
+	if err := runSession([]string{"verify", "--relay", "http://x", "--agent", "agent:eip155:8453:0x1"}); err == nil {
+		t.Fatal("verify without --grant must be refused: there is no authority to check")
+	}
 }

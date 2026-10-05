@@ -3,7 +3,7 @@
 > **给接手这个项目的人（或 agent）的交接说明。**
 > 先读本文件，再去读 `MVP.md`（范围）与 `TASKS.md`（任务）。
 >
-> 状态：**S1–S13 代码均已实现**（**834** 项 Go 顶层测试 / **41** 项 Solidity 测试 / **14** 道 CI 门禁全绿）。**判据 ①③ 的真人计时、BLK-1/BLK-2 外部接洽仍未完成**（见下）。**非 git repo。**
+> 状态：**S1–S13 代码均已实现**（**841** 项 Go 顶层测试 / **41** 项 Solidity 测试 / 14 道 CI 门禁；其中 ingest 基准在负载下抖动，见 TASKS §10.5 S13-3d）。**判据 ①③ 的真人计时、BLK-1/BLK-2 外部接洽仍未完成**（见下）。**已是 git repo**（branch `main`）。
 > 未上线：受 BLK-1/2/3/4 与人工动作（`git init`、部署合约、真实消费方）所阻。
 >
 > **v2.0 变更：** 对外身份 = 去中心化 headless A2A 协议，挖矿是引流层。
@@ -104,7 +104,7 @@
 | **S13 E2EE（加密 + 委托 + 事件签名 + MCP + 端到端）** | ✅ **全部达成**（S13-1…S13-5 + S13-3b，均有变异验证）。**加密回执离线可验签**已实测 |
 | **SQLite 写路径：度量 + 第 14 道门禁 + 批量事务** | ✅（PH1-1/2、PH2-1/2/3；见 `docs/notes/sqlite-write-path.md`） |
 | **事件签名层（`internal/eventsign`）+ 事件生产者（`relayfirst session`）** | ✅（S13-3b/3c；**事件真的被生产了**，这是第 3 次"机制无引用"的收尾） |
-| **委托签发者 + 读侧授权者（`relayfirst session grant` + `AuthorizeDerivedScope`）** | ✅（S13-3d）—— 委托**可被签发、可被消费**，`AuthorizeEventWithGrant` **不再零引用**。identity 模型定格 **(ii)**：`actor`=session key（签名者），owner 身份随 grant 带外（与 `ARCHITECTURE.md` §4.2 的 `agentId`+`delegationId` 一致），**`eventsign.Verify` 一字未改**。 |
+| **委托【签发者】（`relayfirst session grant`）+【消费者】（`relayfirst session verify`）+ 读侧授权（`AuthorizeDerivedScope`）** | ✅（S13-3d）—— 委托**可被签发、可被消费**，`AuthorizeEventWithGrant` **不再零引用**。消费者是**客户端 CLI**（拉 `GET /messages/{agentId}` → 只取 `event` → 逐条授权），**不能放节点**（节点能验签就能伪造，§7.1）。identity 模型定格 **(ii)**：`actor`=session key（签名者），owner 身份随 grant 带外（与 `ARCHITECTURE.md` §4.2 的 `agentId`+`delegationId` 一致），**`eventsign.Verify` 一字未改**。 |
 | **超时边** | 6 条中实现 **4 条**；`RUNNING_HEARTBEAT` / `DISPUTE_TTL` 由 `TimeoutCoverage()` **显式报告为未实现** |
 | **BLK-1 / BLK-2** | 均**未解决**（见 §8） |
 

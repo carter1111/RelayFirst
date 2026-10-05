@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -51,10 +52,11 @@ import (
 
 const sessionUsage = `relayfirst session — emit signed session events, and authorize a session key
 
-  relayfirst session open  [flags]
-  relayfirst session close [flags]
-  relayfirst session show  [flags]     Print the local chain state and the next event
-  relayfirst session grant [flags]     OWNER-side: sign a delegation grant for a session key
+  relayfirst session open   [flags]
+  relayfirst session close  [flags]
+  relayfirst session show   [flags]    Print the local chain state and the next event
+  relayfirst session grant  [flags]    OWNER-side: sign a delegation grant for a session key
+  relayfirst session verify [flags]    READER-side: pull events and authorize them under a grant
 
 Flags:
   --key <hex>        Session signing key for open/close. Also RELAYFIRST_SESSION_KEY.
@@ -74,6 +76,23 @@ Grant flags (OWNER-side; the owner authorizes a session key's scopes):
   --grant-nonce <n>   Owner's monotonic nonce for this key. Default: 1.
   --out <path>        Also write the signed grant JSON here.
 
+Verify flags (READER-side; needs the grant the actor claims to act under):
+  --relay <url>          Relay to pull from. REQUIRED. Also RELAYFIRST_RELAY.
+  --agent <agentId>      The actor whose events to pull. REQUIRED (the session key).
+  --grant <path|json>    The signed grant. A file path, or inline JSON. REQUIRED.
+  --grant-nonce <n>      FRESHNESS: the owner's latest nonce. A grant at a lower nonce is
+                         refused as revoked. Default: the grant's own nonce, and the output
+                         says so, because a reader that believes revocation is instantaneous
+                         would be wrong. Also RELAYFIRST_GRANT_NONCE.
+  --as-of <rfc3339>      Clock to test the grant window against. Default: now.
+
+A reader authorizes with this one command: it pulls the actor's messages, keeps the
+` + "`event`" + ` ones, and runs the same check an accepting peer would — signature first
+(who signed), then authority (was that signer permitted). An event signed by a key the
+grant did not name, or outside the granted scopes, is refused and named. This is the
+consumer the delegation mechanism was missing; the relay cannot do it, because a node
+that could verify could forge (MVP.md §7.1).
+
 The chain matters: each actor's events carry a per-actor sequence and a link to the previous event's
 hash, and a repeat or a gap is rejected by every verifier. This command keeps that bookkeeping in a
 state file so it survives between invocations.
@@ -90,7 +109,7 @@ so prefer the environment variable.
 func runSession(args []string) error {
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, sessionUsage)
-		return fmt.Errorf("session needs a subcommand (open, close, show or grant)")
+		return fmt.Errorf("session needs a subcommand (open, close, show, grant or verify)")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -98,6 +117,8 @@ func runSession(args []string) error {
 		return runSessionEmit(sub, rest)
 	case "grant":
 		return runSessionGrant(rest)
+	case "verify":
+		return runSessionVerify(rest)
 	case "-h", "--help", "help":
 		fmt.Print(sessionUsage)
 		return nil
@@ -454,6 +475,237 @@ func runSessionGrant(args []string) error {
 		result["writtenTo"] = outPath
 	}
 	return printJSON(result)
+}
+
+// runSessionVerify is the reader that consumes a grant: it pulls an actor's events and
+// authorizes each under the grant the actor claims to act with.
+//
+// # Why this cannot live on the node
+//
+// The check needs the actor's signature and the grant's signature, which means eip712, and a
+// node that could verify could forge (MVP.md §7.1). So the consumer is a client: it pulls the
+// stored bytes from a node and judges them here. The node's job ends at carrying them.
+//
+// # What this proves, and the honest limit
+//
+// For each event: that the signer is the actor the event names (eventsign.Verify), and that
+// the grant covers that scope for that signer at that time and is not superseded (the
+// delegation check). It does NOT prove the event's content is true, and a stale --grant-nonce
+// cannot distinguish a revoked grant from a live one — the output says so rather than implying
+// instantaneous revocation.
+func runSessionVerify(args []string) error {
+	relay := os.Getenv("RELAYFIRST_RELAY")
+	agent := ""
+	grantSpec := ""
+	asOf := ""
+	nonceRaw := os.Getenv("RELAYFIRST_GRANT_NONCE")
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "--") {
+			return fmt.Errorf("unexpected argument %q", a)
+		}
+		if i+1 >= len(args) {
+			return fmt.Errorf("%s needs a value", a)
+		}
+		v := args[i+1]
+		i++
+		switch a {
+		case "--relay":
+			relay = v
+		case "--agent":
+			agent = v
+		case "--grant":
+			grantSpec = v
+		case "--grant-nonce":
+			nonceRaw = v
+		case "--as-of":
+			asOf = v
+		default:
+			return fmt.Errorf("unknown flag %q", a)
+		}
+	}
+
+	if strings.TrimSpace(relay) == "" {
+		return fmt.Errorf("--relay <url> is required: a reader has to pull the events to judge them")
+	}
+	if strings.TrimSpace(agent) == "" {
+		return fmt.Errorf("--agent <agentId> is required: name the actor whose events to authorize")
+	}
+	if strings.TrimSpace(grantSpec) == "" {
+		return fmt.Errorf("--grant <path|json> is required: without the grant there is no authority to check, " +
+			"and every delegated event must be judged against one")
+	}
+
+	grant, err := loadGrant(grantSpec)
+	if err != nil {
+		return err
+	}
+	// The grant's own signature is checked first: an unsigned or tampered grant authorizes
+	// nothing, and reporting that before any event avoids blaming the events for it.
+	if err := grant.Verify(); err != nil {
+		return fmt.Errorf("the grant does not verify on its own, so nothing can be authorized under it: %w", err)
+	}
+
+	now := time.Now().UTC()
+	if strings.TrimSpace(asOf) != "" {
+		t, err := time.Parse(time.RFC3339, asOf)
+		if err != nil {
+			return fmt.Errorf("--as-of must be RFC3339 (e.g. 2026-10-05T12:00:00Z), got %q", asOf)
+		}
+		now = t
+	}
+
+	// Freshness is the caller's: the reader supplies the owner's latest nonce. Defaulting to
+	// the grant's own nonce means "no revocation observed", which is the only honest default
+	// when the reader has nothing fresher — and it is stated in the output.
+	nonce := grant.Grant.Nonce
+	nonceMode := "the grant's own nonce (no fresher nonce supplied, so a revocation would not be seen)"
+	if strings.TrimSpace(nonceRaw) != "" {
+		var n uint64
+		if _, err := fmt.Sscanf(nonceRaw, "%d", &n); err != nil {
+			return fmt.Errorf("--grant-nonce must be a number, got %q", nonceRaw)
+		}
+		nonce = n
+		nonceMode = fmt.Sprintf("supplied current nonce %d", n)
+	}
+
+	events, nonEvents, err := pullEvents(strings.TrimRight(relay, "/"), agent)
+	if err != nil {
+		return err
+	}
+
+	type verdict struct {
+		EventID  string `json:"eventId"`
+		Type     string `json:"type"`
+		Sequence uint64 `json:"sequence"`
+		Signer   string `json:"signer,omitempty"`
+		Scope    string `json:"scope,omitempty"`
+		Status   string `json:"status"`
+		Reason   string `json:"reason,omitempty"`
+	}
+	results := make([]verdict, 0, len(events))
+	authorized, refused := 0, 0
+
+	for _, e := range events {
+		signer, err := eventsign.AuthorizeDerivedScope(eventsign.AuthorizeInput{
+			Event: e, Grant: grant, CurrentNonce: nonce, Now: now,
+		})
+		v := verdict{EventID: e.EventID, Type: string(e.Type), Sequence: e.Sequence}
+		// The scope is reported even when it is the reason for refusal, so an operator does
+		// not have to re-derive the mapping by hand to understand the verdict.
+		if scope, serr := eventsign.ScopeOfEvent(e.Type); serr == nil {
+			v.Scope = string(scope)
+		}
+		if err != nil {
+			refused++
+			v.Status = "refused"
+			v.Reason = err.Error()
+		} else {
+			authorized++
+			v.Status = "authorized"
+			v.Signer = "0x" + hex.EncodeToString(signer)
+		}
+		results = append(results, v)
+	}
+
+	out := map[string]any{
+		"relay":       relay,
+		"agent":       agent,
+		"owner":       grant.Grant.Owner,
+		"sessionKey":  grant.Grant.SessionKey,
+		"grantScopes": scopeNames(grant.Grant.Scopes),
+		"asOf":        now.Format(time.RFC3339),
+		"nonceMode":   nonceMode,
+		"summary": map[string]any{
+			"events":     len(events),
+			"authorized": authorized,
+			"refused":    refused,
+			"nonEvents":  nonEvents,
+			"note": "authorized means the event was signed by the grant's session key AND its " +
+				"scope was granted; it is not a claim that the event's content is true",
+		},
+		"results": results,
+	}
+	return printJSON(out)
+}
+
+// loadGrant reads a grant from a file path or from inline JSON.
+//
+// The inline form exists so a reader can paste the grant a peer handed it without first
+// writing a file; the two are distinguished by the leading `{`, which a path cannot have.
+func loadGrant(spec string) (delegationsign.SignedGrant, error) {
+	raw := []byte(spec)
+	if !strings.HasPrefix(strings.TrimSpace(spec), "{") {
+		var err error
+		raw, err = os.ReadFile(spec)
+		if err != nil {
+			return delegationsign.SignedGrant{}, fmt.Errorf("read grant %s: %w", spec, err)
+		}
+	}
+	var g delegationsign.SignedGrant
+	if err := json.Unmarshal(raw, &g); err != nil {
+		return delegationsign.SignedGrant{}, fmt.Errorf("parse grant: %w", err)
+	}
+	return g, nil
+}
+
+// pullEvents fetches an actor's stored messages and keeps the event ones.
+//
+// # Why the reader filters by kind rather than trusting the node to
+//
+// A node carries any kind and does not interpret the payload (MVP.md §7.1), so a pull can
+// return grants, receipts and events together. Filtering here means the node needs no new
+// capability and the reader stays the only place that decides what an event is.
+//
+// A payload that does not decode as an event is an error rather than a skip: an event-kind
+// envelope whose bytes are not an event is malformed, and silently dropping it would hide a
+// truncated or corrupt history behind a clean-looking summary.
+func pullEvents(relay, agent string) ([]a2a.Event, int, error) {
+	req, err := http.NewRequest(http.MethodGet, relay+"/messages/"+url.PathEscape(agent), nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("relay %s is unreachable: %w", relay, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, 0, fmt.Errorf("relay returned %d: %s", resp.StatusCode, strings.TrimSpace(string(detail)))
+	}
+
+	var body struct {
+		Messages []struct {
+			Kind    string          `json:"kind"`
+			Payload json.RawMessage `json:"payload"`
+		} `json:"messages"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, 0, fmt.Errorf("decode pull response: %w", err)
+	}
+
+	events := make([]a2a.Event, 0, len(body.Messages))
+	nonEvents := 0
+	for _, m := range body.Messages {
+		if m.Kind != protocol.KindEvent {
+			nonEvents++
+			continue
+		}
+		// The pull carries the payload as a base64 string ([]byte in JSON).
+		var payload []byte
+		if err := json.Unmarshal(m.Payload, &payload); err != nil {
+			return nil, 0, fmt.Errorf("decode event payload: %w", err)
+		}
+		e, err := a2a.DecodeEvent(payload)
+		if err != nil {
+			return nil, 0, fmt.Errorf("an event-kind message did not decode as an event: %w", err)
+		}
+		events = append(events, e)
+	}
+	return events, nonEvents, nil
 }
 
 // parseScopes splits a comma-separated scope list and rejects anything not grantable.
