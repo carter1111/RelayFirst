@@ -1,6 +1,6 @@
 # CLI 定位与品牌体验规划 —— `relayfirst` 到底给谁用？
 
-> **状态：规划（未开工）。**本文只做设计。
+> **状态：计划（未开工）。** §1–§5 是设计与原则；**§6 是任务级实施计划**（2026-10-06：要开工，先计划）。
 >
 > 相关：`TASKS.md` §11.2（UX-1）、`MVP.md` §1 原则②、`§1.1`（目标用户）、判据 ①、
 > `terminal-experience-plan.md`（节点侧）。
@@ -114,3 +114,86 @@ stdout 不是终端 →  机器可读（JSON，字节稳定）——今天的输
 
 **一句话**：`relayfirst` **既给 agent 也给人** —— **协议层不能因 UI 而变**，
 **UI 层不能因协议而消失**。两者用 **TTY 分支**同时满足。
+
+---
+
+## 6. 实施计划（2026-10-06 定：要开工，先计划）
+
+> **状态：计划（未开工）。** 节点侧已落地（见 [`terminal-experience-plan.md`](terminal-experience-plan.md) §7），
+> 本计划复用同一套判据（TTY 分支、非 TTY 冻结）。
+
+### 6.1 前置：抽出共享层 `internal/term`（避免两份实现）
+
+节点的 `isTTY`/`paint` 现在在 `cmd/relayfirst-node/banner.go`。**CLI 也要同一套** —— 复制会漂移。
+
+| 项 | 内容 |
+|---|---|
+| 新包 | `internal/term`：`IsTTY(*os.File) bool`、`Paint(s, colour, on) string`、颜色常量、**一个最小的 `Live` 单行刷新器** |
+| 依赖 | **仅标准库**（`os.ModeCharDevice` + 手写 ANSI） |
+| 安全 | **零密码学** —— 节点可安全引用（导入图门禁仍过） |
+| 迁移 | `cmd/relayfirst-node/banner.go` 改用 `internal/term`（**行为不变**，由现有测试守） |
+| 验收 | `go list -deps ./cmd/relayfirst-node` **仍不含** `eip712`/`receipt`（门禁）；两二进制共用一份 TTY 判定 |
+
+### 6.2 首屏：`relayfirst`（无参数）与 `--help`
+
+| 场景 | 输出 |
+|---|---|
+| **TTY** | logo + 一句话定位 + **三步起步**：`id` → `config set source …` → `mine` |
+| **非 TTY** | **保持今天的 usage 文本**（逐字节） |
+
+**命令表面**：`relayfirst`（无参数）与 `--help` **同一画面**（今天就是如此：无参数 `fmt.Print(usage)`）。
+
+### 6.3 `relayfirst status`：仪表盘
+
+| 场景 | 输出 |
+|---|---|
+| **TTY** | 彩色/对齐面板：`points lifetime / epoch`、`receipts`、`credited`、`anchors`、每 agent 一行 |
+| **非 TTY** | **今天那份 JSON**（`epoch`/`agents[]`/…），**键与顺序不变** |
+
+**冻结**：`status --json`（若加）与**非 TTY** 默认都走 JSON。**`agents[]` 的结构不得改**（脚本/文档依赖）。
+
+### 6.4 `relayfirst mine`：首启 + 单行实时刷新
+
+| 场景 | 输出 |
+|---|---|
+| **首启（TTY）** | logo + `mining as <agentId>` + `epoch` + `verdicts` + `sources`（**沿用今天已有字段**，只是排版） |
+| **运行（TTY）** | **单行原地刷新**：`epoch N · points epoch X · lifetime Y · tasks T · anchors A`（**不滚屏**） |
+| **非 TTY** | **每轮一行**（今天的 `liveProgress.Report` 行为，**字节不变**）+ `--once` 的 JSON |
+
+**为什么"原地刷新"是重点**：今天每轮打一行，长跑会**滚屏淹没**。原地刷新要 `\r` + 清行 ——
+**标准库可做**（单行），不需 bubbletea。
+
+**风险**：`mine` 会写**日志 + 进度**到同一流。必须：**进度只写 stderr 且仅 TTY**；`stdout` 留空或只留 `--once` 的 JSON。
+
+### 6.5 冻结清单（**绝不改**，判据②与脚本依赖）
+
+| 冻结项 | 为什么 |
+|---|---|
+| `relayfirst verify <file>` 的 JSON | 判据 ② 的可复核输出 |
+| `session verify` 的 `summary` | 文档与测试依赖 |
+| `anchor check` / `anchor root` 的 JSON | 离线验证路径 |
+| 任何命令**非 TTY** 时的输出 | agent / CI / 管道 |
+| 所有**退出码语义** | 现在是"发现类结果退出 0"（见 `session verify`/`anchor check`） |
+
+**规则**：**装饰只加在 TTY 分支**；`--json`（在需要处）**强制 JSON**。
+
+### 6.6 任务分解
+
+| id | 任务 | 依赖 | 验收 |
+|---|---|---|---|
+| **UX1b-1** | `internal/term`（IsTTY/Paint/Live）+ 节点迁移到它 | — | 节点行为不变（现有测试）；导入图门禁仍过 |
+| **UX1b-2** | `relayfirst` 首屏（TTY logo + 三步；非 TTY usage 不变） | UX1b-1 | 非 TTY 输出逐字节等于今天 |
+| **UX1b-3** | `relayfirst status` TTY 仪表盘 | UX1b-1 | 非 TTY JSON 键/序不变（测试锁定） |
+| **UX1b-4** | `relayfirst mine` 首启 banner | UX1b-1 | 非 TTY 启动输出不变 |
+| **UX1b-5** | `relayfirst mine` 单行原地刷新（TTY） | UX1b-4 | 非 TTY 仍每轮一行；TTY 不滚屏 |
+| **UX1b-6** | 冻结回归测试：对冻结清单逐个断言"非 TTY == 今天" | UX1b-2..5 | 任一冻结项被装饰污染 → FAIL |
+
+### 6.7 依赖与"不做"
+
+- **v0 零新依赖**（标准库，同节点）。**只有**当确认需要**多行面板/动画**时才引 `bubbletea`
+  （纯 Go，不违反 A3，但属新依赖，按 `MVP.md §8.0` 记理由）。
+- **不做**：交互式 REPL；给 `verify`/`session verify`/`mcp` 加装饰；`mine` 写 stdout 进度。
+
+### 6.8 与范围的关系
+
+**仍是体验（非正确性）**，**不得插队 BLK-2**。若排进工期，属 `UX-1` 的一部分（已在 `TASKS.md §11.2` 登记）。
