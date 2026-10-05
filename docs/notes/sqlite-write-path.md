@@ -156,7 +156,7 @@ Phase 2 **必须**先做的事：**用并发测试实测**在 `>1` 写连接下 
 |---|---|
 | A6 的原子性来自哪里？ | **SQL 语义** —— 两条写路径都是**单语句原子 upsert**（§6 已述） |
 | 那么 `SetMaxOpenConns(1)` 保护的是什么？ | **不是** A6 的原子性；是**忙等行为** |
-| 现在能放宽写连接吗？ | ❌ **不能 —— 实测立即失败** |
+| 现在能放宽写连接吗？ | ✅ **障碍已解除，且 A6 实测仍成立**（见 §6d）。但**生产仍不该放宽**（理由见 §6d） |
 
 ### 决定性实测：`PRAGMA busy_timeout` 是**每连接**的
 
@@ -197,12 +197,13 @@ db.Handle().Exec("PRAGMA busy_timeout = 5000")
 然后【重新跑】TestA6_..._ManyConnections 确认仍只有一个赢家
 ```
 
-**两个测试已就位并处于 skip 状态**（`TestA6_ArtifactDedupHasExactlyOneWinner_ManyConnections` /
+**两个测试曾处于 skip 状态**（`TestA6_ArtifactDedupHasExactlyOneWinner_ManyConnections` /
 `TestA6_MessageDedupHasExactlyOneWinner_ManyConnections`）——
 **它们就是放宽写池前必须先通过的测量**。skip 而**不是删除**，因为"存在但失败"是比注释更好的"尚未成立"记录。
 
 **另有两个测试断言"当前阻塞"**（`TestA6_ManyConnectionsAreBlockedByAMissingBusyTimeout`）——
 一旦有人按连接应用了 pragma，**这些测试会失败**，并把人指向需要重跑的测量。
+**它们后来确实失败了**，这正是下面 §6d 的记录。
 
 ### 对 Phase 2 的影响（诚实说明）
 
@@ -210,7 +211,61 @@ db.Handle().Exec("PRAGMA busy_timeout = 5000")
 但它**不是**"为了放宽连接"的手段 —— 单连接下的批量事务**与 A6 无冲突**
 （去重语句本就在事务内单语句原子）。
 
-**而"放宽写连接"是一项独立的前置工作**，且**实测表明它现在不可用**。
+**而"放宽写连接"是一项独立的前置工作**，且**实测表明它当时不可用**。
+
+---
+
+## 6d. Phase 3 交付：按连接应用 busy_timeout，解锁并重跑 A6 测量（2026-10-05）
+
+### 修法
+
+`PRAGMA busy_timeout` **按连接生效**，`Exec` 只触及池中一条连接。改为**写进 DSN**，
+由驱动在**每条新连接**上应用：
+
+```go
+// internal/sqlite/sqlite.go
+const DefaultBusyTimeoutMillis = 5000
+// plain path → file:<path>?_pragma=busy_timeout(5000)
+// file: URI  → 追加 & / ?
+// :memory:   → 原样（无需锁等待，且加 ? 会改变驱动打开的库）
+// 路径里的 ? # % 先百分号转义，否则会被读成参数语法
+```
+
+**生产 `SetMaxOpenConns(1)` 未改**。busy_timeout 现在是个**兜底**：万一将来有人放宽池，
+不会静默丢掉每连接的等待行为。
+
+### 两个断言"当前阻塞"的测试 —— 它们**如期失败**了
+
+```
+TestA6_ManyConnectionsAreBlockedByAMissingBusyTimeout
+  → FAIL: "no writer reported a busy error, so a wider write pool may now work"
+```
+
+这正是它们被写成"断言失败"的目的（§5 的 ⚠️）。已**翻转为断言成功**
+（`TestA6_ManyConnectionsCanWriteWithoutBusyErrors`）：多连接下的不同写入**必须全部成功**。
+
+### 重跑测量（就是 §5 要求"必须先通过"的那两个）
+
+| 测试 | 之前 | 现在 |
+|---|---|---|
+| `MessageDedupHasExactlyOneWinner_ManyConnections`（8 连接 / 32 投递） | ⏭ skipped | ✅ **PASS — 恰好 1 个赢家** |
+| `ArtifactDedupHasExactlyOneWinner_ManyConnections`（8 连接 / 32 观察者） | ⏭ skipped | ✅ **PASS — 恰好 1 个赢家** |
+| `ManyDistinctArtifactsUnderContention`（64 个不同 key） | ⏭ skipped | ✅ **PASS — 64 个各自有赢家**（反证：不是"无论 key 都只留一个"） |
+| `SingleConnectionIsStillTheProductionDefault` | ✅ | ✅ **仍 PASS**（生产未变） |
+
+**结论（比原来更窄也更准）**：A6 的原子性来自**单语句 upsert**，在 8 连接下**实测仍成立**。
+所以"放宽写池"对 A6 是**安全**的 —— 但这是**前置条件，不是理由**。
+
+### ⚠️ 仍然不要放宽生产写池
+
+生产维持 `SetMaxOpenConns(1)`。理由：
+
+1. **单写者序列化是正确的且够用** —— ingest 基准饱和远低于争用中的 SQLite（§6c：~1.2–1.8 万 writes/s）。
+2. **放宽只对"并发写"有意义**，而写是 append-heavy、非高并发（§6 原判断未变）。
+3. **本轮只证明"放宽是安全的"，没有证明"放宽有收益"**。后者需要另一次基准（放宽后 vs 单连接），**未做**。
+
+**新增单测**（`internal/sqlite/pragma_test.go`）：DSN 各形态与转义；并**回读 `PRAGMA busy_timeout`**
+确认它真的生效（不只看 DSN 字符串，因为"语法对但驱动忽略"会留下同样的缺口）。
 
 ---
 
@@ -288,7 +343,8 @@ p99:  0.191ms (batch=1)  →  0.348ms (batch=16)  →  0.943ms (batch=64)
 
 ### 未做（红线遵守）
 
-- ❌ **未放宽写连接数**：仍 `SetMaxOpenConns(1)`
+- ❌ **未放宽写连接数**：仍 `SetMaxOpenConns(1)` —— Phase 3 只解除了**障碍**（§6d），
+  **没有**放宽池，也**没有**证明放宽有收益（那需要另一次基准）
 - ❌ **未动存储引擎**
 - ❌ **未做存储接口抽象**
 - ⚠️ **批量尚未接入节点 HTTP 路径** —— `Put` 每请求调用一次，**批量不会自动生效**。

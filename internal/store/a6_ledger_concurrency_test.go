@@ -3,7 +3,6 @@ package store_test
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -43,6 +42,10 @@ import (
 // It uses the exported Handle() rather than a new production API: the point is to test the current
 // code under a different pool size, not to add a knob for it. If a later phase concludes a knob is
 // needed, that is a separate change with its own justification.
+// The busy timeout is no longer set with a manual `PRAGMA`, which reached only one connection in the
+// pool. It is now part of the DSN (internal/sqlite.withPragmas) so every pooled connection inherits
+// it, which is the change that makes the measurements below reachable. See
+// TestA6_ManyConnectionsCanWriteWithoutBusyErrors in internal/sqlite for the property that pins it.
 func openWithConns(t *testing.T, conns int) *sqlite.DB {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "a6.db"))
@@ -51,64 +54,60 @@ func openWithConns(t *testing.T, conns int) *sqlite.DB {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	// A busy timeout matters here: with several connections and a single writer, SQLite returns
-	// SQLITE_BUSY immediately without one, and a busy error is NOT the property under test — it is an
-	// artifact of contention. Setting it isolates the question to "can two writers both win".
-	if _, err := db.Handle().Exec("PRAGMA busy_timeout = 5000"); err != nil {
-		t.Fatalf("set busy_timeout: %v", err)
-	}
 	db.Handle().SetMaxOpenConns(conns)
 	return db
 }
 
 // # The measured result, and what it means
 //
-// With 8 connections, 24 of 32 concurrent observers fail with `database is locked (SQLITE_BUSY)`
-// BEFORE reaching the question of how many would have been told they were first. The same happens
-// for the message store.
+// A FIRST measurement found that with 8 connections, 24 of 32 concurrent observers failed with
+// `database is locked (SQLITE_BUSY)` BEFORE reaching the question of how many were told they were
+// first. The cause was not the SQL and not the dedup logic: `PRAGMA busy_timeout` is PER-CONNECTION,
+// and it was applied once through `db.Handle().Exec(...)`, so only one connection in the pool had it
+// (connection 0 reported `busy_timeout=5000`, connections 1-3 reported 0).
 //
-// The cause is not the SQL and not the dedup logic. `PRAGMA busy_timeout` is PER-CONNECTION, and it
-// is applied once through `db.Handle().Exec(...)`, which touches one connection in the pool. Probed
-// directly: after setting it, connection 0 reports `busy_timeout=5000` and connections 1-3 report
-// `busy_timeout=0`.
+// That obstacle has since been FIXED — the timeout is now part of the DSN
+// (internal/sqlite.withPragmas), so every connection the pool opens inherits it. The measurement was
+// then re-run with the pragma applied correctly, which is what the old note said was required before
+// concluding anything:
 //
-// So the conclusion is narrower than "the connection limit protects A6" and narrower than "A6 comes
-// from the SQL". A6's ATOMICITY does come from the SQL — both write paths are single-statement
-// upserts — but a wider write pool is unusable for a different reason: every connection except the
-// first lacks the busy timeout, so concurrent writers fail outright rather than serializing.
+//   - TestA6_ArtifactDedupHasExactlyOneWinner_ManyConnections (8 conns, 32 observers) now PASSES:
+//     exactly one winner, so A6's atomicity comes from the single-statement upsert rather than from
+//     the connection limit. That is the reason a wider write pool is even a possibility.
+//   - TestA6_ManyDistinctArtifactsUnderContention confirms it is not a ledger that collapses every
+//     key into one winner: 64 distinct artifacts each get their own first observer.
 //
-// That is a fixable problem (the pragma can be set per connection via the driver's connection hook,
-// or a DSN parameter if the driver supports one), and it is a real precondition for any wider write
-// pool. What it is NOT is a licence to widen the pool: establishing that would mean re-running these
-// measurements with the pragma applied correctly and confirming one winner.
+// # What this does NOT establish
 //
-// The measurement therefore answers the question it was asked and replaces the old justification with
-// an accurate one, which was the point of measuring rather than arguing.
+// It does not mean production should widen the pool. Production still uses
+// `SetMaxOpenConns(1)` (TestA6_SingleConnectionIsStillTheProductionDefault pins it), because
+// single-writer serialization is correct and sufficient — the ingest benchmark saturates well below
+// a contended SQLite. The measurement establishes that widening would be SAFE for A6, which is a
+// precondition, not a reason.
 
 // TestA6_ArtifactDedupHasExactlyOneWinner_OneConnection is the control: the property holds today.
 func TestA6_ArtifactDedupHasExactlyOneWinner_OneConnection(t *testing.T) {
 	assertExactlyOneWinner(t, openWithConns(t, 1), 32)
 }
 
-// TestA6_ManyConnectionsAreBlockedByAMissingBusyTimeout records the measured obstacle.
+// TestA6_ManyConnectionsCanWriteWithoutBusyErrors pins the fix that made the measurement below
+// reachable.
 //
-// # Why this asserts a FAILURE rather than a success
+// # Why this asserts SUCCESS, when it used to assert the opposite
 //
-// The useful finding is that a wider write pool does not work today, and the reason is specific. A
-// test that asserted success would fail against the current code, and a test that merely skipped would
-// leave the finding in a comment nobody runs. Asserting the observed obstacle pins it: if someone
-// later applies the busy timeout per connection, this test fails and points them at the measurements
-// they now need to redo.
-func TestA6_ManyConnectionsAreBlockedByAMissingBusyTimeout(t *testing.T) {
+// It previously recorded the OBSERVED OBSTACLE: with `PRAGMA busy_timeout` applied once through one
+// connection, 24 of 32 concurrent observers failed with "database is locked" before their statement
+// ran. Moving the pragma into the DSN removes that obstacle, so the honest test is now that distinct
+// writes across many connections all succeed. A regression in the DSN plumbing fails here.
+func TestA6_ManyConnectionsCanWriteWithoutBusyErrors(t *testing.T) {
 	db := openWithConns(t, 8)
 	ledger := store.NewArtifactLedger(db)
 
 	const observers = 16
 	var (
-		wg     sync.WaitGroup
-		mu     sync.Mutex
-		busy   int
-		others []error
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		errs []error
 	)
 	start := make(chan struct{})
 
@@ -118,46 +117,31 @@ func TestA6_ManyConnectionsAreBlockedByAMissingBusyTimeout(t *testing.T) {
 			defer wg.Done()
 			<-start
 			_, err := ledger.Observe(fmt.Sprintf("sha256:busy-probe-%d", i), fmt.Sprintf("agent-%d", i), time.Now())
-			if err == nil {
-				return
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			if strings.Contains(err.Error(), "database is locked") {
-				busy++
-			} else {
-				others = append(others, err)
+			if err != nil {
+				mu.Lock()
+				errs = append(errs, err)
+				mu.Unlock()
 			}
 		}(i)
 	}
 	close(start)
 	wg.Wait()
 
-	if len(others) > 0 {
-		t.Fatalf("unexpected errors, which means the obstacle is not what this test records: %v", others[0])
+	if len(errs) > 0 {
+		t.Fatalf("%d of %d concurrent observers errored; the busy timeout must apply to every "+
+			"connection the pool opens, or A6 cannot be measured under a wider pool: %v",
+			len(errs), observers, errs[0])
 	}
-	if busy == 0 {
-		t.Fatal("no connection reported a busy error, so a wider write pool may now work — " +
-			"re-run the dedup measurements in TestA6_ArtifactDedupHasExactlyOneWinner_ManyConnections " +
-			"before concluding anything about widening it")
-	}
-	t.Logf("%d of %d concurrent observers hit SQLITE_BUSY with 8 connections; PRAGMA busy_timeout is "+
-		"per-connection and only one connection in the pool has it", busy, observers)
 }
 
-// TestA6_ArtifactDedupHasExactlyOneWinner_ManyConnections is the measurement that would decide a
-// wider write pool, once the busy timeout obstacle is removed.
+// TestA6_ArtifactDedupHasExactlyOneWinner_ManyConnections is the measurement a wider write pool
+// depends on: does the dedup still have exactly one winner across 8 connections?
 //
-// # Why it is expected to fail today
-//
-// It cannot reach the dedup question, because the writers are rejected before the statement runs.
-// It is kept, rather than deleted, because it is the test that must pass BEFORE anyone widens the
-// pool — and a test that exists and fails loudly is a better record of "not yet established" than a
-// note saying so.
+// It was skipped while the busy timeout obstacle rejected writers before their statement ran. With
+// that fixed it runs, and it is the evidence that A6's atomicity comes from the single-statement
+// upsert rather than from the connection limit — the reason a wider pool is even a possibility.
 func TestA6_ArtifactDedupHasExactlyOneWinner_ManyConnections(t *testing.T) {
-	t.Skip("blocked by the per-connection busy_timeout obstacle: see " +
-		"TestA6_ManyConnectionsAreBlockedByAMissingBusyTimeout. Enable this once that is fixed, " +
-		"because it is the measurement a wider write pool depends on.")
+	assertExactlyOneWinner(t, openWithConns(t, 8), 32)
 }
 
 // assertExactlyOneWinner drives n goroutines at one artifact key and counts how many were told they
@@ -227,9 +211,6 @@ func assertExactlyOneWinner(t *testing.T, db *sqlite.DB, n int) {
 // TestA6_ManyDistinctArtifactsUnderContention keeps the test above from passing for a ledger that
 // simply serializes everything into one winner regardless of the key.
 func TestA6_ManyDistinctArtifactsUnderContention(t *testing.T) {
-	t.Skip("blocked by the same per-connection busy_timeout obstacle: it needs a wider pool to " +
-		"contend in, and a wider pool does not work yet. Enable together with the dedup measurement.")
-
 	db := openWithConns(t, 8)
 	ledger := store.NewArtifactLedger(db)
 

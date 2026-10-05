@@ -25,24 +25,42 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
+
+// DefaultBusyTimeoutMillis is how long SQLite waits for a lock before returning
+// SQLITE_BUSY.
+//
+// # Why the value is applied per connection rather than once
+//
+// `PRAGMA busy_timeout` is PER-CONNECTION, and the pool creates connections lazily.
+// Setting it once through `db.Exec` therefore reaches only the one connection that
+// happened to serve that call; every other pooled connection keeps the driver
+// default of 0. That was measured: connection 0 reported `busy_timeout=5000` while
+// connections 1-3 reported 0, and under a wider pool concurrent writers then failed
+// with "database is locked" before ever reaching their statement.
+//
+// The DSN parameter is how the modernc driver applies a pragma to EVERY connection
+// it opens, so this is set at open time rather than by a post-open Exec.
+const DefaultBusyTimeoutMillis = 5000
 
 // Open opens (or creates) a SQLite database at path and applies the schema.
 //
 // Pass ":memory:" for an ephemeral database, which is what tests use. The schema
 // is applied idempotently, so opening an existing database is safe.
 func Open(path string) (*DB, error) {
-	handle, err := sql.Open("sqlite", path)
+	handle, err := sql.Open("sqlite", withPragmas(path))
 	if err != nil {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}
 
-	// SQLite is single-writer. Serializing on one connection avoids "database is
-	// locked" failures without needing retry loops, and the workloads here are
-	// append-heavy rather than high-concurrency.
+	// SQLite allows one writer at a time. Production serializes writes on a single
+	// connection, which avoids lock contention without retry loops; the busy timeout
+	// above is set anyway so that a caller which raises the limit (a measurement, or
+	// a future wider write pool) does not silently lose it per connection.
 	handle.SetMaxOpenConns(1)
 
 	if err := handle.Ping(); err != nil {
@@ -56,6 +74,54 @@ func Open(path string) (*DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+// withPragmas returns the DSN for path with the per-connection pragmas applied.
+//
+// # Why a DSN rather than a post-open Exec
+//
+// A `PRAGMA` sent through `db.Exec` runs on ONE pooled connection, so any pragma set
+// that way is lost for connections opened later. The DSN form is applied by the
+// driver to every connection it opens, which is what makes the setting a property of
+// the database handle rather than of whichever connection served one call.
+//
+// # The forms of `path` that must be preserved
+//
+// The driver accepts a plain filename, a `:memory:` database, and a `file:` URI with
+// its own parameters. The pragmas are added in the form each expects:
+//
+//   - `:memory:` is left untouched. It needs no lock wait (nothing else can see it),
+//     and appending `?` would change which database the driver opens.
+//   - a `file:` URI gets the parameter appended with `&` (or `?` if it has none).
+//   - a plain path is wrapped as `file:<path>?...`, which is the URI form the driver
+//     recognises for parameters.
+//
+// The escaping is deliberate: a `?` or `#` in a filename would otherwise be read as
+// the start of the parameter list, so the path is percent-encoded first.
+func withPragmas(path string) string {
+	pragmas := fmt.Sprintf("_pragma=busy_timeout(%d)", DefaultBusyTimeoutMillis)
+
+	if path == ":memory:" {
+		return path
+	}
+	if strings.HasPrefix(path, "file:") {
+		sep := "?"
+		if strings.Contains(path, "?") {
+			sep = "&"
+		}
+		return path + sep + pragmas
+	}
+	return "file:" + escapeDSNPath(path) + "?" + pragmas
+}
+
+// escapeDSNPath percent-encodes the characters that would otherwise be read as DSN
+// syntax, so a filename containing `?`, `#` or `%` opens the file it names.
+func escapeDSNPath(path string) string {
+	return strings.NewReplacer(
+		"%", "%25",
+		"?", "%3F",
+		"#", "%23",
+	).Replace(path)
 }
 
 // DB is a handle to the underlying store.

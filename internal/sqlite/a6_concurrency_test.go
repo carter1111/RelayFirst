@@ -3,7 +3,6 @@ package sqlite_test
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +28,14 @@ import (
 // that is a separate change with its own justification.
 
 // openWithConns opens a store and raises the connection limit.
+//
+// # Why the busy timeout is no longer set here
+//
+// It used to be applied with `db.Handle().Exec("PRAGMA busy_timeout = 5000")`, which reaches only the
+// one connection that serves that call — every other pooled connection kept the driver default of 0,
+// so concurrent writers failed with SQLITE_BUSY before reaching their statement. The timeout is now
+// part of the DSN (internal/sqlite.withPragmas), so it applies to every connection the pool opens.
+// Removing the manual pragma here is what lets these tests exercise the real configuration.
 func openWithConns(t *testing.T, conns int) *sqlite.DB {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "a6-msg.db"))
@@ -37,12 +44,6 @@ func openWithConns(t *testing.T, conns int) *sqlite.DB {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	// A busy timeout matters: with several connections and a single writer, SQLite returns
-	// SQLITE_BUSY immediately without one, and a busy error is NOT the property under test. Setting it
-	// isolates the question to "can two writers both succeed".
-	if _, err := db.Handle().Exec("PRAGMA busy_timeout = 5000"); err != nil {
-		t.Fatalf("set busy_timeout: %v", err)
-	}
 	db.Handle().SetMaxOpenConns(conns)
 	return db
 }
@@ -52,38 +53,35 @@ func TestA6_MessageDedupHasExactlyOneWinner_OneConnection(t *testing.T) {
 	assertOneMessageWinner(t, openWithConns(t, 1), 32)
 }
 
-// TestA6_MessageDedupHasExactlyOneWinner_ManyConnections is the measurement for this path, once the
-// per-connection busy timeout obstacle is removed.
+// TestA6_MessageDedupHasExactlyOneWinner_ManyConnections is the message-store half of the question a
+// wider write pool depends on.
 //
-// # Why it is skipped rather than deleted
-//
-// It cannot reach the dedup question today, because concurrent writers are rejected before the
-// statement runs. Keeping it as a skip is a better record of "not yet established" than a comment:
-// the test exists, and enabling it is the step that a wider write pool depends on.
+// It was skipped while the busy timeout was per-connection and concurrent writers were rejected
+// before their statement ran. With the timeout in the DSN that obstacle is gone, so this asserts the
+// property directly: 32 concurrent deliveries of the SAME id, across 8 connections, and exactly one
+// reports itself as stored. Two winners would make a redelivery indistinguishable from new traffic.
 func TestA6_MessageDedupHasExactlyOneWinner_ManyConnections(t *testing.T) {
-	t.Skip("blocked by the per-connection busy_timeout obstacle: see the ledger measurement in " +
-		"internal/store. Enable this once that is fixed, because it is the measurement a wider write " +
-		"pool depends on.")
+	assertOneMessageWinner(t, openWithConns(t, 8), 32)
 }
 
-// TestA6_ManyConnectionsAreBlockedByAMissingBusyTimeout records the measured obstacle for this path.
+// TestA6_ManyConnectionsCanWriteWithoutBusyErrors pins the fix that made the measurement above
+// possible.
 //
-// # Why this asserts a FAILURE rather than a success
+// # Why this is a success assertion now, when it asserted a failure before
 //
-// The useful finding is that a wider write pool does not work today, and the reason is specific:
-// `PRAGMA busy_timeout` is per-connection, and it is applied once through one connection. Asserting
-// the observed obstacle pins it, so that applying the pragma per connection later makes this test
-// fail and points the author at the measurements they now need to redo.
-func TestA6_ManyConnectionsAreBlockedByAMissingBusyTimeout(t *testing.T) {
+// It previously recorded the OBSERVED OBSTACLE: with the timeout applied once through one connection,
+// pooled writers failed with "database is locked". The DSN parameter removes that obstacle, so the
+// honest test is the opposite one — distinct writes across many connections must all succeed. A
+// regression in the DSN plumbing (a pragma that stops being applied per connection) fails here.
+func TestA6_ManyConnectionsCanWriteWithoutBusyErrors(t *testing.T) {
 	db := openWithConns(t, 8)
 	store := sqlite.NewMessageStore(db)
 
 	const writers = 16
 	var (
-		wg    sync.WaitGroup
-		mu    sync.Mutex
-		busy  int
-		other []error
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		errs []error
 	)
 	start := make(chan struct{})
 
@@ -96,29 +94,20 @@ func TestA6_ManyConnectionsAreBlockedByAMissingBusyTimeout(t *testing.T) {
 				ID: fmt.Sprintf("0x%064x", w), AgentID: fmt.Sprintf("agent-%d", w),
 				Kind: "receipt", Payload: []byte("{}"), ReceivedAt: time.Now(),
 			})
-			if err == nil {
-				return
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			if strings.Contains(err.Error(), "database is locked") {
-				busy++
-			} else {
-				other = append(other, err)
+			if err != nil {
+				mu.Lock()
+				errs = append(errs, err)
+				mu.Unlock()
 			}
 		}(w)
 	}
 	close(start)
 	wg.Wait()
 
-	if len(other) > 0 {
-		t.Fatalf("unexpected errors, so the obstacle is not what this test records: %v", other[0])
+	if len(errs) > 0 {
+		t.Fatalf("%d of %d pooled writers errored; the busy timeout must apply to every connection "+
+			"the pool opens, or a wider write pool is unusable: %v", len(errs), writers, errs[0])
 	}
-	if busy == 0 {
-		t.Fatal("no writer reported a busy error, so a wider write pool may now work — re-run the " +
-			"dedup measurement before concluding anything about widening it")
-	}
-	t.Logf("%d of %d concurrent writers hit SQLITE_BUSY with 8 connections", busy, writers)
 }
 
 func assertOneMessageWinner(t *testing.T, db *sqlite.DB, n int) {
