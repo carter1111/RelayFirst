@@ -434,6 +434,65 @@ else
   run "node scripts/verify-merkle-viem.mjs" node scripts/verify-merkle-viem.mjs
 fi
 
+# The release path must exist AND carry the mainnet tag, or the epoch genesis guard
+# (internal/epoch) is decorative: nothing would build with -tags mainnet, so nothing
+# would ever trigger it, and a release assembled by hand with a plain `go build`
+# would bypass it. This gate builds with the tag and inspects the binary so the
+# guard cannot rot unnoticed.
+#
+# It deliberately does NOT fail when the release refuses (the genesis is expected to
+# be provisional until the launch date is pinned — BLK-4). It fails when the tag
+# stops taking effect, which is the silent failure mode.
+step "Release path arms the genesis guard (BLK-4: a provisional genesis must not ship)"
+release_ok=1
+
+# (1) The release path exists.
+if [ ! -f scripts/build-release.sh ] || [ ! -f Makefile ]; then
+  fail "the release path is missing (scripts/build-release.sh / Makefile); a manual go build would bypass the genesis guard"
+  release_ok=0
+fi
+
+# (2) The mainnet build must actually FAIL to run while the genesis is provisional.
+# This is the property: a tagged build refuses. If it stops refusing, the guard is gone.
+if CGO_ENABLED=0 go build -tags mainnet -o /tmp/rf-release-probe ./cmd/relayfirst >/tmp/rf-ci-release.log 2>&1; then
+  if /tmp/rf-release-probe version >/tmp/rf-ci-release-run.log 2>&1; then
+    fail "a -tags mainnet build RAN with a provisional genesis, so the epoch guard is not armed:"
+    sed 's/^/      /' /tmp/rf-ci-release-run.log | tail -10
+    release_ok=0
+  else
+    # It refused, as it must. Confirm the refusal is the genesis guard, not some
+    # unrelated failure, so the check is not satisfied by a binary that is broken
+    # for another reason.
+    if grep -q "provisional genesis" /tmp/rf-ci-release-run.log 2>/dev/null; then
+      pass "release build refuses a provisional genesis (the guard is armed)"
+    else
+      fail "the release build refused for an unexpected reason:"
+      sed 's/^/      /' /tmp/rf-ci-release-run.log | tail -10
+      release_ok=0
+    fi
+  fi
+else
+  fail "cannot build with -tags mainnet, so the genesis guard cannot be exercised:"
+  sed 's/^/      /' /tmp/rf-ci-release.log | tail -10
+  release_ok=0
+fi
+
+# (3) A plain (untagged) build must still RUN, or development is broken while the
+# guard holds. Without this, a guard that refused EVERY build would pass (2).
+if [ "$release_ok" -eq 1 ]; then
+  if CGO_ENABLED=0 go build -o /tmp/rf-dev-probe ./cmd/relayfirst >/dev/null 2>&1 && \
+     /tmp/rf-dev-probe version >/dev/null 2>&1; then
+    pass "development build still runs (the guard is release-only)"
+  else
+    fail "a plain build does not run, so the guard is blocking development too"
+    release_ok=0
+  fi
+fi
+
+if [ "$release_ok" -ne 1 ]; then
+  failures=$((failures + 1))
+fi
+
 printf '\n'
 if [ "$failures" -eq 0 ]; then
   printf '\033[32mAll gates passed.\033[0m\n'
