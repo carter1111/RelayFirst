@@ -14,6 +14,11 @@
 ## 0. feature 文档（本文是入口，它们是详情）
 
 > **每个 feature = 一份文档**，挂在这里。定案后按 `AGENTS.md §5.0` 进 `TASKS.md`。
+>
+> **⚠️ 分两栏**：**① 未定案**才真属于 Planning（P1）；**② 已裁决/已实现**是**参考** ——
+> 保留在这里只为"一眼看全"，**它们不再是待定规划**。
+
+### 0A. 未定案（真正属于 Planning）
 
 | Feature 文档 | 一句话 | 对应问题 |
 |---|---|---|
@@ -25,20 +30,27 @@
 | [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md) | `relayfirst` 定位与品牌层 | 矿工 UX |
 | [`node-incentives-discussion.md`](node-incentives-discussion.md) | 节点动机（BLK-5）选项 | 为何安节点 |
 | [`../gtm/blk-2-first-consumer-plan.md`](../gtm/blk-2-first-consumer-plan.md) | BLK-2 首个消费方行动方案 | 上线硬前置 |
-| [`blk-3-assignment-policy.md`](blk-3-assignment-policy.md) | BLK-3 指派策略（已裁决 A） | 验证者指派 |
-| [`blk-4-genesis-decision.md`](blk-4-genesis-decision.md) | BLK-4 genesis 日期（已裁决 A） | 发布日 |
-| [`mcp-setup.md`](mcp-setup.md) | MCP 接入（已实现，属参考） | IDE 接入 |
+
+### 0B. 已裁决 / 已实现（**参考**，非待定）
+
+| 文档 | 状态 | 备注 |
+|---|---|---|
+| [`blk-3-assignment-policy.md`](blk-3-assignment-policy.md) | **已裁决 A**（确定性种子） | 剩部署配置，机制零改动 |
+| [`blk-4-genesis-decision.md`](blk-4-genesis-decision.md) | **已裁决 A**（=发布日） | 仅缺"具体哪天" |
+| [`mcp-setup.md`](mcp-setup.md) | **已实现**（S12-5/6/7） | 属**how-to 参考**，不是规划 |
 
 ---
 
-## A. 需要你【裁决】的（我做不了，因为它是业务决策）
+## A. 已裁决 → 待收尾（仍需一个输入 / 一次操作）
 
-| 项 | 决定 | 决策包 | 还缺什么 |
+| 项 | 已裁决 | 决策包 | 还缺什么 |
 |---|---|---|---|
-| **BLK-4 genesis** | **✅ A：genesis = 公开发布日 00:00 UTC** | [`blk-4-genesis-decision.md`](blk-4-genesis-decision.md) | **仅缺"具体哪天"** → 我改一行常量 + 跑回归 + 用 `-tags mainnet` 验防呆解除 |
-| **BLK-3 指派策略** | **✅ A：确定性种子** | [`blk-3-assignment-policy.md`](blk-3-assignment-policy.md) | 部署配置（候选集 + seed 来源）；**机制零改动** |
+| **BLK-4 genesis** | **✅ A：genesis = 公开发布日 00:00 UTC** | [`blk-4-genesis-decision.md`](blk-4-genesis-decision.md) | **仅缺"具体哪天"**（用户输入）→ 我改一行常量 + 跑回归 + 用 `-tags mainnet` 验防呆解除 |
+| **BLK-3 指派策略** | **✅ A：确定性种子** | [`blk-3-assignment-policy.md`](blk-3-assignment-policy.md) | 部署配置（候选集 + seed 来源，属组织决定）；**机制零改动** |
 
-> **两项方向都已裁决。** BLK-3 **机制上已关闭**（现参考实现即 A）；BLK-4 只等你给发布日。
+> **两项方向都已裁决，不再是"待裁决"。** BLK-3 **机制上已关闭**（现参考实现即 A）；
+> BLK-4 只等你给发布日。**待裁决的只剩 `BLK-5`（节点动机）** —— 见 B 与
+> [`node-incentives-discussion.md`](node-incentives-discussion.md)。
 
 ### 已做的防呆（BLK-4）
 
@@ -58,6 +70,7 @@
 | **判据 ⑨** SBT 钱包可见 | 需**链上部署** + 真实钱包 | `contracts/` + `docs/stages/S7-report.md` |
 | **S12-3** 真实 USDC | 需**选链 + 测试币 + 部署** | `TASKS.md` S12-3 |
 | **BLK-3** 候选集"谁在池里" | 需**组织决定**谁当验证者 | 见 A |
+| **BLK-5** 节点动机 | 需**裁决**（Q1 无激励 / Q2 声誉榜 / Q3 运维费） | [`node-incentives-discussion.md`](node-incentives-discussion.md) |
 
 ---
 
