@@ -1,155 +1,155 @@
-# 节点 TUI + 实时 Dashboard —— 交互架构方案
+# 节点 Dashboard / TUI —— 最优方案（含节点安全）
 
-> **用户诉求（2026-10-06）**：① 现在**没有命令行可交互**；② 要一个**不抽象**的可视架构（参考 Pi Agent / Claude Code）；③ 节点的**实时数据 Dashboard**。
+> **用户诉求（2026-10-06）**：① 要有可交互/可视的界面；② 参考 Pi Agent / Claude Code 但**不抽象**；
+> ③ 节点**实时数据 Dashboard**；④ **必须考虑节点安全**；⑤ 节点只跑一个，**GUI 显示它在运作**即可，
+> Human 操作界面是**另一个模块**、**另一个终端**打开。
 >
-> **状态：规划（未开工）。** 本文是**方案**，供你选。属 `UX-1`（`TASKS.md §11.2`）。
+> **状态：规划（未开工）。** 属 `UX-1`（`TASKS.md §11.2`）。
 >
-> 相关：[`terminal-experience-plan.md`](terminal-experience-plan.md)（已实现的 CLI）、
-> `internal/node/ws.go`（现有 hub）、`ARCHITECTURE.md §4.4`（transport 信号非协议对象）。
+> 相关：[`terminal-experience-plan.md`](terminal-experience-plan.md)（已交付的 CLI）、
+> `internal/node/ws.go`（现有 hub）、`ARCHITECTURE.md §4.4 / §17`。
 
 ---
 
-## 1. 先厘清：三种"界面"，成本与适用完全不同
+## 0. 结论（先看这个）
 
-| 形态 | 长什么样 | 谁用 | 成本 | 依赖 |
+```text
+节点（relayfirst-node）：保持 headless、零 UI 代码、零新依赖。
+Dashboard：一个【独立模块】，另一个终端打开，通过 HTTP 只读连节点。
+v0：【严格只读】—— 不控制、不写入。因为节点没有鉴权机制。
+```
+
+这个形状来自三类产品的**架构对照**（§2），并且**同时把节点安全风险降到最低**（§5）。
+
+---
+
+## 1. 三种"界面"，成本与适用不同
+
+| 形态 | 长什么样 | 谁用 | 成本 | 依赖进哪 |
 |---|---|---|---|---|
-| **A. 命令 + TTY 彩色**（已做） | `report`/`inspect` 打字即出 | 运维、脚本 | ✅ 已交付 | 无 |
-| **B. 交互 REPL / TUI**（你要的①） | 进一个"控制台"，敲命令、看面板 | 人坐在终端前 | 中 | `bubbletea` |
-| **C. 实时 Dashboard**（你要的③） | 常驻面板，数据自己跳 | 人盯着一台跑着的节点 | 中 | `bubbletea` + 事件源（§4） |
+| **A. 命令 + TTY 彩色**（**已交付**） | `report`/`inspect` 打字即出 | 运维、脚本 | ✅ | 无 |
+| **B. 交互控制台** | 进一个"控制台"敲命令 | 人坐终端前 | 中 | 独立模块 |
+| **C. 实时 Dashboard** | 常驻面板，数据自己跳 | 人盯着一个跑着的节点 | 中 | 独立模块 |
 
-**关键区分**：A 是**一次性**（跑完退出）；B/C 是**常驻交互**（`q` 退出）。
-
----
-
-## 2. 你问的①："没有命令行可 input"
-
-**确实没有** —— 节点**故意**是"服务器 + 一次性子命令"，不是 shell。
-
-**要不要加交互控制台？** 有一条硬约束：
-
-> **节点在 `docker -d` / systemd / CI 里没有 TTY。默认进交互模式 = 节点起不来。**
-
-所以交互模式**只能**：
-- 出现在**明确调用时**（`relayfirst-node tui`），**绝不**是默认；
-- **或**在 `serve` 检测到 TTY 时**按一个键**进入（不自动进）。
-
-**方案**：新增 `relayfirst-node tui`（子命令），**默认行为一字不改**。
+A 一次性；B/C 常驻交互。**B/C 都放在独立模块**（§3）。
 
 ---
 
-## 3. 你要的②：可视架构（参考 Pi Agent / Claude Code）
+## 2. 参考什么、不参考什么（不再抽象）
 
-### 3.1 参考它们的什么
-
-| 产品 | 值得抄的 | 不要抄的 |
+| 来源 | 架构 | 我们取什么 |
 |---|---|---|
-| **Claude Code** | 顶部状态栏 + 主输出区 + 底部输入行（**三分区**）；`/` 触发命令 | 它是**对话**，节点不是 |
-| **Pi Agent** | 常驻头图 + 实时状态 + 清晰按键提示 | 其信息密度假设是单任务 |
-| **k9s / lazydocker** | **Tab 切视图**、`:` 命令、`q` 退出、`?` 帮助 | 键盘绑定要有**一致语义** |
+| **裸 Claude Code / 裸 Pi** | 交互 TUI **同进程** | ❌ **不取架构** —— 它们观察的是**本地 agent 会话**，不是服务器 |
+| **Claude Code `daemon` / `pi-agent` / `pi-studio`** | **长驻进程 + 瘦客户端**（socket / WebSocket） | ✅ **取架构** —— client 是纯消费者，"**退出 UI 不影响服务**" |
+| **k9s / lazydocker** | **针对服务器的运维 TUI**（连 socket/API） | ✅ **取信息架构**：资源列表 + 详情 + 事件 |
+| **Pi 的 tui 渲染** | **不夺屏**：写 scrollback + 差量渲染（保留原生滚动/搜索/复制） | ✅ **取手感** —— 运维 TUI 尤其适合 |
+| **对话式 UI** | 一轮轮 chat | ❌ **不取** —— 节点不是对话 |
 
-### 3.2 建议的可视架构（ASCII 线框）
+**结论**：**架构学 `pi-agent`/k9s，手感学 Pi，信息架构学 k9s，不学对话模型。**
+
+> 事实依据（WebSearch，2026-10-06）：`pi-agent` = singleton detached daemon + per-agent worker，
+> dashboard 是**纯 client**、走 Unix socket、退出不影响 worker；`pi-studio` CLI "never runs
+> daemon code in-process"；Claude Code 有 `daemon attach` 把 TUI 接到后台会话；裸 CC/Pi 的 TUI 同进程。
+
+---
+
+## 3. 最优形状：独立模块 + HTTP 只读
 
 ```text
-┌─ RELAY node · :8080 · verifies:false ──────────────────── live ●━━━━━━ 1s ─┐
-│                                                                            │
-│  ┌ Overview ─┬ Agents ─┬ Tasks ─┬ Stream ─┬ Config ─┐      ← Tab 切换     │
-│                                                                            │
-│   messages      1,234     agents        17     epoch-ahead: 0             │
-│   observations    430     cards          9     uptime:  12m04s            │
-│   tasks            12      inbox peers    3     stores: wal               │
-│                                                                            │
-│   ┌ throughput (60s) ─────────────────────────────┐                        │
-│   │ ▂▃▅▇▆▅▃▂▁▂▃▅▆▇▅▃▂▁▂▃▄▅▆▅▄▃▂▁▂▃  peak 42/s     │   ← 迷你柱状        │
-│   └───────────────────────────────────────────────┘                        │
-│                                                                            │
-├────────────────────────────────────────────────────────────────────────────┤
-│  [Tab] section  [↑↓] select  [Enter] detail  [/] filter  [?] help  [q] quit │
-└────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────┐   HTTP (read-only)   ┌──────────────────────────┐
+│ relayfirst-node  │ ◄─────────────────── │ relayfirst-dashboard     │
+│  (headless)      │   /healthz           │  (bubbletea TUI)         │
+│  无 UI 代码      │   /.well-known       │  另开一个终端            │
+│  零新依赖        │   /agents /tasks     │  可连本地或远程节点       │
+└──────────────────┘   /observations      └──────────────────────────┘
+       ▲                                              │
+       │  节点崩了/GUI 崩了，互不影响（客户端-服务器）  │
 ```
 
-**五个视图（Tab）**：
+- **节点零改动**：不加端点、不加依赖、不加 UI 代码。
+- **Dashboard 是 client**：连**已经跑着的**节点；可连远程；退出不影响节点。
+- **二进制**：`relayfirst-dashboard`（**独立**）。理由：节点运维工具**既不属于节点也不属于矿工 CLI**；
+  也让 `bubbletea` **进不了** `relayfirst`（矿工 CLI 保持零 UI 依赖）。
 
-| 视图 | 显示什么 | 数据 |
+### 3.1 实时数据从哪来（**已定：HTTP 轮询**）
+
+**实测**：节点的 hub **只按 `agentId` 扇出**，**没有全节点活动流** —— 独立进程也**读不到** hub。
+
+| 源 | 能拿到 | 结论 |
 |---|---|---|
-| **Overview** | 计数 + uptime + 吞吐迷你图 | 轮询 `/well-known` + 本地计时 |
-| **Agents** | card 目录（agentId / updatedAt / relay set） | `GET /agents` |
-| **Tasks** | 任务板（taskId / requester / subject / claims / expiresAt） | `GET /tasks` |
-| **Stream** | **实时**到达的消息（kind / agentId / bytes / 时间） | **§4 的事件源** |
-| **Config** | listen / storage / public-url / version / max-payload | 本地 |
+| **HTTP 轮询** `/well-known` + `/agents` + `/tasks` | 计数、吞吐（**计数差分**）、uptime、列表 | ✅ **v0 用它，节点零改动** |
+| 新增**公开**全节点流端点 | 逐条消息 | ❌ **不做** —— 暴露所有人流量元数据（Nostr 也不这么做） |
+| 本地 tail 日志 / 轮询 DB | — | ❌ 日志是开发工具；DB 轮询有锁争用 |
 
-**统一按键**：`Tab`（或 `1..5`）切视图 · `↑↓` 选行 · `Enter` 详情 · `/` 过滤 · `?` 帮助 · `q` 退出。
+**"实时"在 v0 的含义** = **计数差分出的吞吐 + uptime**，**不是逐条 firehose**。
+用户原话"**GUI 就显示他在运作就可以了**" —— **轮询充分**。
+
+**逐条流**是另一个功能（调试），**不在 v0**；若日后要做，**只对 operator**、单独裁决。
 
 ---
 
-## 4. 你要的③：实时 Dashboard 的**事件源**（这是设计的核心难点）
+## 4. 视图与布局（具体线框）
 
-**实测现状**：节点的 hub **只按 `agentId` 扇出**（`internal/node/ws.go`）。
-`GET /ws/messages/{agentId}` 需要一个 **agentId** —— **没有"全节点活动流"**。
-所以 Dashboard 的 Stream 视图**今天无源可接**。
+```text
+┌─ RELAY · :8080 · verifies:false ─────────────── live ●━━ 1s · health ok ─┐
+│  ┌ Overview ┬ Agents ┬ Tasks ┬ Config ┐          ← Tab / 1..4 切换       │
+│   messages      1,234      agents       17       uptime  12m04s          │
+│   observations    430      agent cards   9       node    0.1.0-s5        │
+│   tasks            12      publicUrl    http://…                          │
+│   ┌ throughput (60s, derived from counts) ──────────┐                     │
+│   │ ▂▃▅▇▆▅▃▂▁▂▃▅▆▇▅▃▂▁▂▃▄▅▆▅▄▃▂▁▂▃  peak 42/s       │                    │
+│   └──────────────────────────────────────────────────┘                    │
+├───────────────────────────────────────────────────────────────────────────┤
+│ [Tab] section  [↑↓] select  [/] filter  [r] refresh  [?] help  [q] quit   │
+└───────────────────────────────────────────────────────────────────────────┘
+```
 
-### 三条路，各有取舍
+| 视图 | 内容 | 源 |
+|---|---|---|
+| **Overview** | 计数 + uptime + 吞吐迷你图 | `/well-known`（轮询） |
+| **Agents** | card 目录（agentId / updatedAt / relay set） | `/agents` |
+| **Tasks** | 任务板（taskId / requester / subject / claims / expiresAt） | `/tasks` |
+| **Config** | 连的 URL / 轮询间隔 / 节点 version / 自述 note | 本地 + `/well-known` |
 
-| 方案 | 做法 | 优点 | 缺点 / 风险 |
+> **没有 Stream 视图**（v0）—— 无源可接（§3.1）。避免画一个假的流。
+
+---
+
+## 5. 节点安全（本方案的重点约束）
+
+> 原则：**Dashboard 不得扩大节点的攻击面，也不得让节点持有它本不该有的能力。**
+
+| # | 安全约束 | 为什么 |
+|---|---|---|
+| **S1** | **v0 严格只读** —— 不控制、不写入、不新端点 | 节点**没有鉴权机制**（无 session/cookie，设计如此：NET-1）。任何"控制"都需一套鉴权，**那是新产品面 + 新风险**。**不做。** |
+| **S2** | **Dashboard 不持密钥、不能签名** | 与节点/MCP 同一性质：**导入图结构上链接不到** `eip712`/`receipt`。它是**只读显示器**。 |
+| **S3** | **不加公开端点** | 读的都是**本来就公开**的端点（任何人可读）→ **不新增暴露**。全节点流**否决**（会暴露 traffic 元数据）。 |
+| **S4** | **轮询负载有界** | 固定间隔（默认 1–2s）+ **出错指数退避** + **单一 poller**（不是每视图一个）。否则 N 个 dashboard = 对节点的软 DoS。**最终防线是节点的 O1 反滥用（未做）** —— 在 S4 里注明这个依赖。 |
+| **S5** | **Dashboard 崩/退出不影响节点** | 客户端-服务器天然如此；这正是选独立模块的理由之一。 |
+| **S6** | **远程时用 HTTPS，不禁用证书校验** | 节点本身是 HTTP（需反代）；Dashboard 必须支持 `https://` 且**默认校验**。 |
+| **S7** | **不信任节点 JSON**（只展示） | 不 `eval`、不把节点返回当指令；**限制响应体大小**（防恶意/损坏节点喂超大响应）。 |
+| **S8** | **UI 依赖不进行节点** | `bubbletea` 只在 `relayfirst-dashboard`。**节点的导入图隔离（不得含签名代码）继续由现有门禁证明**，且**多了一层**：UI 依赖也不进节点。 |
+
+**一句话**：**Dashboard 是一个"只读、无密钥、不新增端点、有界轮询"的客户端** —— 它让节点**更可见，而不是更脆弱**。
+
+---
+
+## 6. 分层与依赖
+
+```text
+internal/node             ← 不变（哑 HTTP + hub）。不加 UI/不加端点。
+cmd/relayfirst-node       ← 不变（serve/report/status/inspect）。
+cmd/relayfirst-dashboard  ← 新增：TUI client（bubbletea），连 HTTP 只读。
+internal/term             ← 共享：IsTTY / Paint（节点已用到；dashboard 复用）
+internal/noderead         ← 新增：**只读节点客户端**（拉 well-known/agents/tasks、退避、限大小）
+internal/tui              ← 新增：bubbletea 模型 + 视图（只依赖 noderead）
+```
+
+**要点**：`noderead` 与 `tui` **分离** —— **取数**与**渲染**分开，便于测试（取数可单测，无需终端）。
+
+| 依赖 | 类 | 位置 | 理由 |
 |---|---|---|---|
-| **S1 只轮询**（最省） | Dashboard 每 1s 拉 `/well-known`（计数） | **零节点改动** | 拿不到"逐条消息"；只有计数变化，**不是流** |
-| **S2 新增全节点流**（推荐） | 新增 `GET /ws/events`（**无 agentId**）：hub 增加一类"全量订阅" | 真·实时 Stream；节点改动**小**（hub 多一个条件） | 节点多一个端点；需定"是否暴露所有活动"（见下） |
-| **S3 本地 tail** | Dashboard 读 **stderr 日志**或 DB 轮询 | 零节点改动 | 日志是**开发工具**不是数据面；DB 轮询有锁争用 |
-
-### 4.1 S2 的**隐私/信任问题**（必须先裁决）
-
-节点是**公开端点**，但"全节点活动流"会**暴露所有人的 traffic 元数据**（谁在给谁发、何时、多大）。
-Nostr relay **不**这样做 —— 订阅是**按 filter**（作者/kind），**不是**"看我转发的一切"。
-
-**因此 S2 只能给"运维者"，不能给公众**：
-
-```text
-GET /ws/events  →  默认【关闭】
-  开启方式：--admin-ws（或仅监听 loopback 时开）
-  且必须文档写明：它暴露节点级元数据
-```
-
-**更干净的替代**：**`relayfirst-node tui` 直接 in-process 读 hub** ——
-**不发** admin WS，而是 **TUI 与 serve 在同一进程**（`--tui` 与 serve 同启）时直接订阅 hub。
-这样**没有新公开端点**，元数据不出进程。**推荐这条。**
-
-### 4.2 建议的最终形状
-
-```text
-relayfirst-node --listen :8080 --storage ./node.db --dashboard
-   → serve + 同进程 Dashboard（TTY 时）；非 TTY 时 --dashboard 无效（只 serve）
-   → Dashboard 直接读：hub（实时）+ store（计数）
-   → 不新增公开端点，不上报任何元数据
-```
-
----
-
-## 5. 依赖与理由（按 `MVP.md §8.0`）
-
-| 依赖 | 类 | 用途 | 取舍 |
-|---|---|---|---|
-| **`charmbracelet/bubbletea`** | ② | TUI 事件循环、键盘、渲染 | **纯 Go，不违反 A3**；成熟（Claude Code 类工具常用）。**唯一新依赖。** |
-| **`charmbracelet/lipgloss`** | ② | 样式/布局 | 随 bubbletea 一起，通常同用 |
-| **`charmbracelet/bubbles`** | ② | 表格/列表/spinner 组件 | 可选；可只用 lipgloss 手写 |
-
-**理由**：真 TUI 需要**事件循环 + 差量渲染 + 键盘绑定**，手写等于重造 bubbletea。**这是一处值得的依赖**。
-
-**约束**：**只能 TTY**；**不得**成为默认路径；**不得**让节点在无 TTY 时行为变化。
-
----
-
-## 6. 架构分层（避免把 UI 塞进 `internal/node`）
-
-```text
-internal/node         ← 不变（仍是哑的 HTTP + hub）。**不加任何 TUI 代码。**
-cmd/relayfirst-node   ← 装配层：serve / report / status / inspect / tui
-internal/term         ← 共享：IsTTY / Paint / （未来的）Live 单行刷新
-internal/tui          ← 新增：bubbletea 模型 + 视图（只读 hub 与 store）
-```
-
-**为什么 `internal/tui` 独立**：① 节点导入图**仍不含 UI 依赖**（门禁不受影响）；
-② TUI 崩了**不影响 serve**；③ 未来 `relayfirst`（矿工 CLI）也能复用。
-
-**门禁影响**：`relayfirst-node` 会**新链接** `bubbletea`（纯 Go，**不含** `eip712`/`receipt`）→ 现有导入图门禁**仍过**（它只禁签名代码）。需在门禁里**如实注明**新增了 UI 依赖。
+| `charmbracelet/bubbletea` + `lipgloss` | ② | **仅 dashboard** | 真 TUI 需事件循环+差量渲染；手写=重造。纯 Go，A3 不受影响。 |
 
 ---
 
@@ -157,12 +157,12 @@ internal/tui          ← 新增：bubbletea 模型 + 视图（只读 hub 与 st
 
 | id | 任务 | 依赖 | 验收 |
 |---|---|---|---|
-| **T1** | `internal/term`（IsTTY/Paint/Live）+ 节点迁移 | — | 节点行为不变；导入图门禁仍过 |
-| **T2** | `internal/tui` 骨架 + Overview 视图（轮询计数） | T1 | `relayfirst-node tui` 在 TTY 起；非 TTY 明确报错不空跑 |
-| **T3** | Agents / Tasks / Config 视图（读 store） | T2 | 数据与 `inspect` 一致 |
-| **T4** | **Stream 视图**：同进程订阅 hub（§4.2） | T2 | 新消息即时上屏；**不开公开端点** |
-| **T5** | `--dashboard`（serve + 同进程 TUI）；非 TTY 时忽略 | T4 | `docker -d` 下**行为不变**（无 TTY 不开 TUI） |
-| **T6** | 键盘/帮助/退出一致性 + 冻结回归（非 TTY 不变） | T2..5 | `serve` 输出与非 TUI 完全一致 |
+| **D1** | `internal/noderead`：只读客户端（well-known/agents/tasks、**退避**、**限响应大小**、`https` 校验） | — | 单元测试：正常/超时/4xx/超大响应；**不新增端点** |
+| **D2** | `internal/term` 抽共享（节点已用；dashboard 复用） | — | 节点行为不变 |
+| **D3** | `cmd/relayfirst-dashboard` 骨架 + Overview（轮询计数 + 吞吐） | D1,D2 | 连**已跑**节点；`q` 退出**不影响**节点 |
+| **D4** | Agents / Tasks / Config 视图 | D3 | 数据与 `inspect` 一致 |
+| **D5** | 键位/帮助/退出一致；**非 TTY 明确报错**（不空跑） | D3 | 无 TTY 时打印用法并退出，不渲染垃圾 |
+| **D6** | 安全回归：导入图断言（dashboard 无签名代码）；轮询退避测试 | D1 | `go list -deps` 无 `eip712`/`receipt`；退避测试通过 |
 
 ---
 
@@ -170,11 +170,13 @@ internal/tui          ← 新增：bubbletea 模型 + 视图（只读 hub 与 st
 
 | ❌ 不要 | 为什么 |
 |---|---|
-| 默认进 TUI | `docker -d`/systemd 起不来 |
-| 新增**公开**"全节点流" | 暴露所有人 traffic 元数据（Nostr 不这么做） |
-| TUI 依赖进 `internal/node` | 破坏"节点最小/哑"与导入图隔离 |
-| TUI 崩了影响 serve | 界面是装饰，中继是关键路径 |
-| 在非 TTY 里渲染 TUI | 输出垃圾到日志 |
+| UI/依赖进 `relayfirst-node` | 破坏"节点最小/哑"与隔离；已否决 |
+| 默认进 TUI | `docker -d`/systemd/CI 无 TTY，会起不来 |
+| 新增公开全节点流 | 暴露所有人 traffic 元数据（S3） |
+| v0 加"控制/写入" | 节点无鉴权；引入即需新鉴权面（S1） |
+| 无退避的高频轮询 | 软 DoS 自己的节点（S4） |
+| 远程连接禁用证书校验 | MITM（S6） |
+| 画一个"Stream"视图但无真实源 | 假流比没有更糟 |
 
 ---
 
@@ -182,10 +184,11 @@ internal/tui          ← 新增：bubbletea 模型 + 视图（只读 hub 与 st
 
 | # | 问题 | 决定 | 日期 |
 |---|---|---|---|
-| **Q2** | 实时源 | ✅ **同进程读 hub**（`serve --dashboard`）；**不加公开端点**，元数据不出进程 | 2026-10-06 |
-| **Q3** | 依赖 | ✅ **同意引入 `bubbletea`**（+`lipgloss`）；唯一新依赖，纯 Go，不破导入图隔离 | 2026-10-06 |
-| **Q1** | 形态（B / C） | ⏳ **待定** —— 用户要先讨论一件重要的事 | — |
-| **Q4** | 触发方式 | ⏳ 待定（倾向 `serve --dashboard` 同启） | — |
+| **Q2** | 实时源 | ⚠️ **被取代**：原"同进程读 hub" **作废**（独立进程读不到）。现为 **HTTP 轮询 + 计数差分**，节点**零改动** | 2026-10-06 |
+| **Q3** | 依赖 | ✅ 引入 `bubbletea`（**仅 dashboard**） | 2026-10-06 |
+| **Q5** | 架构 | ✅ **独立模块**（`relayfirst-dashboard`）+ **只读** —— 对齐 `pi-agent`/k9s；**节点零 UI 依赖** | 2026-10-06 |
+| **Q1** | 形态（B / C） | ⏳ 待定（用户要先讨论） | — |
+| **Q4** | 触发/二进制 | ⏳ 待定（本文建议**独立 `relayfirst-dashboard`**） | — |
+| **Q6** | 发布 | ⏳ 待定：dashboard 是否随 npm 发布（**件事**：它是运维工具，可能不走 npm，只走二进制/容器） | — |
 
-> **已定两项改变了实现方式**：Stream 视图**不发** admin WS（§4.1 的风险项被消除）；
-> `internal/tui` 依赖 `bubbletea`。**开工仍待 Q1（形态）与 Q4。**
+**开工仍待 Q1（形态）与 Q4（二进制命名/触发）。**
