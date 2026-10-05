@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/relayfirst/relayfirst/internal/sqlite"
+	"github.com/relayfirst/relayfirst/internal/term"
 )
 
 // This file holds the node's human-facing output: the startup banner and the
@@ -43,29 +44,21 @@ const logo = `██████╗ ███████╗██╗      █�
 ██║  ██║███████╗███████╗██║  ██║   ██║
 ╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝`
 
-// ANSI escapes. Emitted only when the writer is a terminal, so a piped log never
-// contains them.
-const (
-	colReset = "\033[0m"
-	colBold  = "\033[1m"
-	colDim   = "\033[2m"
-	colCyan  = "\033[36m"
+// The TTY test and the colour wrap live in internal/term, shared with the dashboard
+// and the miner CLI so the "decorate for a human, stay plain for a pipe" rule has one
+// implementation rather than three copies that drift. These aliases keep the call
+// sites here unchanged.
+var (
+	isTTY = term.IsTTY
+	paint = term.Paint
 )
 
-// isTTY reports whether f is an interactive terminal.
-//
-// It uses os.FileMode and nothing else, so no dependency is added for this. The
-// check is ModeCharDevice: a pipe or a redirected file is not a character device.
-func isTTY(f *os.File) bool {
-	if f == nil {
-		return false
-	}
-	info, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeCharDevice != 0
-}
+const (
+	colReset = term.Reset
+	colBold  = term.Bold
+	colDim   = term.Dim
+	colCyan  = term.Cyan
+)
 
 // counts is the node's store summary, shared by the banner and `report`.
 type counts struct {
@@ -84,17 +77,6 @@ func snapshot(db *sqlite.DB) counts {
 		observations: sqlite.NewObservationStore(db).Count(),
 		tasks:        sqlite.NewTaskStore(db).Count(),
 	}
-}
-
-// paint wraps s in an escape when colour is on.
-//
-// Every coloured write goes through here, so there is one place that decides whether
-// escapes are emitted, and no path can leak them into a piped log.
-func paint(s, colour string, colourOn bool) string {
-	if !colourOn {
-		return s
-	}
-	return colour + s + colReset
 }
 
 // printBanner writes the human-facing banner.
