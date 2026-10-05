@@ -42,9 +42,16 @@ Usage:
   relayfirst-dashboard [flags]
 
 Flags:
-  --url <url>        Node to observe (default http://localhost:8080)
+  --url <url>        Node to observe. Default: http://localhost:8080, which is
+                     where a node listening on its own default :8080 is reachable.
+                     Point it elsewhere for a node on another port or another host:
+                       --url http://localhost:9000
+                       --url https://relay.example.com
   --interval <dur>   Poll interval (default 1.5s)
   --version          Print the version
+
+Nothing is required when the node runs locally on its defaults: run the node with
+` + "`relayfirst-node`" + ` and this with no flags.
 
 It reads only the node's public endpoints and never controls it. A node runs
 headless; this is the thing you open in ANOTHER terminal to watch it.
