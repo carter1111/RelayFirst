@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -267,5 +270,79 @@ func TestRepeatedFlagsCoverEveryRepeatableFlag(t *testing.T) {
 			t.Errorf("%q is documented as repeatable but is missing from repeatableFlags; "+
 				"passing it twice would silently keep only the last value", name)
 		}
+	}
+}
+
+// TestFirstScreen_IsInteractiveOnly pins the rule the node's banner follows too: the
+// branded first screen appears on a terminal, and a piped invocation keeps the exact
+// usage text a script or a `| grep` expects.
+func TestFirstScreen_IsInteractiveOnly(t *testing.T) {
+	// Capture what the no-argument path prints with os.Stdout on a pipe.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	runErr := run(nil)
+	_ = w.Close()
+	os.Stdout = old
+	if runErr != nil {
+		t.Fatalf("run(nil): %v", runErr)
+	}
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	_ = r.Close()
+	out := buf.String()
+
+	// A pipe is not a terminal, so this must be the usage text, with no logo art.
+	if !strings.Contains(out, "Usage:") {
+		t.Errorf("a piped no-arg run must print usage, got:\n%s", out)
+	}
+	if strings.Contains(out, "██████") {
+		t.Errorf("a piped run must not print the logo, got:\n%s", out)
+	}
+	if strings.Contains(out, "\033") {
+		t.Errorf("a piped run must contain no ANSI escapes, got:\n%s", out)
+	}
+}
+
+// TestStatus_NonTTYStaysJSON is the freeze that matters most for status: scripts and the
+// docs read this JSON, so a piped run must keep it and carry no decoration.
+func TestStatus_NonTTYStaysJSON(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "s.db")
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	runErr := runStatus([]string{"--db", dbPath})
+	_ = w.Close()
+	os.Stdout = old
+	if runErr != nil {
+		t.Fatalf("status: %v", runErr)
+	}
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	_ = r.Close()
+	out := buf.String()
+
+	// Valid JSON, the fields the docs name, and no ANSI.
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("a piped status must be JSON, got:\n%s\nerr: %v", out, err)
+	}
+	for _, k := range []string{"epoch", "receipts", "distinctArtifacts", "totalPoints", "note"} {
+		if _, ok := decoded[k]; !ok {
+			t.Errorf("status JSON must keep the %q field", k)
+		}
+	}
+	if strings.Contains(out, "\033") {
+		t.Errorf("a piped status must contain no ANSI escapes, got:\n%s", out)
 	}
 }

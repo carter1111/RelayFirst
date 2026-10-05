@@ -35,6 +35,7 @@ import (
 	"github.com/relayfirst/relayfirst/internal/scoring"
 	"github.com/relayfirst/relayfirst/internal/sqlite"
 	"github.com/relayfirst/relayfirst/internal/store"
+	"github.com/relayfirst/relayfirst/internal/term"
 	"github.com/relayfirst/relayfirst/internal/verification"
 )
 
@@ -139,9 +140,48 @@ func main() {
 	}
 }
 
+// printFirstScreen is the interactive first screen: a wordmark and the three-step
+// start.
+//
+// It exists because acceptance criterion ① is "a STRANGER produces points in ten
+// minutes" — a stranger is a person, and a wall of usage text is a worse first screen
+// than a short, obvious path. The non-interactive path is untouched: a script gets the
+// same usage text it always did.
+func printFirstScreen() {
+	bold := func(s string) string { return term.Paint(s, term.Bold, true) }
+	dim := func(s string) string { return term.Paint(s, term.Dim, true) }
+	cyan := func(s string) string { return term.Paint(s, term.Cyan, true) }
+
+	fmt.Println()
+	fmt.Println(cyan(logo))
+	fmt.Printf("  %s\n\n", dim("Proof of Agent Work — prove your agent did real work, earn non-transferable points"))
+	fmt.Printf("  %s\n", bold("Start in three steps"))
+	fmt.Printf("    1. %s\n", dim("export RELAYFIRST_PRIVATE_KEY=0x…   # any 32-byte key you own"))
+	fmt.Printf("    2. %s\n", dim("relayfirst config set source https://example.com"))
+	fmt.Printf("    3. %s\n", dim("relayfirst mine"))
+	fmt.Printf("\n  %s\n", dim("points are non-transferable, unpriced, and carry no promised return (MVP.md §6.1)"))
+	fmt.Printf("  %s\n\n", dim("run `relayfirst --help` for every command"))
+}
+
+// logo is the CLI wordmark, shared in shape with the node's banner.
+const logo = `██████╗ ███████╗██╗      █████╗ ██╗   ██╗
+██╔══██╗██╔════╝██║     ██╔══██╗╚██╗ ██╔╝
+██████╔╝█████╗  ██║     ███████║ ╚████╔╝
+██╔══██╗██╔══╝  ██║     ██╔══██║  ╚██╔╝
+██║  ██║███████╗███████╗██║  ██║   ██║
+╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝`
+
 func run(args []string) error {
 	if len(args) == 0 {
-		fmt.Print(usage)
+		// With no arguments the CLI is a human reading the first screen. On a terminal
+		// that is a branded intro with the three-step start; piped, it stays the exact
+		// usage text it has always been, because a script or a `| grep` must not suddenly
+		// receive logo art. Same rule as the node's banner (internal/term).
+		if term.IsTTY(os.Stdout) {
+			printFirstScreen()
+		} else {
+			fmt.Print(usage)
+		}
 		return nil
 	}
 
@@ -958,6 +998,20 @@ func runConfig(args []string) error {
 
 // ---------------------------------------------------------------- status
 
+// agentOut is one agent's line in the status report.
+//
+// A distinct-artifact count is global by construction (invariant A6), so it is reported
+// once rather than per agent; this is the per-agent half.
+type agentOut struct {
+	AgentID        string  `json:"agentId"`
+	Epoch          uint64  `json:"epoch"`
+	PointsLifetime float64 `json:"pointsLifetime"`
+	PointsEpoch    float64 `json:"pointsThisEpoch"`
+	Receipts       int     `json:"receipts"`
+	Credited       int     `json:"creditedReceipts"`
+	Anchors        int     `json:"anchors"`
+}
+
 // runStatus reports the user's contribution in one place.
 //
 // MVP.md §1.1 describes the target user as a mercenary: they want to know what they
@@ -1017,18 +1071,6 @@ func runStatus(args []string) error {
 		s.Credited = countCredits(ledgers.Points.Entries(), agent)
 	}
 
-	// A distinct-artifact count is global by construction (invariant A6), so it is
-	// reported once rather than per agent.
-	type agentOut struct {
-		AgentID        string  `json:"agentId"`
-		Epoch          uint64  `json:"epoch"`
-		PointsLifetime float64 `json:"pointsLifetime"`
-		PointsEpoch    float64 `json:"pointsThisEpoch"`
-		Receipts       int     `json:"receipts"`
-		Credited       int     `json:"creditedReceipts"`
-		Anchors        int     `json:"anchors"`
-	}
-
 	epoch := scoring.EpochOf(time.Now())
 	out := map[string]any{
 		"epoch":             epoch,
@@ -1073,7 +1115,54 @@ func runStatus(args []string) error {
 		out["next"] = advices
 	}
 
+	// On a terminal, render a readable dashboard; piped, emit the JSON that scripts and
+	// the docs already depend on. The JSON object above is the SAME data either way — the
+	// human view is a rendering of it, never a second query, so the two cannot disagree.
+	if term.IsTTY(os.Stdout) {
+		printStatusDashboard(out, agents, advices)
+		return nil
+	}
 	return printJSON(out)
+}
+
+// printStatusDashboard renders `status` for a human.
+//
+// It reads from the same `out` map that the JSON path emits, so a field can never
+// appear in one and not the other. Colour is used for the numbers a miner looks at.
+func printStatusDashboard(out map[string]any, agents []agentOut, advices []string) {
+	bold := func(s string) string { return term.Paint(s, term.Bold, true) }
+	dim := func(s string) string { return term.Paint(s, term.Dim, true) }
+	cyan := func(s string) string { return term.Paint(s, term.Cyan, true) }
+
+	epoch, _ := out["epoch"].(uint64)
+	receipts, _ := out["receipts"].(int)
+	artifacts, _ := out["distinctArtifacts"].(int)
+	total, _ := out["totalPoints"].(float64)
+
+	fmt.Printf("\n  %s\n\n", bold("RelayFirst — status"))
+	fmt.Printf("  %-16s %s   %s\n", bold("epoch"), cyan(fmt.Sprint(epoch)),
+		dim("ends "+fmt.Sprint(out["epochEndsAt"])))
+	fmt.Printf("  %-16s %d\n", bold("receipts"), receipts)
+	fmt.Printf("  %-16s %d\n", bold("distinct artifacts"), artifacts)
+	fmt.Printf("  %-16s %s\n\n", bold("total points"), cyan(fmt.Sprintf("%.4f", total)))
+
+	if len(agents) == 0 {
+		fmt.Printf("  %s\n\n", dim("no receipts yet — run `relayfirst mine --once --source https://example.com`"))
+	} else {
+		fmt.Printf("  %s\n", bold("by agent"))
+		for _, a := range agents {
+			fmt.Printf("    %s\n", shortID(a.AgentID))
+			fmt.Printf("      points  %s lifetime · %s this epoch\n",
+				cyan(fmt.Sprintf("%.4f", a.PointsLifetime)), fmt.Sprintf("%.4f", a.PointsEpoch))
+			fmt.Printf("      work    %d receipt(s), %d credited, %d anchored\n", a.Receipts, a.Credited, a.Anchors)
+		}
+		fmt.Println()
+	}
+
+	for _, adv := range advices {
+		fmt.Printf("  %s %s\n", term.Paint("next:", term.Yellow, true), adv)
+	}
+	fmt.Printf("\n  %s\n\n", dim("points are non-transferable, unpriced, and carry no promised return (MVP.md §6.1)"))
 }
 
 // epochEndsAt reports when the current epoch ends, so a miner knows when their

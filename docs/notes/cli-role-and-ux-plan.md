@@ -179,14 +179,14 @@ stdout 不是终端 →  机器可读（JSON，字节稳定）——今天的输
 
 ### 6.6 任务分解
 
-| id | 任务 | 依赖 | 验收 |
+| id | 任务 | 依赖 | 状态 |
 |---|---|---|---|
-| **UX1b-1** | `internal/term`（IsTTY/Paint/Live）+ 节点迁移到它 | — | 节点行为不变（现有测试）；导入图门禁仍过 |
-| **UX1b-2** | `relayfirst` 首屏（TTY logo + 三步；非 TTY usage 不变） | UX1b-1 | 非 TTY 输出逐字节等于今天 |
-| **UX1b-3** | `relayfirst status` TTY 仪表盘 | UX1b-1 | 非 TTY JSON 键/序不变（测试锁定） |
-| **UX1b-4** | `relayfirst mine` 首启 banner | UX1b-1 | 非 TTY 启动输出不变 |
-| **UX1b-5** | `relayfirst mine` 单行原地刷新（TTY） | UX1b-4 | 非 TTY 仍每轮一行；TTY 不滚屏 |
-| **UX1b-6** | 冻结回归测试：对冻结清单逐个断言"非 TTY == 今天" | UX1b-2..5 | 任一冻结项被装饰污染 → FAIL |
+| **UX1b-1** | `internal/term`（IsTTY/Paint）+ 节点迁移到它 | — | ✅ **done** —— `internal/term`；节点另借用它；TUI 侧复用 |
+| **UX1b-2** | `relayfirst` 首屏（TTY logo + 三步；非 TTY usage 不变） | UX1b-1 | ✅ **done** —— TTY 打 logo + 三步起步；**管道仍是原 usage**（`TestFirstScreen_IsInteractiveOnly` 锁定：无 logo、无 ANSI、含 `Usage:`） |
+| **UX1b-3** | `relayfirst status` TTY 仪表盘 | UX1b-1 | ✅ **done** —— TTY 彩色仪表盘（epoch/receipts/artifacts/points + **每 agent 明细**）；**非 TTY 保持 JSON**（`TestStatus_NonTTYStaysJSON` 锁定：合法 JSON、字段齐全、无 ANSI）。**同一份 `out` 数据渲染，两路不会分歧** |
+| **UX1b-4** | `relayfirst mine` 首启 banner | UX1b-1 | ⬜ todo |
+| **UX1b-5** | `relayfirst mine` 单行原地刷新（TTY） | UX1b-4 | ⬜ todo |
+| **UX1b-6** | 冻结回归测试：对冻结清单逐个断言"非 TTY == 今天" | UX1b-2..5 | 🔸 部分（first screen / status 已锁定） |
 
 ### 6.7 依赖与"不做"
 
