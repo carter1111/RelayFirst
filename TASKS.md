@@ -6,8 +6,9 @@
 >
 > 状态机：`todo → in-progress → done → verified`（受阻则 `blocked`）。
 >
-> 状态：**S1–S8 代码已实现**（423 Go 测试通过、15 Solidity 测试、10 道 CI 门禁）。**非 git repo。**
-> 上线仍受阻于 BLK-1 / BLK-2 / BLK-3 / BLK-4 与三项人工动作（见 §1 与各阶段报告）。
+> 状态：**S1–S13 代码已实现**（**841** 项 Go 顶层测试、**41** 项 Solidity 测试、14 道 CI 门禁）。
+> **已是 git repo**（branch `main`）。
+> 上线仍受阻于 **BLK-1 / BLK-2 / BLK-3**（BLK-4 上线前定稿即可）与三项人工动作（见 §1 与各阶段报告）。
 
 ---
 
