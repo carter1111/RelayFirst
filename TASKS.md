@@ -782,6 +782,31 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 **⚠️ 仍然不做（易被误读为"已移入"）：** 全局共识 / 全网 canonical DB（**NET-2**）、
 跨 relay 全序（**NET-3**）、官方中心目录（**NET-1**）。这三条是**网络不变式**，不是"尚未实现的功能"。
 
+### 11.1 已知缺口登记（Roadmap 项，**永不进本表**）
+
+> **登记而非排期。** 这些属 `ARCHITECTURE.md` Phase 7（L4）。**在这里登记的唯一目的**是：
+> 别再被反复"重新发现"。**开工前必须先改 `MVP.md`（范围变化，`AGENTS.md §5.1`）。**
+>
+> 完整分析：[`docs/notes/decentralization-gap.md`](docs/notes/decentralization-gap.md)
+> （缺口 G1–G5）。Explorer 设计：[`docs/notes/explorer-indexer-plan.md`](docs/notes/explorer-indexer-plan.md)。
+
+| id | 缺口 | 类别 | 现状 | 依据 |
+|---|---|---|---|---|
+| **GAP-G1** | 发现层 **L2：多 Indexer 生态** | 去中心化 | ❌ 无 indexer 二进制；节点自带 `GET /agents` 是单节点便利 | §17.2 |
+| **GAP-G2** | relay **查询 filter**（`since`/`until`/`kinds`） | 去中心化 | ❌ `ByAgent` 仅 `limit`；客户端无法增量轮询 | §17 前置 |
+| **GAP-G3** | **`cardHash` EVM anchor**（§17.3，**自述"可选"**） | 去中心化 | ❌ 无 registry 合约（`RelayAnchor` 锚的是回执 root） | §17.3 |
+| **GAP-G4** | **联邦 / 跨 relay 路由** | 去中心化 | ❌ 节点间无路由 | Phase 7 |
+| **GAP-G5** | **可用性复制 / anti-entropy** | 去中心化 | ❌ 无节点间复制（仅客户端 failover） | Phase 7 |
+| **GAP-O1** | 反滥用（rate limit / hashcash） | **operator 事务**（Nostr 亦不做） | ❌ 但有 `MaxPayloadBytes` 上限 | §18 |
+| **GAP-O2** | 镜像 / 复制策略 | **operator 事务** | ❌ 自愿行为 | — |
+| **GAP-O3** | 存储无上界 / 无 pruning | **operator 事务** | ⚠️ 拉取非破坏性（✅），但无 TTL → 磁盘无限增长 | — |
+| **GAP-O4** | TLS | **operator 事务** | ⚠️ 仅 HTTP，需反代 | — |
+
+**"Explorer"** 是 **G1 的产品化形态**（+ UI），**不是新缺口**：设计见 `explorer-indexer-plan.md`。
+
+**发布动作（非缺口，登记备查）**：`relayfirst` / `relayfirst-mcp` 未发 npm；`relayfirst/node` 未发 registry。
+见 [`docs/notes/remaining-actions.md`](docs/notes/remaining-actions.md) C 节。
+
 ---
 
 ## 12. 里程碑

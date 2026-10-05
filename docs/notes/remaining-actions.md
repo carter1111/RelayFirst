@@ -38,12 +38,37 @@
 
 ## C. 需要【发布动作】的（一次性命令，但要有凭据）
 
+### C1. npm —— **只发两个用户工具，不发节点**
+
+| 物 | 目的 | 现状 |
+|---|---|---|
+| `relayfirst` CLI | `npx relayfirst …` 零安装挖矿/验证 | **未发布**（S6-7） |
+| `relayfirst-mcp` | IDE 一行配置（MCP stdio） | **未发布** |
+| ~~`relayfirst-node`~~ | **刻意不发 npm** | 它是**长驻服务**：npm/npx 适合按需启动的 CLI/MCP（stdio），不适合守护进程 + 持久卷。**节点用 Docker** |
+
+**⚠️ 发布前必须先修的 4 个阻塞项（实测）**：
+
+| # | 阻塞 | 证据 | 后果 |
+|---|---|---|---|
+| 1 | `package.json` 是 `"private": true` | `package.json:3` | **根本发不出去** |
+| 2 | `bin/*` 被 **gitignore** | `git check-ignore bin/relayfirst` 命中 | 干净检出后 `npm publish` **不包含二进制** → wrapper **静默回退到 `go build`** → "零安装"变成**需要 Go 工具链** |
+| 3 | tarball 里**只有 `bin/relayfirst`，没有 `bin/relayfirst-mcp`** | `npm pack --dry-run`（总 5 文件） | `npx relayfirst-mcp` 同样回退到 `go build` |
+| 4 | 版本仍是 `0.4.0` | `package.json` | 与当前状态不符 |
+
+**单平台问题**：一个 tarball 里塞的是**本机架构**的二进制。要真正做到"零安装"，
+需要**多平台二进制**（或 `postinstall` 下载对应平台）。**未决**。
+
+> 相关代码：`scripts/npx-relayfirst.mjs` / `scripts/npx-relayfirst-mcp.mjs`（**启动器，不是重实现** ——
+> 委托给 Go 二进制，避免 EIP-712 双实现漂移，不变量 A4）。
+> 发布后，`docs/notes/mcp-setup.md` 里"本地二进制回退"那段可删。
+
+### C2. Docker
+
 | 物 | 到哪 | 现状 |
 |---|---|---|
-| `relayfirst` + `relayfirst-mcp` → npm | `npm publish` | `package.json` `bin` 就位，**未发布**（S6-7） |
 | `relayfirst/node` → registry | `docker push` | `Dockerfile` 就位、实测 build/run 成功，**未发布**（P1 #6） |
 
-> 一旦发布，`docs/notes/mcp-setup.md` 里"本地二进制回退"那段可删。
+> **节点只有 Docker 这一条分发路径**，这是设计选择（见 C1 的 node 一行）。
 
 ---
 
