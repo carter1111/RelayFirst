@@ -64,12 +64,12 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/sqlite-write-path.md`](docs/notes/sqlite-write-path.md) | — | **笔记** | SQLite 写路径：Phase 1 度量（基线 + 第 14 道门禁）；含对 A6 因果的修正线索 | 进行中（Phase 2 未开工） |
 | [`docs/notes/s9-0-security-review.md`](docs/notes/s9-0-security-review.md) | 200 | **安全审查** | **S9-0 版本化地基的对抗审查**：4 个发布前阻断项（B1–B4）+ H1–H2 + M1–M3 + L1–L3，含攻击路径与修法 | 阻断项修复后 |
 | [`docs/notes/upgrade-architecture-plan.md`](docs/notes/upgrade-architecture-plan.md) | 651 | **笔记** | **MVP 2.0 → 全架构升级方案**：反分叉版本化（A9 论证）、升级顺序、库采用表、风险登记册 | 版本化地基（S9-0）落地后 |
-| [`docs/notes/blk-2-first-consumer-plan.md`](docs/notes/blk-2-first-consumer-plan.md) | 200 | **行动方案** | **BLK-2：找第一个真实消费方**（价格/可达性 → 交易机器人）—— 买家画像 / demo 形态 / 首封信 / 反自我欺骗判据 / 8 周时间盒 | 拿到第一个使用者后 |
+| [`docs/gtm/blk-2-first-consumer-plan.md`](docs/gtm/blk-2-first-consumer-plan.md) | 200 | **行动方案**（→ gtm） | **BLK-2：找第一个真实消费方**（价格/可达性 → 交易机器人）—— 买家画像 / demo 形态 / 首封信 / 反自我欺骗判据 / 8 周时间盒 | 拿到第一个使用者后 |
+| [`docs/gtm/messaging-engine-vision.md`](docs/gtm/messaging-engine-vision.md) | — | **愿景**（→ gtm） | RelayFirst 作为通用去中心化消息引擎的定位、缺口与对接 | 方向变化时 |
+| [`docs/gtm/gtm-narrative.md`](docs/gtm/gtm-narrative.md) | — | **叙事**（→ gtm） | GTM 叙事手册（"讲尖不讲大"）——讲什么见 messaging-engine-vision | 叙事调整时 |
 | [`docs/notes/emission-model-conflict.md`](docs/notes/emission-model-conflict.md) | — | **笔记** | **计分公式（§5.3）与 epoch 发行模型（§6.2）互相矛盾**——需人裁决 | 用户裁决后 |
 | [`docs/notes/blk-1-verification-plan.md`](docs/notes/blk-1-verification-plan.md) | — | **规划**（→ planning） | **BLK-1 核实计划**：订阅能否程序化驱动；一周内给书面 yes/no | 结论出来后 |
 | [`docs/notes/s13-e2ee-plan.md`](docs/notes/s13-e2ee-plan.md) | — | **记录**（S13 已实现） | **S13 完整方案**（E2EE + 密钥层级）：论证过程，已落地 | S13 变更时 |
-| [`docs/notes/messaging-engine-vision.md`](docs/notes/messaging-engine-vision.md) | — | **愿景** | RelayFirst 作为通用去中心化消息引擎的定位、缺口与对接 | 方向变化时 |
-| [`docs/notes/gtm-narrative.md`](docs/notes/gtm-narrative.md) | — | **叙事** | GTM 叙事手册（"讲尖不讲大"）——讲什么见 messaging-engine-vision | 叙事调整时 |
 | [`docs/notes/wukongim-tech-advantages.md`](docs/notes/wukongim-tech-advantages.md) | — | **笔记** | WuKongIM 技术优势（供借鉴；benchmark 门禁与批量事务已取用） | 不再更新 |
 | [`docs/notes/delegation-quickstart.md`](docs/notes/delegation-quickstart.md) | — | **指南** | **Session Delegation 操作指南**：`session grant`（owner 签发）/ `session verify`（消费方授权）/ nonce 撤销 / 常见错误。**回执永不可委派**是硬边界 | 委托命令 / scope 集合变化时 |
 | [`docs/notes/mcp-setup.md`](docs/notes/mcp-setup.md) | — | **指南** | **MCP 接入指南（S12-7）**：Cursor / Claude Desktop 一行配置、5 个工具、`RELAYFIRST_RELAY`、"结构上不能签名"的导入图证明、诚实边界 | MCP 工具集 / 配置格式变化时 |
@@ -170,8 +170,10 @@ RelayFirst/
     ├── stages/
     │   └── S<N>-report.md        ← 阶段验收报告
     ├── requirements.md           ← 需求汇总索引（派生自 MVP.md）
-    └── notes/
-        └── <topic>.md            ← 调研、实验记录
+    ├── notes/
+    │   └── <topic>.md            ← 调研、实验、规划记录
+    └── gtm/
+        └── <topic>.md            ← 愿景 / 叙事 / 市场（非工程）
 ```
 
 ### 4.3 命名规范

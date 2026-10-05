@@ -24,7 +24,7 @@
 | [`terminal-experience-plan.md`](terminal-experience-plan.md) | 节点 logo/banner/report 设计 | 节点体验 |
 | [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md) | `relayfirst` 定位与品牌层 | 矿工 UX |
 | [`node-incentives-discussion.md`](node-incentives-discussion.md) | 节点动机（BLK-5）选项 | 为何安节点 |
-| [`blk-2-first-consumer-plan.md`](blk-2-first-consumer-plan.md) | BLK-2 首个消费方行动方案 | 上线硬前置 |
+| [`../gtm/blk-2-first-consumer-plan.md`](../gtm/blk-2-first-consumer-plan.md) | BLK-2 首个消费方行动方案 | 上线硬前置 |
 | [`blk-3-assignment-policy.md`](blk-3-assignment-policy.md) | BLK-3 指派策略（已裁决 A） | 验证者指派 |
 | [`blk-4-genesis-decision.md`](blk-4-genesis-decision.md) | BLK-4 genesis 日期（已裁决 A） | 发布日 |
 | [`mcp-setup.md`](mcp-setup.md) | MCP 接入（已实现，属参考） | IDE 接入 |
@@ -52,7 +52,7 @@
 | 项 | 为什么我做不了 | 入口 |
 |---|---|---|
 | **BLK-1** 订阅可程序化驱动？ | 需真实账号/订阅核实 | `TASKS.md` §1 |
-| **BLK-2** 第一个真实消费方 | 需**人去接洽** | [`blk-2-first-consumer-plan.md`](blk-2-first-consumer-plan.md)（画像/首封信/8 周时间盒） |
+| **BLK-2** 第一个真实消费方 | 需**人去接洽** | [`../gtm/blk-2-first-consumer-plan.md`](../gtm/blk-2-first-consumer-plan.md)（画像/首封信/8 周时间盒） |
 | **判据 ①** 陌生人 10 分钟出分 | 定义就是**真人计时** | `TASKS.md` S6-8 / S8-1 |
 | **判据 ③** 陌生人一条命令起节点 | 代码层已过（Dockerfile 实测）；**镜像未发 + 计时未做** | 见 C |
 | **判据 ⑨** SBT 钱包可见 | 需**链上部署** + 真实钱包 | `contracts/` + `docs/stages/S7-report.md` |

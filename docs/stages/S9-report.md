@@ -149,7 +149,7 @@ S9-0 是**地基**。S9 仍有大块未动：
 
 **外加两个非代码前置条件（不阻塞 S9 代码，但是上线前置）：**
 
-- **BLK-2** 首个真实消费方 —— `docs/notes/blk-2-first-consumer-plan.md` 已就绪，**待外部接洽**。
+- **BLK-2** 首个真实消费方 —— `docs/gtm/blk-2-first-consumer-plan.md` 已就绪，**待外部接洽**。
 - **BLK-1** 订阅可否程序化驱动 —— 需外部核实。
 
 **建议顺序：** S9-7（`verification` 字段，改动小、解除 A2 约束）→ S9-1（wire 层，接通 `internal/a2a`）

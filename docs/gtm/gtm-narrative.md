@@ -1,7 +1,7 @@
 # RelayFirst GTM 叙事手册：从 5 分到 9 分
 
 日期：2026-10-04
-定位：本文件管怎么讲。讲什么见 docs/notes/messaging-engine-vision.md。
+定位：本文件管怎么讲。讲什么见 `messaging-engine-vision.md`（同目录）。
 
 ## 1. 核心原则：讲尖不讲大
 

@@ -35,7 +35,7 @@
 | id | 问题 | 为什么阻塞 | 状态 | 影响 |
 |---|---|---|---|---|
 | **BLK-1** | **agent 订阅能否程序化驱动？** | 决定叙事成立与否。若不能，产品退化为"再买一份 API key 来挖矿" | ⬜ **todo（最高优先级）** | 整套 §10.1 叙事 |
-| **BLK-2** | 第一个真实消费方是谁？ | 上线**硬性前置条件**（`MVP.md` §10.3） | 🟡 **行动方案已就绪** — 见 [`docs/notes/blk-2-first-consumer-plan.md`](docs/notes/blk-2-first-consumer-plan.md)（价格/可达性 → 交易机器人；含买家画像/demo/首封信/8 周时间盒）。**接洽属人工动作，未开始** | 上线许可 |
+| **BLK-2** | 第一个真实消费方是谁？ | 上线**硬性前置条件**（`MVP.md` §10.3） | 🟡 **行动方案已就绪** — 见 [`docs/gtm/blk-2-first-consumer-plan.md`](docs/gtm/blk-2-first-consumer-plan.md)（价格/可达性 → 交易机器人；含买家画像/demo/首封信/8 周时间盒）。**接洽属人工动作，未开始** | 上线许可 |
 | **BLK-3** | 验证者指派策略（随机种子 / 防串谋） | S4 实现前必须定 | 🟢 **✅ 已裁决（2026-10-05）：取 A —— 确定性种子**（现参考实现 `EligiblePolicy`）。**机制零改动**。决策包：[`docs/notes/blk-3-assignment-policy.md`](docs/notes/blk-3-assignment-policy.md)。**剩余为部署配置**（候选集 + seed 来源 + 自动路径不用 `AllowAll`），非代码 | 验证者指派 |
 | **BLK-4** | **epoch 起点取哪个日期？** | epoch 号在**签名载荷**内，公布后不可改；改则旧回执全部失效 | 🟢 **✅ 已裁决（2026-10-05）：A —— genesis = 公开发布日 00:00 UTC**。**⏳ 仅缺"具体是哪天"**（业务日期，待给）。**已加防呆**：`-tags mainnet` 构建在 genesis 仍为占位符时**启动 panic**（`internal/epoch/release*.go`），占位符**不可能误带上线**。决策包：[`docs/notes/blk-4-genesis-decision.md`](docs/notes/blk-4-genesis-decision.md) | 开放真实挖矿前 |
 | **BLK-5** | **节点的动机是什么？**（现状无回报；A7 禁止节点排放） | 决定网络能不能起量；"为什么安节点"若答不上，网络是空的 | 🗣️ **待裁决** —— 讨论档：[`docs/notes/node-incentives-discussion.md`](docs/notes/node-incentives-discussion.md)（三问：Q1 无激励 / Q2 声誉榜 / Q3 运维费）。**推荐 Q1 保持无激励**（与 A7/Nostr 一致） | 网络采用 |
