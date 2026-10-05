@@ -2,9 +2,10 @@
 
 > **状态：节点部分【已实现】（2026-10-06）** —— 见 §7。CLI 部分仍规划中。
 >
-> 实现：`cmd/relayfirst-node/banner.go`（logo + banner + `--report`）+ `banner_test.go`。
-> **实测**：TTY 下打 logo/颜色；`--report > file` 与管道**零 ANSI**（测试锁定）；节点非 TTY 启动
-> **仍是单行结构化日志**。
+> 实现：`cmd/relayfirst-node/banner.go`（logo + banner + **子命令 `report`/`status`/`inspect`**）
+> + `banner_test.go` / `subcommands_test.go`。
+> **实测**：TTY 下打 logo/颜色；`report > file` 与管道**零 ANSI**；非 TTY 启动**仍是单行结构化日志**；
+> **无子命令路径不变**（`--listen …` 照旧）。
 >
 > 相关：`TASKS.md` §11.2（UX-1 / PKG-*）、`MVP.md` §1 原则②（叙事 > 协议完整性）、
 > `ADR-0005`（CLI 手写风格）。
@@ -155,20 +156,49 @@ $ relayfirst-node report --storage ./relayfirst-node.db
 
 ## 7. 实现记录（2026-10-06）
 
+### 命令形状：**子命令**（用户 2026-10-06 定案）
+
+**无子命令时行为不变**（向后兼容）：第一个参数以 `-` 开头 → 走 serve 的 flag 集；
+**否则**才当子命令。这一条由 `TestRun_LeadingFlagIsNotASubcommand` 钉住。
+
+```
+relayfirst-node                 [flags]  跑服务（默认，未变）
+relayfirst-node report          [flags]  离线摘要（读 DB；不占端口）
+relayfirst-node status          [flags]  在线检查（HTTP 打一个运行中的节点）
+relayfirst-node inspect <what>  [flags]  离线列内容：agents/tasks/observations/messages/db
+```
+
+**为什么分三个**（而不是一个 `--report` flag）：
+
+| 命令 | 回答的问题 | 数据来源 |
+|---|---|---|
+| `report` | 它**存了什么** | 读 SQLite 文件（节点不必在跑） |
+| `status` | 它**活着吗 / 现在什么样** | HTTP `/healthz` + `/.well-known/relayfirst` |
+| `inspect <what>` | **具体内容**是什么 | 读 SQLite（agents/tasks/observations/messages/db） |
+
+把"存了什么"和"活着吗"折成一个命令，答案就得**依赖节点恰好在不在跑** —— 所以是三个。
+
+**`inspect` 输出 JSON**（不是表格）：与节点 HTTP 端点同构，**可管道、无 ANSI**。
+注意：`inspect messages` **故意不打印 payload**（不透明且可能很大），只报存在与大小。
+
 | 项 | 位置 | 证据 |
 |---|---|---|
 | logo + 启动 banner（TTY） | `cmd/relayfirst-node/banner.go` `printBanner` | pty 下实测渲染 |
-| `--report`（一次性、不占端口） | 同上 `printReport` + `main.go` | `--report --storage x.db` 打印计数并退出 |
+| `report` 子命令 | 同上 `runReport` / `printReport` | 实测打印计数并退出，不占端口 |
+| `status` 子命令 | 同上 `runStatus` | 实测活节点返回 health+well-known；死节点**报错非静默** |
+| `inspect` 子命令 | 同上 `runInspect` | 实测 tasks/db 打印 JSON；缺 --agent/--subject 报错 |
 | TTY 分支 | `isTTY`（`os.ModeCharDevice`，**零新依赖**） | `TestIsTTY_FalseForAPipe` |
-| 管道/重定向**零 ANSI** | `printReport` 判 **stdout** | `TestReportToAPipeHasNoANSI`（实测 `> file` 与管道均 0 个 `\033`） |
+| 管道/重定向**零 ANSI** | `printReport` 判 **stdout** | `TestReportToAPipeHasNoANSI`（`> file` 与管道均 0 个 `\033`） |
 | 非 TTY 启动**字节不变** | banner 只在 `isTTY(os.Stderr)` 时打 | 管道启动实测仍为单行 slog |
+| 无子命令不误判 | `run()` 的首参判定 | `TestRun_LeadingFlagIsNotASubcommand` |
 
-### 一处**修正**（设计 vs 最初实现）
+### 一处**修正**（过程中发现）
 
-最初把 `--report` 写 stderr、却按 stderr 判色 → `report > file` 时 **stderr 是终端、stdout 是文件**，
-文件里会**混入 ANSI**。已改为：**`--report` 写 stdout、按 stdout 判色**（因为它是**交付物**），
-banner 仍写 stderr。
+`--report`（当时是 flag）曾写 **stderr**、却按 stderr 判色 → `report > file` 时
+**stderr 是终端、stdout 是文件**，文件里**混入 ANSI**。改为：**输出写 stdout、按 stdout 判色**；
+banner 仍写 stderr。此修正随子命令化一起落地。
 
 ### 未做
 
 - `relayfirst`（矿工 CLI）侧的品牌层 —— 见 [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md)（仍规划）
+- 交互菜单（形状 3）：**刻意不做** —— 节点是守护进程，TTY-only 菜单价值低且易误触发

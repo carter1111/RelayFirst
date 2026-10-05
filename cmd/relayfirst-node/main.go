@@ -39,17 +39,39 @@ const version = "0.1.0-s5"
 const usage = `relayfirst-node — thin store-and-forward relay node
 
 Usage:
-  relayfirst-node [flags]
+  relayfirst-node [flags]                 Run the node (default).
+  relayfirst-node report [flags]          One-shot summary of the store; does not
+                                          bind the port, so it is safe to run while
+                                          a node is up.
+  relayfirst-node status [flags]          Check a RUNNING node over HTTP.
+  relayfirst-node inspect <what> [flags]  List what the store holds, offline.
 
-Flags:
+Flags (server, and shared by report/inspect):
   --listen <addr>        Address to listen on (default :8080)
   --storage <path>       SQLite database file (default ./relayfirst-node.db)
   --public-url <url>     URL clients should reach this node at, reported in
                          /.well-known/relayfirst
   --max-payload <bytes>  Largest accepted message (default 1048576)
-  --report               Print a one-shot summary of the store and exit
-                         (does not bind the port, so it is safe while a node runs)
   --version              Print the version
+
+status flags:
+  --url <url>            Node to check (default http://localhost:8080)
+
+inspect <what>:
+  agents                 Agent cards in the directory
+  tasks                  Task board
+  observations           Observations (optionally --subject <url>)
+  messages               Messages for one agent (--agent <agentId>)
+  db                     Database path, size and journal mode
+
+inspect flags:
+  --limit <n>            Cap the rows printed (default 20)
+  --subject <url>        Filter observations by URL
+  --agent <agentId>      Required by inspect messages
+
+A node runs headless: under docker -d, systemd or CI there is no terminal, so the
+banner is only printed when stderr IS a terminal, and every command here works
+without one.
 
 This node does not verify signatures and does not read any chain. It stores what
 it is given and hands it back on request. Receipts are validated on the client
@@ -64,6 +86,21 @@ func main() {
 }
 
 func run(args []string) error {
+	// A leading non-flag word selects a subcommand. Anything else is the server's flag
+	// set, so `relayfirst-node --listen :8080` and a bare `relayfirst-node` are
+	// unchanged -- the subcommands are additive, and an operator's existing command
+	// line and every deployment script keep working.
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		switch args[0] {
+		case "report":
+			return runReport(args[1:])
+		case "status":
+			return runStatus(args[1:])
+		case "inspect":
+			return runInspect(args[1:])
+		}
+	}
+
 	cfg, err := parseFlags(args)
 	// Help was printed; that is a successful exit, not an error.
 	if errors.Is(err, errStop) {
@@ -83,14 +120,6 @@ func run(args []string) error {
 		return err
 	}
 	defer db.Close()
-
-	// `--report` opens the same store and prints a one-shot summary, without binding
-	// the port. An operator can see what a node holds (and confirm the database opens)
-	// without taking the node down.
-	if cfg.report {
-		printReport(cfg, snapshot(db))
-		return nil
-	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
@@ -169,7 +198,6 @@ type config struct {
 	publicURL  string
 	maxPayload int64
 	version    bool
-	report     bool
 }
 
 // parseFlags is a tiny flag parser, matching the miner CLI's style.
@@ -215,8 +243,6 @@ func parseFlags(args []string) (config, error) {
 			cfg.maxPayload = n
 		case "version", "-v":
 			cfg.version = true
-		case "report":
-			cfg.report = true
 		default:
 			return cfg, fmt.Errorf("unknown flag %q", arg)
 		}
