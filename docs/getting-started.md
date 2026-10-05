@@ -181,8 +181,8 @@ That is a deliberate design constraint, not an oversight. See `MVP.md` §6.1.
 
 | You want to… | Read |
 |---|---|
-| understand the scope | [`MVP.md`](MVP.md) |
-| see what is actually done | [`TASKS.md`](TASKS.md) |
-| know the invariants that cannot be broken | [`AGENTS.md`](AGENTS.md) §3 |
+| understand the scope | [`MVP.md`](../MVP.md) |
+| see what is actually done | [`TASKS.md`](../TASKS.md) |
+| know the invariants that cannot be broken | [`AGENTS.md`](../AGENTS.md) §3 |
 | verify a receipt yourself | `relayfirst verify <file>` and `MVP.md` §11② |
 | understand the anti-farming design | `MVP.md` §5, and note the honest caveat in §5.6 |

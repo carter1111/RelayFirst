@@ -106,7 +106,7 @@
 | **事件签名层（`internal/eventsign`）+ 事件生产者（`relayfirst session`）** | ✅（S13-3b/3c；**事件真的被生产了**，这是第 3 次"机制无引用"的收尾） |
 | **委托【签发者】（`relayfirst session grant`）+【消费者】（`relayfirst session verify`）+ 读侧授权（`AuthorizeDerivedScope`）** | ✅（S13-3d）—— 委托**可被签发、可被消费**，`AuthorizeEventWithGrant` **不再零引用**。消费者是**客户端 CLI**（拉 `GET /messages/{agentId}` → 只取 `event` → 逐条授权），**不能放节点**（节点能验签就能伪造，§7.1）。identity 模型定格 **(ii)**：`actor`=session key（签名者），owner 身份随 grant 带外（与 `ARCHITECTURE.md` §4.2 的 `agentId`+`delegationId` 一致），**`eventsign.Verify` 一字未改**。 |
 | **超时边** | 6 条中实现 **4 条**；`RUNNING_HEARTBEAT` / `DISPUTE_TTL` 由 `TimeoutCoverage()` **显式报告为未实现** |
-| **BLK-1 / BLK-2** | 均**未解决**（见 §8）。**BLK-3 / BLK-4** 方向已定、**BLK-5（节点动机）** 待裁决。**上线前一览**见 [`docs/notes/mvp2-launch-readiness.md`](docs/notes/mvp2-launch-readiness.md)；**剩余动作总表**见 [`docs/notes/remaining-actions.md`](docs/notes/remaining-actions.md) |
+| **BLK-1 / BLK-2** | 均**未解决**（见 §8）。**BLK-3 / BLK-4** 方向已定、**BLK-5（节点动机）** 待裁决。**所有未定案规划/决策的唯一入口**见 [`docs/notes/planning.md`](docs/notes/planning.md)（伞文档，向下链接 feature 文档） |
 
 ---
 

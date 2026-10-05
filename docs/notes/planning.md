@@ -1,8 +1,33 @@
-# 剩余动作清单（上线前）
+# Planning（规划伞文档）
 
-> **代码侧自闭环的任务已清空。** 本文把"还没做完的"分成三类，每类写明**谁做**。
+> **这是所有【未定案】规划与决策的唯一入口。** 代码侧自闭环的任务已清空；剩下的都在这儿，
+> 按"谁做"分类，并**向下链接到对应的 feature 文档**。
 >
-> 更新日期：2026-10-05。权威状态在 `TASKS.md`；本文是**行动索引**，不复制状态。
+> **⚠️ 本文件与它下面的 feature 文档，都是【未到 TASKS 阶段】的规划。**
+> 定案前的流程见 [`AGENTS.md` §5.0](../../AGENTS.md)：**Planning → TASKS → Action → 更新**。
+> **未定案的东西不写进 `TASKS.md` 主表。**
+>
+> 更新日期：2026-10-06。**权威状态**在 `TASKS.md`；本文是**规划索引**，不复制状态。
+
+---
+
+## 0. feature 文档（本文是入口，它们是详情）
+
+> **每个 feature = 一份文档**，挂在这里。定案后按 `AGENTS.md §5.0` 进 `TASKS.md`。
+
+| Feature 文档 | 一句话 | 对应问题 |
+|---|---|---|
+| [`mvp2-launch-readiness.md`](mvp2-launch-readiness.md) | **上线前一览**：十条判据 + 六问 | 总览 |
+| [`discovery-plan.md`](discovery-plan.md) | **发现层 G2→G1→G3** 实施计划（solid） | 去中心化 / Explorer |
+| [`explorer-indexer-plan.md`](explorer-indexer-plan.md) | Explorer 架构与红线 | Explorer |
+| [`decentralization-gap.md`](decentralization-gap.md) | 去中心化现状 vs 目标（G1–G5 / O1–O4） | 去中心化 |
+| [`terminal-experience-plan.md`](terminal-experience-plan.md) | 节点 logo/banner/report 设计 | 节点体验 |
+| [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md) | `relayfirst` 定位与品牌层 | 矿工 UX |
+| [`node-incentives-discussion.md`](node-incentives-discussion.md) | 节点动机（BLK-5）选项 | 为何安节点 |
+| [`blk-2-first-consumer-plan.md`](blk-2-first-consumer-plan.md) | BLK-2 首个消费方行动方案 | 上线硬前置 |
+| [`blk-3-assignment-policy.md`](blk-3-assignment-policy.md) | BLK-3 指派策略（已裁决 A） | 验证者指派 |
+| [`blk-4-genesis-decision.md`](blk-4-genesis-decision.md) | BLK-4 genesis 日期（已裁决 A） | 发布日 |
+| [`mcp-setup.md`](mcp-setup.md) | MCP 接入（已实现，属参考） | IDE 接入 |
 
 ---
 

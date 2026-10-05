@@ -70,14 +70,17 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/mcp-setup.md`](docs/notes/mcp-setup.md) | — | **指南** | **MCP 接入指南（S12-7）**：Cursor / Claude Desktop 一行配置、5 个工具、`RELAYFIRST_RELAY`、"结构上不能签名"的导入图证明、诚实边界 | MCP 工具集 / 配置格式变化时 |
 | [`docs/notes/blk-3-assignment-policy.md`](docs/notes/blk-3-assignment-policy.md) | — | **决策包** | **BLK-3 裁决包**：验证者指派策略的 A/B/C/D 候选 + 取舍 + 推荐；机制已就位、零改动 | 策略选定后 |
 | [`docs/notes/blk-4-genesis-decision.md`](docs/notes/blk-4-genesis-decision.md) | — | **决策包** | **BLK-4 裁决包**：epoch 起点候选 + 量化影响表（不可逆，在签名载荷内）；改动 = 一行常量 | 起点日期选定后 |
-| [`docs/notes/remaining-actions.md`](docs/notes/remaining-actions.md) | — | **索引** | **剩余动作清单**：分【你裁决】/【外部人工】/【发布动作】三类，写明谁做 | 每次推进后 |
-| [`docs/notes/decentralization-gap.md`](docs/notes/decentralization-gap.md) | — | **笔记** | **去中心化现状 vs 目标**（目标 = `ARCHITECTURE.md` §1.6 Nostr 式 permissionless）；NET-1..4 已做对照 + **完整缺口清单 G1–G5 / O1–O4**；含范围声明 | 发现层推进后 |
-| [`docs/notes/explorer-indexer-plan.md`](docs/notes/explorer-indexer-plan.md) | — | **规划** | **Indexer / Explorer 功能与架构**（独立组件）：不定义真相的红线、crawler+read model+只读 UI、v0→v2 分层、反模式、依赖 G2/G3 | 开工时 |
-| [`docs/notes/terminal-experience-plan.md`](docs/notes/terminal-experience-plan.md) | — | **规划** | **节点终端体验**：headless-first 约束、TTY 分支（非 TTY 字节不变）、logo、`relayfirst-node report`、必要命令 | 开工时 |
-| [`docs/notes/cli-role-and-ux-plan.md`](docs/notes/cli-role-and-ux-plan.md) | — | **规划** | **`relayfirst` 定位与品牌体验**：既给 agent 也给给人（判据①是"陌生人"）、TTY 分支、`mine`/`status` 设计、依赖取舍、反模式 | 开工时 |
-| [`docs/notes/mvp2-launch-readiness.md`](docs/notes/mvp2-launch-readiness.md) | — | **索引** | **MVP 2.0 上线前 Readiness 一览**：十条判据状态 + 六问（去中心化/explorer/节点/激励/矿工 UX/缺什么） | 每次推进后 |
-| [`docs/notes/discovery-plan.md`](docs/notes/discovery-plan.md) | — | **计划** | **发现层实施计划（G2→G1→G3）**：relay filter 任务分解、Indexer/Explorer 任务分解、顺序与里程碑、开工前置 | 获批进工期时 |
-| [`docs/notes/node-incentives-discussion.md`](docs/notes/node-incentives-discussion.md) | — | **讨论** | **节点经济与动机**：为何安节点、不违反 A7/A5 的选项（V1–V6）、需裁决三问 | 裁决后 |
+| [`docs/notes/planning.md`](docs/notes/planning.md) | — | **规划伞** | **所有未定案规划/决策的唯一入口**（向下链接各 feature 文档）。流程见 `AGENTS.md §5.0` | 每次推进后 |
+> **以下为 Planning 族的 feature 文档，统一挂在 [`planning.md`](docs/notes/planning.md) 下（未定案）。**
+> 流程：`Planning → TASKS → Action → 更新`，见 `AGENTS.md §5.0`。
+
+| [`docs/notes/decentralization-gap.md`](docs/notes/decentralization-gap.md) | — | **规划**（→ planning） | **去中心化现状 vs 目标**（目标 = `ARCHITECTURE.md` §1.6 Nostr 式 permissionless）；NET-1..4 已做对照 + **完整缺口清单 G1–G5 / O1–O4**；含范围声明 | 发现层推进后 |
+| [`docs/notes/explorer-indexer-plan.md`](docs/notes/explorer-indexer-plan.md) | — | **规划**（→ planning） | **Indexer / Explorer 功能与架构**（独立组件）：不定义真相的红线、crawler+read model+只读 UI、v0→v2 分层、反模式、依赖 G2/G3 | 开工时 |
+| [`docs/notes/terminal-experience-plan.md`](docs/notes/terminal-experience-plan.md) | — | **规划**（→ planning） | **节点终端体验**：headless-first 约束、TTY 分支（非 TTY 字节不变）、logo、`relayfirst-node report`、必要命令 | 开工时 |
+| [`docs/notes/cli-role-and-ux-plan.md`](docs/notes/cli-role-and-ux-plan.md) | — | **规划**（→ planning） | **`relayfirst` 定位与品牌体验**：既给 agent 也给给人（判据①是"陌生人"）、TTY 分支、`mine`/`status` 设计、依赖取舍、反模式 | 开工时 |
+| [`docs/notes/mvp2-launch-readiness.md`](docs/notes/mvp2-launch-readiness.md) | — | **规划**（→ planning） | **MVP 2.0 上线前 Readiness 一览**：十条判据状态 + 六问（去中心化/explorer/节点/激励/矿工 UX/缺什么） | 每次推进后 |
+| [`docs/notes/discovery-plan.md`](docs/notes/discovery-plan.md) | — | **规划**（→ planning） | **发现层实施计划（G2→G1→G3）**：relay filter 任务分解、Indexer/Explorer 任务分解、顺序与里程碑、开工前置 | 获批进工期时 |
+| [`docs/notes/node-incentives-discussion.md`](docs/notes/node-incentives-discussion.md) | — | **规划**（→ planning） | **节点经济与动机**：为何安节点、不违反 A7/A5 的选项（V1–V6）、需裁决三问 | 裁决后 |
 | [`docs/mvp-2.0-proposal.md`](docs/mvp-2.0-proposal.md) | 611 | **决策依据** | **MVP 2.0 提案（已 accepted）** —— 论证过程；范围权威在 `MVP.md` v2.0 | 已归档（合并完成） |
 | [`docs/archive/mvp-1.0.md`](docs/archive/mvp-1.0.md) | 884 | **归档** | **MVP 1.0 原文逐字副本**（SHA-256 `259469ad…`）—— 仓库无 git 历史，故显式归档 | 不再更新 |
 | [`docs/decisions/ADR-0001-*.md`](docs/decisions/ADR-0001-eip712-in-house-thin-layer.md) | — | **决策** | EIP-712 用自研薄层而非 `apitypes`（S1-4） | 已 accepted |
