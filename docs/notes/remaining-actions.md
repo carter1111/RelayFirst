@@ -77,12 +77,31 @@
 
 ---
 
-## D. 已闭环（本轮及近期完成，登记备查）
+## D. 规划/优化项（用户 2026-10-06 指示）
+
+> 完整上线一览：[`mvp2-launch-readiness.md`](mvp2-launch-readiness.md)。
+
+| 项 | 状态 | 文档 | 下一步 |
+|---|---|---|---|
+| **① 去中心化优化** | 已到 Nostr 底线；缺口 G1–G5 | [`decentralization-gap.md`](decentralization-gap.md) | 见 ②|
+| **② 发现层 + Explorer** | 📋 **已出 solid plan** | [`discovery-plan.md`](discovery-plan.md) + [`explorer-indexer-plan.md`](explorer-indexer-plan.md) | **要排工期：先改 `MVP.md`**（`AGENTS.md §5.1`） |
+| **③ npm + 节点体验** | npm 打包就绪；节点体验有设计 | [`terminal-experience-plan.md`](terminal-experience-plan.md) | npm：`npm publish`（PKG-3）；体验：UX-1 |
+| **④ 节点激励** | 🗣️ **讨论**（BLK-5，待裁决） | [`node-incentives-discussion.md`](node-incentives-discussion.md) | 回答三问（Q1 无激励 / Q2 声誉榜 / Q3 运维费） |
+| **⑤ 矿工 UX 优化** | 📋 有设计 | [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md) | UX-1 开工时 |
+
+**⑥ 上线前还缺** → 见 `mvp2-launch-readiness.md §6`（BLK-1/2/3/4 + 发布动作 + 真人动作）。
+
+---
+
+## E. 已闭环（本轮及近期完成，登记备查）
 
 - **S13-3d** 委托签发者 + 消费者（`session grant` / `session verify`）
 - **S12-7** MCP IDE 一行配置文档（[`mcp-setup.md`](mcp-setup.md)）
 - **S10-6** 客户端独立复验（`assertion.Check`；此前 `TASKS.md` 有重复行，已修）
 - **事件生产者** `relayfirst session open/close/show`
+- **npm 打包就绪**（跨平台二进制 + CI 门禁；仅剩 `npm publish`）
+- **发布构建路径**（`make release` + genesis 守卫 CI 门禁）
+- **SQLite Phase 3**（按连接 `busy_timeout` + A6 并发测量）
 
 ---
 
@@ -90,3 +109,4 @@
 
 **代码写完了；卡住的是"业务决策 + 外部接洽 + 发布动作"。**
 A 类给我输入即可当轮闭环；B/C 类需要你或运营去做，我会在你推进时同步文档。
+**D 类的规划文档已就绪**：②要开工先改 `MVP.md`；④要你回答三问。

@@ -75,6 +75,9 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/explorer-indexer-plan.md`](docs/notes/explorer-indexer-plan.md) | — | **规划** | **Indexer / Explorer 功能与架构**（独立组件）：不定义真相的红线、crawler+read model+只读 UI、v0→v2 分层、反模式、依赖 G2/G3 | 开工时 |
 | [`docs/notes/terminal-experience-plan.md`](docs/notes/terminal-experience-plan.md) | — | **规划** | **节点终端体验**：headless-first 约束、TTY 分支（非 TTY 字节不变）、logo、`relayfirst-node report`、必要命令 | 开工时 |
 | [`docs/notes/cli-role-and-ux-plan.md`](docs/notes/cli-role-and-ux-plan.md) | — | **规划** | **`relayfirst` 定位与品牌体验**：既给 agent 也给给人（判据①是"陌生人"）、TTY 分支、`mine`/`status` 设计、依赖取舍、反模式 | 开工时 |
+| [`docs/notes/mvp2-launch-readiness.md`](docs/notes/mvp2-launch-readiness.md) | — | **索引** | **MVP 2.0 上线前 Readiness 一览**：十条判据状态 + 六问（去中心化/explorer/节点/激励/矿工 UX/缺什么） | 每次推进后 |
+| [`docs/notes/discovery-plan.md`](docs/notes/discovery-plan.md) | — | **计划** | **发现层实施计划（G2→G1→G3）**：relay filter 任务分解、Indexer/Explorer 任务分解、顺序与里程碑、开工前置 | 获批进工期时 |
+| [`docs/notes/node-incentives-discussion.md`](docs/notes/node-incentives-discussion.md) | — | **讨论** | **节点经济与动机**：为何安节点、不违反 A7/A5 的选项（V1–V6）、需裁决三问 | 裁决后 |
 | [`docs/mvp-2.0-proposal.md`](docs/mvp-2.0-proposal.md) | 611 | **决策依据** | **MVP 2.0 提案（已 accepted）** —— 论证过程；范围权威在 `MVP.md` v2.0 | 已归档（合并完成） |
 | [`docs/archive/mvp-1.0.md`](docs/archive/mvp-1.0.md) | 884 | **归档** | **MVP 1.0 原文逐字副本**（SHA-256 `259469ad…`）—— 仓库无 git 历史，故显式归档 | 不再更新 |
 | [`docs/decisions/ADR-0001-*.md`](docs/decisions/ADR-0001-eip712-in-house-thin-layer.md) | — | **决策** | EIP-712 用自研薄层而非 `apitypes`（S1-4） | 已 accepted |
