@@ -23,6 +23,31 @@ v0：【严格只读】—— 不控制、不写入。因为节点没有鉴权�
 
 ---
 
+## 0bis. Web 还是 Terminal？（2026-10-06 裁决：Terminal 先做）
+
+**事实（实测）**：节点的响应是 `Content-Type: application/json`，**没有任何 CORS 头**。
+
+**后果**：一个**独立 Web 应用**用 JS `fetch` 节点端点会被**浏览器 CORS 拦截**。绕开只有三条，**每条更重或动节点**：
+
+| 绕开方式 | 代价 |
+|---|---|
+| 节点加 CORS 头 | **改节点** + 新暴露面（谁都能跨域读） |
+| 节点托管该网页 | **把 UI 塞回节点** —— 已否决（§8） |
+| Dashboard 自带后端代理 | 多一个服务 + 多一跳 |
+
+| | **Terminal** | **Web** |
+|---|---|---|
+| 连单节点 | ✅ 已铺好（`internal/noderead`） | ❌ CORS |
+| 远程/SSH | ✅ `--url` 即可 | ⚠️ 要部署 + HTTPS |
+| 动节点 | ❌ 不用 | ⚠️ 加 CORS 或节点托管 |
+| **多节点 + 可分享链接** | ❌ | ✅ **Web 的真正价值** |
+
+**裁决**：
+- ✅ **单节点"看它在运作" = Terminal**（本节之后的 D1..D6）。**现在做。**
+- ⏳ **Web = 记下、后议**；它的正确形态是 **Indexer / Explorer**（**自带后端**，不依赖节点 CORS），见 [`explorer-indexer-plan.md`](explorer-indexer-plan.md)。**Web dashboard 不是"单节点面板"的正确形态，是"网络浏览器"的形态。**
+
+---
+
 ## 1. 三种"界面"，成本与适用不同
 
 | 形态 | 长什么样 | 谁用 | 成本 | 依赖进哪 |
@@ -186,16 +211,16 @@ internal/tui              ← 新增：bubbletea 模型 + 视图（只依赖 nod
 
 ---
 
-## 7. 任务分解（若开工）
+## 7. 任务分解
 
-| id | 任务 | 依赖 | 验收 |
+| id | 任务 | 依赖 | 状态 |
 |---|---|---|---|
-| **D1** | `internal/noderead`：只读客户端（well-known/agents/tasks、**退避**、**限响应大小**、`https` 校验） | — | 单元测试：正常/超时/4xx/超大响应；**不新增端点** |
-| **D2** | `internal/term` 抽共享（节点已用；dashboard 复用） | — | 节点行为不变 |
-| **D3** | `cmd/relayfirst-dashboard` 骨架 + Overview（轮询计数 + 吞吐） | D1,D2 | 连**已跑**节点；`q` 退出**不影响**节点 |
-| **D4** | Agents / Tasks / Config 视图 | D3 | 数据与 `inspect` 一致 |
-| **D5** | 键位/帮助/退出一致；**非 TTY 明确报错**（不空跑） | D3 | 无 TTY 时打印用法并退出，不渲染垃圾 |
-| **D6** | 安全回归：导入图断言（dashboard 无签名代码）；轮询退避测试 | D1 | `go list -deps` 无 `eip712`/`receipt`；退避测试通过 |
+| **D1** | `internal/noderead`：只读客户端（well-known/agents/tasks、**退避**、**限响应大小**、`https` 校验） | — | ✅ **done** —— `internal/noderead`；测试覆盖 非http URL 拒绝 / 各文档解码 / **超限拒绝** / **退避增降** / 4xx 报状态 |
+| **D2** | `internal/term` 抽共享（节点已用；dashboard 复用） | — | ✅ **done** —— `internal/term`；节点 `banner.go` 别名进去，**行为不变**；节点导入图仍无签名代码 |
+| **D3** | `cmd/relayfirst-dashboard` 骨架 + Overview（轮询计数 + 吞吐 + sparkline） | D1,D2 | ✅ **done** —— 引入 `bubbletea`（**仅此二进制**）；实测连活节点渲染、吞吐随流量变化（`0→8→10 msg/s`，peak 跟踪）；`q` 退出不影响节点；**非 TTY 明确报错** |
+| **D4** | Agents / Tasks / Config 视图 | D3 | ⬜ todo |
+| **D5** | 键位/帮助/退出一致（部分已在 D3） | D3 | 🔸 部分（`r`/`q`/非 TTY 已做） |
+| **D6** | 安全回归：导入图断言 + 退避测试 | D1 | ✅ **done（部分）** —— 实测 `dashboard` **无签名代码**；`node` **无 bubbletea/noderead**；退避有测试。**待补 CI 门禁**（把 dashboard 的导入图检查写进 `ci.sh`） |
 
 ---
 

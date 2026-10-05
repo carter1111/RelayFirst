@@ -825,7 +825,7 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 > **上线 Readiness 汇总**（六问 + 十条判据）：[`docs/notes/mvp2-launch-readiness.md`](docs/notes/mvp2-launch-readiness.md)。
 > **BLK-5（新增，待裁决）**：**节点激励** —— 现状无回报（A7 禁止排放）。
 > 选项与三问见 [`docs/notes/node-incentives-discussion.md`](docs/notes/node-incentives-discussion.md)。
-| **UX-1** | **终端体验**：节点 logo/命令 + Dashboard + `relayfirst` 品牌层 | 体验（提案） | 🟡 **节点命令已实现**；Dashboard 与 CLI 仍规划 | **节点**：`cmd/relayfirst-node/banner.go` —— logo + 启动 banner（TTY-gated）+ **子命令 `report` / `status` / `inspect <what>`**。**无子命令路径不变**（`TestRun_LeadingFlagIsNotASubcommand`）。**证据**：TTY 渲染实测；管道/`> file` **零 ANSI**；非 TTY 启动仍单行 slog；`inspect` 输出 JSON。**Dashboard**：📋 方案已定 —— **独立 `relayfirst-dashboard`（client-server）**、只读轮询、安全 8 条，见 [`node-tui-dashboard-plan.md`](docs/notes/node-tui-dashboard-plan.md)。**CLI 品牌层**：见 [`cli-role-and-ux-plan.md`](docs/notes/cli-role-and-ux-plan.md)。**不属十条判据**；价值在**叙事**（`MVP.md §1` 原则②） |
+| **UX-1** | **终端体验**：节点命令 + Dashboard + `relayfirst` 品牌层 | 体验（提案） | 🟡 **节点命令 + Dashboard v0 已实现**；Agents/Tasks 视图与 CLI 品牌层仍规划 | **节点**：`cmd/relayfirst-node/banner.go` —— logo + 启动 banner（TTY-gated）+ 子命令 `report` / `status` / `inspect <what>`。**无子命令路径不变**。**Dashboard**：✅ **`cmd/relayfirst-dashboard` v0（D3）** —— 独立二进制、**只读**连活节点、轮询计数 + 吞吐 + sparkline；**实测**：连活节点渲染、吞吐随流量 `0→8→10 msg/s`、`q` 退出不影响节点、**非 TTY 明确报错**；**安全**：无签名代码、**节点仍无 bubbletea**。剩 **D4**（Agents/Tasks 视图）、**D6**（CI 门禁）。方案见 [`node-tui-dashboard-plan.md`](docs/notes/node-tui-dashboard-plan.md)。**CLI 品牌层**：见 [`cli-role-and-ux-plan.md`](docs/notes/cli-role-and-ux-plan.md)。**不属十条判据** |
 
 **UX-1 的设计约束（开工前先读）**：
 
