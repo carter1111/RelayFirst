@@ -73,6 +73,8 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/remaining-actions.md`](docs/notes/remaining-actions.md) | — | **索引** | **剩余动作清单**：分【你裁决】/【外部人工】/【发布动作】三类，写明谁做 | 每次推进后 |
 | [`docs/notes/decentralization-gap.md`](docs/notes/decentralization-gap.md) | — | **笔记** | **去中心化现状 vs 目标**（目标 = `ARCHITECTURE.md` §1.6 Nostr 式 permissionless）；NET-1..4 已做对照 + **完整缺口清单 G1–G5 / O1–O4**；含范围声明 | 发现层推进后 |
 | [`docs/notes/explorer-indexer-plan.md`](docs/notes/explorer-indexer-plan.md) | — | **规划** | **Indexer / Explorer 功能与架构**（独立组件）：不定义真相的红线、crawler+read model+只读 UI、v0→v2 分层、反模式、依赖 G2/G3 | 开工时 |
+| [`docs/notes/terminal-experience-plan.md`](docs/notes/terminal-experience-plan.md) | — | **规划** | **节点终端体验**：headless-first 约束、TTY 分支（非 TTY 字节不变）、logo、`relayfirst-node report`、必要命令 | 开工时 |
+| [`docs/notes/cli-role-and-ux-plan.md`](docs/notes/cli-role-and-ux-plan.md) | — | **规划** | **`relayfirst` 定位与品牌体验**：既给 agent 也给给人（判据①是"陌生人"）、TTY 分支、`mine`/`status` 设计、依赖取舍、反模式 | 开工时 |
 | [`docs/mvp-2.0-proposal.md`](docs/mvp-2.0-proposal.md) | 611 | **决策依据** | **MVP 2.0 提案（已 accepted）** —— 论证过程；范围权威在 `MVP.md` v2.0 | 已归档（合并完成） |
 | [`docs/archive/mvp-1.0.md`](docs/archive/mvp-1.0.md) | 884 | **归档** | **MVP 1.0 原文逐字副本**（SHA-256 `259469ad…`）—— 仓库无 git 历史，故显式归档 | 不再更新 |
 | [`docs/decisions/ADR-0001-*.md`](docs/decisions/ADR-0001-eip712-in-house-thin-layer.md) | — | **决策** | EIP-712 用自研薄层而非 `apitypes`（S1-4） | 已 accepted |

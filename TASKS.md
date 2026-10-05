@@ -814,17 +814,17 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 | **PKG-1** | npm **按平台分包**（或 `postinstall` 下载单平台） | 发布优化 | ⬜ **未做** | 现在 tarball 含 5 平台二进制 → **~42MB**。改法：`optionalDependencies` + `os`/`cpu` 子包 |
 | **PKG-2** | macOS 二进制**签名 / 公证** | 发布 | ⬜ **未做** | 交叉编译产物未签名 → Gatekeeper 可能拦。首次发布可先发 linux/windows |
 | **PKG-3** | `npm publish` 本体 | 发布（外部凭据） | ⏳ 打包就绪 | 需 npm 帐号；步骤见 `remaining-actions.md` C1 |
-| **UX-1** | **终端 TUI / 品牌体验**（大 logo + 专用命令行，类 Claude Code / Hermes） | 体验（提案） | ⬜ **讨论中** | **不属十条判据**；价值在**叙事/传播**（对齐 `MVP.md` §1 原则②）。**设计约束见下** |
+| **UX-1** | **终端体验**：节点 logo/report + `relayfirst` 品牌层 | 体验（提案） | 📋 **已有设计文档，未开工** | 设计见 [`terminal-experience-plan.md`](docs/notes/terminal-experience-plan.md)（节点）+ [`cli-role-and-ux-plan.md`](docs/notes/cli-role-and-ux-plan.md)（CLI）。**不属十条判据**；价值在**叙事**（`MVP.md §1` 原则②）。**约束见下** |
 
-**UX-1 的设计约束（讨论后若开工，先读这条）**：
+**UX-1 的设计约束（开工前先读）**：
 
-- **节点必须保持 headless-first**：它要在 Docker（`-d` 分离）、systemd、CI 里跑。
-  一个**要求 TTY** 的节点是**坏的**。所以 TUI 只能**在检测到 stdout 是 TTY 时**启用（可选 `--tui`），
-  且**日志与退出码行为不变**（否则 `docker logs` / 编排会坏）。
-- **真正适合"Claude Code 体验"的是【矿工 CLI】`relayfirst`，不是节点**：判据 ① 的
-  "陌生人 10 分钟出分" 是**用户面**的事，品牌化的首启/状态面板价值最高。
-- **依赖**：Go TUI 生态（`charmbracelet/bubbletea` + `lipgloss`）是**纯 Go**，
-  不违反 A3；但它是**新依赖**，需按 `MVP.md §8.0` 记录理由。
+- **节点必须保持 headless-first**：它要在 `docker -d`、systemd、CI 里跑。
+  **要求 TTY 的节点是坏的**。故输出按 **TTY 分支**：非 TTY **字节不变**（`docker logs`/管道不受影响）。
+- **`relayfirst` 既给 agent 也给【人】**：判据 ① 是"**陌生人** 10 分钟出分"，所以人这一侧的
+  首启/仪表盘**有价值**；但协议层输出（JSON/退出码）**不得更改**，同样靠 **TTY 分支**。
+- **依赖**：v0 **零新依赖**（标准库 `os.ModeCharDevice` 判 TTY + 手写 ANSI）；
+  仅当需要**实时面板**时才引 `charmbracelet/bubbletea`（**纯 Go，不违反 A3**，但须按 `MVP.md §8.0` 记录理由）。
+- **优先级**：**不得插队到 BLK-2（真实消费方）之前** —— 它是传播优化，不是上线前置。
 
 ---
 
