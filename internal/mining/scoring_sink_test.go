@@ -425,3 +425,102 @@ func almostEqual(a, b, tol float64) bool {
 	}
 	return d <= tol
 }
+
+// failLedger is a scoring.Ledger whose Observe always fails, so the emit stage can
+// be exercised.
+type failLedger struct{ err error }
+
+func (f failLedger) Observe(string, string, time.Time) (bool, error) { return false, f.err }
+func (f failLedger) Lookup(string) (scoring.Sighting, bool)          { return scoring.Sighting{}, false }
+func (f failLedger) Len() int                                        { return 0 }
+
+// failPoints is a scoring.PointsLedger whose Credit always fails, so the credit
+// stage can be exercised.
+type failPoints struct{ err error }
+
+func (f failPoints) Credit(string, string, uint64, float64, time.Time) (bool, error) {
+	return false, f.err
+}
+func (f failPoints) Balance(string) float64              { return 0 }
+func (f failPoints) EpochBalance(string, uint64) float64 { return 0 }
+func (f failPoints) Entry(string) (scoring.Entry, bool)  { return scoring.Entry{}, false }
+func (f failPoints) Entries() []scoring.Entry            { return nil }
+func (f failPoints) AgentCount() int                     { return 0 }
+
+// TestScoringSink_A FailedEmitIsReportedNotSwallowed is the property that was missing:
+// a scoring failure must reach a reporter, because a swallowed one is indistinguishable
+// from "this receipt earned nothing".
+func TestScoringSink_FailedEmitIsReportedNotSwallowed(t *testing.T) {
+	inner := newFakeStore()
+	var gotStage string
+	var gotErr error
+
+	sink := &ScoringSink{
+		Inner:     inner,
+		Receipts:  inner,
+		Artifacts: failLedger{err: errLedgerDown},
+		Points:    scoring.NewMemPointsLedger(),
+		Clock:     func() time.Time { return at() },
+		OnError: func(_ *receipt.Receipt, stage string, err error) {
+			gotStage, gotErr = stage, err
+		},
+	}
+
+	r := mkProbe(t, testKey(1), "https://example.com/a", contentHash(0x7b), "0x"+strings.Repeat("ab", 32), testEpoch)
+	// Save must still succeed: the receipt is stored and can be re-scored.
+	if err := sink.Save(r, "sha256:keyA", at()); err != nil {
+		t.Fatalf("a scoring failure must not fail Save, got: %v", err)
+	}
+	if inner.Count() != 1 {
+		t.Fatal("the receipt must still be persisted")
+	}
+	if gotStage != "emit" {
+		t.Errorf("the emit failure must be reported as stage \"emit\", got %q", gotStage)
+	}
+	if gotErr == nil {
+		t.Error("the error must be reported, not just the stage")
+	}
+}
+
+// TestScoringSink_FailedCreditIsReported is the case a miner most needs: the receipt
+// EARNED points that were not recorded.
+func TestScoringSink_FailedCreditIsReported(t *testing.T) {
+	inner := newFakeStore()
+	var gotStage string
+
+	sink := &ScoringSink{
+		Inner:     inner,
+		Receipts:  inner,
+		Artifacts: scoring.NewMemLedger(),
+		Points:    failPoints{err: errLedgerDown},
+		Clock:     func() time.Time { return at() },
+		OnError: func(_ *receipt.Receipt, stage string, err error) {
+			gotStage = stage
+		},
+	}
+
+	r := mkProbe(t, testKey(1), "https://example.com/a", contentHash(0x7b), "0x"+strings.Repeat("ab", 32), testEpoch)
+	if err := sink.Save(r, "sha256:keyA", at()); err != nil {
+		t.Fatalf("a credit failure must not fail Save, got: %v", err)
+	}
+	if gotStage != "credit" {
+		t.Errorf("a failed credit must be reported as stage \"credit\", got %q", gotStage)
+	}
+}
+
+// TestScoringSink_NoErrorWhenAllIsWell keeps the reporter from firing on the happy path.
+func TestScoringSink_NoErrorWhenAllIsWell(t *testing.T) {
+	sink, _, _, _ := newScoringSink(t)
+	called := false
+	sink.OnError = func(*receipt.Receipt, string, error) { called = true }
+
+	r := mkProbe(t, testKey(1), "https://example.com/a", contentHash(0x7b), "0x"+strings.Repeat("ab", 32), testEpoch)
+	if err := sink.Save(r, "sha256:keyA", at()); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if called {
+		t.Error("OnError must not fire when scoring succeeds")
+	}
+}
+
+var errLedgerDown = errors.New("ledger unavailable")

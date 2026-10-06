@@ -70,6 +70,23 @@ type ScoringSink struct {
 	// OnVerdict, when set, receives the scoring outcome of each receipt. A CLI
 	// uses it to show points accruing; tests use it to assert behaviour.
 	OnVerdict func(r *receipt.Receipt, v scoring.Verdict)
+
+	// OnError, when set, is told about a scoring step that failed for one receipt,
+	// so the failure is VISIBLE even though it is not returned.
+	//
+	// # Why an error is reported but not returned
+	//
+	// Save must not fail for a scoring problem: the receipt is already stored and can
+	// be re-scored, and returning an error would make the runner treat a successful
+	// mining iteration as a failed one and back off from it. So the failure is swallowed
+	// — but swallowing it SILENTLY was wrong in the other direction: a receipt whose
+	// points were never credited looked exactly like one that earned nothing, and the
+	// miner had no way to tell "I earned nothing" from "the ledger rejected my credit".
+	//
+	// `stage` names which step failed ("emit" or "credit"), because the two mean
+	// different things: an emit failure is a scoring-input problem, a credit failure is
+	// a ledger problem, and a caller watching the numbers wants to know which.
+	OnError func(r *receipt.Receipt, stage string, err error)
 }
 
 // compile-time assertion.
@@ -106,6 +123,10 @@ func (s *ScoringSink) Save(r *receipt.Receipt, artifactKey string, at time.Time)
 // Scoring failures are swallowed deliberately: the receipt is already stored, and
 // a transient ledger problem must not turn a successful mining iteration into a
 // failure that the runner then backs off from.
+//
+// But they are REPORTED through OnError, not discarded. A swallowed failure that
+// nobody can see is indistinguishable from "this receipt earned nothing", and the
+// miner cannot act on a problem it cannot observe.
 func (s *ScoringSink) score(r *receipt.Receipt, at time.Time) {
 	if s.Artifacts == nil || s.Points == nil {
 		return
@@ -113,17 +134,32 @@ func (s *ScoringSink) score(r *receipt.Receipt, at time.Time) {
 
 	verdict, err := scoring.Emit(r, s.Artifacts, s.paramsFor(r), at)
 	if err != nil {
+		s.reportError(r, "emit", err)
 		return
 	}
 
 	if verdict.Points > 0 {
 		// Emit already recorded the sighting; crediting is separate because the
 		// points ledger is the thing that must be idempotent per receipt.
-		_, _ = s.Points.Credit(r.ReceiptID, r.AgentID, r.Epoch, verdict.Points, at)
+		if _, err := s.Points.Credit(r.ReceiptID, r.AgentID, r.Epoch, verdict.Points, at); err != nil {
+			// The receipt earned points that were NOT recorded. That is the case a
+			// miner most needs to know about, and the one that used to be silent.
+			s.reportError(r, "credit", err)
+		}
 	}
 
 	if s.OnVerdict != nil {
 		s.OnVerdict(r, verdict)
+	}
+}
+
+// reportError surfaces a swallowed scoring failure when a reporter is configured.
+//
+// It takes the nil check off every call site so the two reporting paths (emit and
+// credit) cannot forget it.
+func (s *ScoringSink) reportError(r *receipt.Receipt, stage string, err error) {
+	if s.OnError != nil {
+		s.OnError(r, stage, err)
 	}
 }
 

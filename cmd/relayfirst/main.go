@@ -628,6 +628,10 @@ func runMine(args []string) error {
 		Points:    ledgers.Points,
 		Verdicts:  verdicts,
 		OnVerdict: reportVerdict,
+		// A scoring failure does not fail the run (the receipt is stored and can be
+		// re-scored), but it must be visible: otherwise "the ledger rejected this
+		// credit" looks exactly like "this receipt earned nothing".
+		OnError: reportScoringError,
 	}
 
 	// Whether stdout is a terminal is decided once here and reused by the banner and the
@@ -810,6 +814,18 @@ func reportVerdict(r *receipt.Receipt, v scoring.Verdict) {
 		reason = "no credit"
 	}
 	fmt.Printf("  · %s → %s\n", shortID(r.ReceiptID), reason)
+}
+
+// reportScoringError surfaces a scoring step that failed for one stored receipt.
+//
+// Live feedback is not decoration here: a credit that never landed looked identical
+// to a receipt that earned nothing, so a miner could watch a run produce work and
+// never learn that the ledger rejected every credit. The line goes through
+// clearLiveLine first so it does not collide with the in-place progress row.
+func reportScoringError(r *receipt.Receipt, stage string, err error) {
+	clearLiveLine()
+	fmt.Printf("  ! %s: scoring %s failed: %v\n", shortID(r.ReceiptID), stage, err)
+	fmt.Printf("    the receipt is stored and can be re-scored; points were NOT credited\n")
 }
 
 // reportDelivery prints the outcome of publishing one receipt.
