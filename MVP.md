@@ -78,7 +78,11 @@ L3  挖矿层（引流）
 
 ### 1.1 目标用户
 
-**手上有 Codex / Claude Code / agent 订阅的 crypto 用户。他们想挖头矿，来玩。**
+**手上有 agent / LLM 订阅的 crypto 用户。他们想挖头矿，来玩。**
+
+> **⚠️ 支持范围（BLK-1 核实，2026-10-07）：** 程序化驱动**只对 Codex（ChatGPT）成立** ——
+> 官方文档化"用 ChatGPT 账号跑 `codex exec`"。**Claude Code 订阅不可**（Consumer ToS 禁止自动化）
+> → 那条路走 BYO API key。见 §9.3。
 
 他们的特征：
 
@@ -877,17 +881,23 @@ npx relayfirst@latest receipts --export   # 导出全部回执，可离线验证
 
 ### 9.3 头号技术风险：订阅不可编程驱动
 
-**"消耗 Codex 订阅额度"这个叙事，可能无法用 API 实现。**
+**"消耗订阅额度"这个叙事，能否用 API 实现？** —— ✅ **已核实（BLK-1，2026-10-07）**，见 [`docs/notes/blk-1-verification-plan.md`](docs/notes/blk-1-verification-plan.md)。
 
 | 路径 | 可行性 | 经济含义 |
 |---|---|---|
 | **BYO API key**（按 token 付费） | ✅ **今天就能做** | 用户**额外**花钱，不是"变现沉没成本" |
-| 驱动 Codex / Claude Code 订阅 | ❓ **未知** —— 需要核实是否开放程序化接口 | 若能做，叙事才真正成立 |
+| **驱动 Codex（ChatGPT）订阅** | ✅ **可行** —— **官方文档化** "Use ChatGPT-managed auth in CI/CD"，即用 ChatGPT 账号跑 `codex exec` | **叙事成立**（订阅即可挖） |
+| **驱动 Claude Code（Claude）订阅** | ❌ **不可行** —— Consumer ToS **明文禁止**"automated or non-human means ... bot, script"（非 API key 时） | **必须 BYO API key** = "再买一份额度" |
 | 本地模型 | ✅ 可做 | 电费成本，无订阅叙事 |
 
-**必须在上线前核实第二行。** 如果订阅无法程序化驱动，整个"把订阅变成矿机"的叙事**站不住**，退化为"再买一份 API 额度来挖矿"——吸引力大幅下降。
+**结论**：**"订阅变现"对 Codex 成立，对 Claude Code 不成立。** 支持列表**只写 Codex**；
+Claude Code 走 BYO API key，且**明确其代价**（非变现，是新增按量花费）。
 
-**MVP 策略：先做 BYO API key（保证能跑），同时并行核实订阅路径。**
+⚠️ **仍存的运维问题（Codex）**：订阅在自动化中**需周期性重新登录**（token 过期会中断无人值守）
+—— 属实现细节，缓解见 BLK-1 报告 §4。
+
+**MVP 策略：先做 BYO API key（保证能跑）；订阅路径已核实 —— Codex 走订阅，Claude Code 走 API key。**
+**上线文案必须据此写：只声称支持 Codex 订阅，不得暗示 Claude Code 订阅可挖。**
 
 ---
 
@@ -1069,7 +1079,7 @@ WebSocket 绑定  → 新增（A2A AgentInterface 的第二个 interface）
 
 | # | 风险 | 严重度 | 缓解 | 可否缓解 |
 |---|---|---|---|---|
-| R1 | **订阅不可程序化驱动**（§9.3） | **极高** | 先做 BYO API key；并行核实订阅路径 | 部分 |
+| R1 | **订阅不可程序化驱动**（§9.3） | ~~极高~~ → **中** | ✅ **已核实（BLK-1）**：Codex **可行**（官方文档化）、Claude Code **不可**（ToS）→ 支持列表只写 Codex | **已解决（PARTIAL）** |
 | R2 | **积分无价值锚，兑现不了** | **极高** | 明确声明不承诺回报；留"不发币"退路 | 部分 |
 | R3 | **叙事被抄**（3–6 个月内） | 高 | **速度是唯一解** —— 先发 + 社区 | 部分 |
 | R4 | **无真实需求，纯农场** | 高 | §10.3 已升级为**硬性前置条件** | 是 |
@@ -1104,7 +1114,7 @@ WebSocket 绑定  → 新增（A2A AgentInterface 的第二个 interface）
 
 **并行项（不占工程时间，但占日历时间）：**
 
-- R1 的订阅路径核实 —— **第 1 天就要开始**。
+- R1 的订阅路径核实 —— ✅ **已完成（BLK-1）**：Codex 可行、Claude Code 不可（见 §9.3）。
 - §10.3 的真实需求方接洽 —— **第 1 天就要开始**。
 - R7 的法律咨询。
 
@@ -1119,7 +1129,7 @@ WebSocket 绑定  → 新增（A2A AgentInterface 的第二个 interface）
 | # | 问题 | 影响 | 状态 |
 |---|---|---|---|
 | **Q1** | ~~任务类型限定为哪几种？~~ | 任务生成器 + 计分 | **✅ 已定：§5.0（probe / extract / compute）** |
-| **Q2** | **订阅能否程序化驱动？**（R1） | 整个叙事成立与否 | **待核实（最高优先级）** |
+| **Q2** | **订阅能否程序化驱动？**（R1） | 整个叙事成立与否 | ✅ **已核实（BLK-1）：Codex 可行 / Claude Code 不可** —— 见 §9.3 与 [`blk-1-verification-plan.md`](docs/notes/blk-1-verification-plan.md) |
 | **Q3** | **第一个真实需求方是谁？**（§10.3） | 上线硬性前置条件 | **待定** |
 | **Q7** | 验证者指派策略（随机种子 / 防串谋） | S4 实现 | 待定 |
 
