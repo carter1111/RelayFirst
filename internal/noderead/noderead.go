@@ -260,6 +260,41 @@ func (c *Client) Tasks(subject string, limit int) ([]Task, error) {
 	return out.Offers, nil
 }
 
+// EvidenceGroup is one content-hash group in the cross-verification view (S10-2).
+//
+// DistinctAgents is the number that carries the weight: the same agent's two
+// observations are a repeat of one claim, so a per-row count would let a single agent
+// manufacture "agreement". The field is what a reader should look at, not Observations.
+type EvidenceGroup struct {
+	ContentHash    string   `json:"contentHash"`
+	DistinctAgents int      `json:"distinctAgents"`
+	Observations   int      `json:"observations"`
+	ReceiptIDs     []string `json:"receiptIds"`
+}
+
+// Evidence fetches GET /observations/{receiptId}/evidence: the cross-verification view
+// of the subject that receipt observed, grouped by claimed content hash.
+//
+// # Why it takes a receipt id and not a subject
+//
+// The node's route is keyed by receipt id: it looks the receipt up, reads the subject
+// from its index entry, and returns every observation of that subject grouped by content
+// hash. A subject is not addressable directly on this route, so a caller holding only a
+// subject must first pull its observations (Client.Observations) and pass one receipt id.
+func (c *Client) Evidence(receiptID string) (string, []EvidenceGroup, error) {
+	if strings.TrimSpace(receiptID) == "" {
+		return "", nil, errors.New("noderead: evidence needs a receipt id")
+	}
+	var out struct {
+		Subject string          `json:"subject"`
+		Groups  []EvidenceGroup `json:"groups"`
+	}
+	if err := c.get("/observations/"+url.PathEscape(receiptID)+"/evidence", &out); err != nil {
+		return "", nil, err
+	}
+	return out.Subject, out.Groups, nil
+}
+
 // Observations fetches GET /observations for a subject.
 func (c *Client) Observations(subject string, limit int) ([]Observation, error) {
 	if strings.TrimSpace(subject) == "" {

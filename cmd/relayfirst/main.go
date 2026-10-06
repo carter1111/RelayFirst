@@ -30,6 +30,7 @@ import (
 	"github.com/relayfirst/relayfirst/internal/llm"
 	"github.com/relayfirst/relayfirst/internal/merkle"
 	"github.com/relayfirst/relayfirst/internal/mining"
+	"github.com/relayfirst/relayfirst/internal/noderead"
 	"github.com/relayfirst/relayfirst/internal/publish"
 	"github.com/relayfirst/relayfirst/internal/receipt"
 	"github.com/relayfirst/relayfirst/internal/scoring"
@@ -51,6 +52,11 @@ Usage:
   relayfirst verify <receipt.json>       Verify a receipt offline (no network);
                                          add --refetch to also re-check anchors
   relayfirst id <private-key-hex>        Print the agentId for a key
+  relayfirst observations --subject <url>
+                                         Show independent agents' observations of a
+                                         source, grouped by claimed content hash
+  relayfirst settle [--epoch <n>]         Settle an epoch's work into points (run once
+                                         per epoch; idempotent)
   relayfirst session <open|close|show|grant>
                                          Emit signed A2A session events, or sign a
                                          delegation grant authorizing a session key
@@ -203,6 +209,9 @@ func run(args []string) error {
 
 	case "settle":
 		return runSettle(args[1:])
+
+	case "observations":
+		return runObservations(args[1:])
 
 	case "stats":
 		// `stats` predates `status`. Kept as an alias rather than a second
@@ -797,6 +806,101 @@ func runOnce(_ context.Context, loop *mining.Loop, sink mining.ReceiptSink) erro
 		"taskType":  string(res.Task),
 		"attempts":  res.Attempts,
 		"artifact":  key,
+	})
+}
+
+// runObservations shows the cross-verification view for a subject (S10-2).
+//
+// # Why this exists as a command
+//
+// The "price / reachability data for a trading bot" use case needs a one-page demo: "N
+// independent agents observed this source; do they agree". The node has the endpoint
+// and nothing surfaced it, so the demo could not be run. This is that surface, and it is
+// deliberately read-only and node-optional in spirit — it can point at any node.
+//
+// It does NOT claim the observations are true. It groups them by claimed content hash and
+// reports how many DISTINCT agents back each group, which is the honest form of "they
+// agree": agreement is not correctness, and two agents can collude (the node's own note
+// says so, and it is repeated in the output).
+func runObservations(args []string) error {
+	f, err := parseFlags(args)
+	if err != nil {
+		return err
+	}
+
+	subject := f.get("subject", "")
+	if strings.TrimSpace(subject) == "" {
+		return errors.New("observations needs --subject <url>; the node indexes observations by subject")
+	}
+	// --relay is a repeatable flag, so it lives in f.repeated, not f.values; reading it
+	// with f.get would silently return the default and ignore what the caller passed.
+	relay := ""
+	if rs := f.relays(); len(rs) > 0 {
+		relay = rs[0]
+	}
+	if relay == "" {
+		relay = os.Getenv("RELAYFIRST_RELAY")
+	}
+	if relay == "" {
+		relay = "http://localhost:8080"
+	}
+
+	client, err := noderead.New(relay)
+	if err != nil {
+		return err
+	}
+
+	// Pull the subject's observations, then ask for the cross-verification view of one of
+	// them. The route is keyed by receipt id, so a subject alone is not enough.
+	obs, err := client.Observations(subject, 50)
+	if err != nil {
+		return err
+	}
+	if len(obs) == 0 {
+		return printJSON(map[string]any{
+			"subject": subject,
+			"count":   0,
+			"note":    "no observations for this subject on this node",
+		})
+	}
+
+	_, groups, err := client.Evidence(obs[0].ReceiptID)
+	if err != nil {
+		return err
+	}
+
+	type groupOut struct {
+		ContentHash    string   `json:"contentHash"`
+		DistinctAgents int      `json:"distinctAgents"`
+		Observations   int      `json:"observations"`
+		ReceiptIDs     []string `json:"receiptIds"`
+	}
+	outs := make([]groupOut, 0, len(groups))
+	for _, g := range groups {
+		outs = append(outs, groupOut{
+			ContentHash:    g.ContentHash,
+			DistinctAgents: g.DistinctAgents,
+			Observations:   g.Observations,
+			ReceiptIDs:     g.ReceiptIDs,
+		})
+	}
+
+	verdict := "no observations"
+	if len(groups) == 1 {
+		verdict = fmt.Sprintf("%d independent agents agree", groups[0].DistinctAgents)
+	} else if len(groups) > 1 {
+		verdict = fmt.Sprintf("%d groups disagree — the observers saw different content (real change, or worth investigating)", len(groups))
+	}
+
+	return printJSON(map[string]any{
+		"subject":  subject,
+		"relay":    relay,
+		"observed": len(obs),
+		"groups":   outs,
+		"verdict":  verdict,
+		"note": "each observation is a signed receipt re-verifiable offline (relayfirst verify <receipt.json>); " +
+			"agreement is not correctness — the node does not verify, and distinct agents can still collude. " +
+			"\"distinctAgents\" is what to read, not \"observations\".",
 	})
 }
 

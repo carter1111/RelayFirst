@@ -92,6 +92,16 @@ evidence:
 
 **演示方式：** 现场跑一次，或录一段 60 秒的屏幕。**不要做 PPT。**
 
+**✅ demo 现已可跑（2026-10-07）**：本节 §3 的 `relayfirst observations` 命令**此前不存在**（计划写了、命令没实现），现已实现。真实调用：
+
+```bash
+relayfirst observations --relay <node> --subject https://api.example.com/ticker/BTCUSDT
+```
+
+输出即"**按声称的 contentHash 分组 + 每组有几个独立 agent**"，并附一句诚实边界
+（**一致 ≠ 正确；节点不验证；独立 agent 也可能串通**）。要让 `count > 0`，
+**需先把回执发布到节点**（`mine --relay <node>`），因为节点索引的是**它收到的**回执。
+
 ---
 
 ## 4. 他为什么会付钱（一句话）

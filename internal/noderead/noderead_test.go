@@ -149,3 +149,35 @@ func TestErrorNamesTheStatus(t *testing.T) {
 		t.Errorf("a 400 must be reported with its status, got: %v", err)
 	}
 }
+
+// TestEvidence_TakesAReceiptID: the node's evidence route is keyed by receipt id, not by
+// subject, so the client must address it that way. Getting this wrong is a silent 404.
+func TestEvidence_TakesAReceiptID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/observations/rc-1/evidence" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"subject":"https://a.example/x","groups":[{"contentHash":"0xdef","distinctAgents":3,"observations":4,"receiptIds":["rc-1"]}]}`))
+	}))
+	defer srv.Close()
+
+	c, _ := noderead.New(srv.URL)
+	subject, groups, err := c.Evidence("rc-1")
+	if err != nil {
+		t.Fatalf("Evidence: %v", err)
+	}
+	if subject != "https://a.example/x" {
+		t.Errorf("subject = %q", subject)
+	}
+	if len(groups) != 1 || groups[0].DistinctAgents != 3 {
+		t.Errorf("groups = %+v, want one group with 3 distinct agents", groups)
+	}
+}
+
+func TestEvidence_RequiresAReceiptID(t *testing.T) {
+	c, _ := noderead.New("http://localhost:1")
+	if _, _, err := c.Evidence(""); err == nil {
+		t.Fatal("Evidence without a receipt id must error client-side")
+	}
+}
