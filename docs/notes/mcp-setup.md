@@ -18,7 +18,7 @@
 
 ```bash
 CGO_ENABLED=0 go list -deps ./cmd/relayfirst-mcp \
-  | grep -E 'internal/(eip712|receipt|publish|assertion|delegationsign|e2ee|mining)'
+  | grep -E 'relayfirst/internal/(eip712|receipt|publish|store|assertion|delegation|delegationsign|e2ee|mining|scoring)$'
 # → 输出为空
 ```
 

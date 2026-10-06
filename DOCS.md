@@ -100,6 +100,8 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/decisions/ADR-0004-*.md`](docs/decisions/ADR-0004-node-identity-crypto.md) | — | **决策** | 节点身份引入密码学 vs「节点不能验签」—— 采纳分二进制 | 已 accepted |
 | [`docs/decisions/ADR-0005-*.md`](docs/decisions/ADR-0005-cli-framework-handwritten.md) | — | **决策** | CLI 框架实测为手写，修正 §8.1 选型表（含重新评估触发条件） | 已 accepted |
 | [`docs/decisions/ADR-0006-*.md`](docs/decisions/ADR-0006-vendor-openzeppelin.md) | — | **决策** | 引入 OpenZeppelin v5.7.0（vendored）作为第一个 Solidity 依赖 | 已 accepted |
+| [`docs/decisions/ADR-0007-*.md`](docs/decisions/ADR-0007-receipts-never-delegable.md) | — | **决策** | **回执永不可委派**（Scope 闭集，无 receipt 值）；含重新评估触发条件 | 已 accepted |
+| [`docs/decisions/ADR-0008-*.md`](docs/decisions/ADR-0008-mcp-handwritten.md) | — | **决策** | MCP server **手写**（偏离"用 SDK"）；零依赖 vs 攻击面；含重估触发条件 | 已 accepted |
 | [`docs/stages/S1-report.md`](docs/stages/S1-report.md) | — | **报告** | S1（回执 + 签名 + KAT + verifier）验收证据 | 已归档 |
 | [`docs/stages/S2-report.md`](docs/stages/S2-report.md) | — | **报告** | S2（executor + 生成器 + 主循环）验收证据 | 已归档 |
 | [`docs/stages/S2b-report.md`](docs/stages/S2b-report.md) | 172 | **报告** | S2 补完（S2-6/7/8/9）验收证据 | 已归档 |
@@ -111,6 +113,10 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/stages/S4-report.md`](docs/stages/S4-report.md) | — | **报告** | S4（**对抗验证机制**：重执行 + anchor 重取 + 指派接口 + 承诺记录 + S4-0 接线）—— **BLK-3 仍开放** | 已归档 |
 | [`docs/stages/S8-report.md`](docs/stages/S8-report.md) | — | **报告** | S8（**红队**：四项伪造攻击对真实栈全部 0 分 + 门禁状态） | 已归档 |
 | [`docs/stages/S9-report.md`](docs/stages/S9-report.md) | — | **报告** | S9-0（**版本化地基**：10 项发布前阻断项全关 + 12 道门禁）—— **S9-1 未开工** | 已归档 |
+| [`docs/stages/S10-report.md`](docs/stages/S10-report.md) | — | **报告** | S10（**节点升级 + 可归因验证**：判据 ⑩；索引/查询/中转 + `internal/assertion`） | 已归档 |
+| [`docs/stages/S11-report.md`](docs/stages/S11-report.md) | — | **报告** | S11（**SBT 积分徽章**：判据 ⑨；转让 revert + 累计 claim + 自包含 metadata + 真 anchor claim） | 已归档 |
+| [`docs/stages/S12-report.md`](docs/stages/S12-report.md) | — | **报告** | S12（**结算**：非托管抗双领位图；USDC 待外部） | 已归档 |
+| [`docs/stages/S13-report.md`](docs/stages/S13-report.md) | — | **报告** | S13（**E2EE + 密钥层级 + 委托 + MCP**；回执永不可委派） | 已归档 |
 
 ---
 
