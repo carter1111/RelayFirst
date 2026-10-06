@@ -87,6 +87,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/terminal-experience-plan.md`](docs/notes/terminal-experience-plan.md) | — | **规划**（→ planning） | **节点终端体验**：headless-first 约束、TTY 分支（非 TTY 字节不变）、logo、`relayfirst-node report/status/inspect`、必要命令 | 开工时 |
 | [`docs/notes/node-tui-dashboard-plan.md`](docs/notes/node-tui-dashboard-plan.md) | — | **规划**（→ planning） | **节点 TUI + 实时 Dashboard 架构**：交互控制台、五视图线框、实时事件源（同进程读 hub，无公开端点）、bubbletea 依赖理由、任务分解 | 开工时 |
 | [`docs/notes/multi-node-plan.md`](docs/notes/multi-node-plan.md) | — | **规划**（→ planning） | **多节点测试计划**：客户端多节点（可做）vs 节点复制/联邦（未实现）；**"N 节点为何可行"的封闭性质论证 + 属性化测试设计** | 实现时 |
+| [`docs/notes/npm-packaging-plan.md`](docs/notes/npm-packaging-plan.md) | — | **规划**（→ planning） | **npm 跨平台打包（PKG-1/2）**：主包 + 每平台 optional 子包、平台名映射、发布顺序 | 实现时 |
 | [`docs/notes/cli-role-and-ux-plan.md`](docs/notes/cli-role-and-ux-plan.md) | — | **规划**（→ planning） | **`relayfirst` 定位与品牌体验**：既给 agent 也给给人（判据①是"陌生人"）、TTY 分支、`mine`/`status` 设计、依赖取舍、反模式 | 开工时 |
 | [`docs/notes/mvp2-launch-readiness.md`](docs/notes/mvp2-launch-readiness.md) | — | **规划**（→ planning） | **MVP 2.0 上线前 Readiness 一览**：十条判据状态 + 六问（去中心化/explorer/节点/激励/矿工 UX/缺什么） | 每次推进后 |
 | [`docs/notes/discovery-plan.md`](docs/notes/discovery-plan.md) | — | **规划**（→ planning） | **发现层实施计划（G2→G1→G3）**：relay filter 任务分解、Indexer/Explorer 任务分解、顺序与里程碑、开工前置 | 获批进工期时 |

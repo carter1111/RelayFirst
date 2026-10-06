@@ -29,6 +29,7 @@
 | [`terminal-experience-plan.md`](terminal-experience-plan.md) | 节点 logo/banner/report 设计 | 节点体验 |
 | [`node-tui-dashboard-plan.md`](node-tui-dashboard-plan.md) | **节点 Dashboard/TUI 最优方案**：**独立 client-server**（`relayfirst-dashboard`）、HTTP 只读轮询、**节点安全 8 条**、任务 D1–D6 | 交互 + 实时数据 |
 | [`multi-node-plan.md`](multi-node-plan.md) | **多节点测试计划**：①客户端多节点（可做）vs ②③节点复制/联邦（未实现）；**"N 节点为何可行"的封闭性质论证 + 属性化测试**；任务 MN-1..4 | 多节点正确性 |
+| [`npm-packaging-plan.md`](npm-packaging-plan.md) | **npm 跨平台打包计划（PKG-1/2）**：主包 + 每平台 `optionalDependencies` 子包（42MB→~8MB）；平台名映射、发布顺序、任务 PKG1-1..5 | 发布优化 |
 | [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md) | `relayfirst` 定位与品牌层 | 矿工 UX |
 | [`node-incentives-discussion.md`](node-incentives-discussion.md) | 节点动机（BLK-5）选项 | 为何安节点 |
 | [`../gtm/blk-2-first-consumer-plan.md`](../gtm/blk-2-first-consumer-plan.md) | BLK-2 首个消费方行动方案 | 上线硬前置 |
