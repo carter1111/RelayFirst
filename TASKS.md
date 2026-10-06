@@ -34,7 +34,7 @@
 
 | id | 问题 | 为什么阻塞 | 状态 | 影响 |
 |---|---|---|---|---|
-| **BLK-1** | **agent 订阅能否程序化驱动？** | 决定叙事成立与否。若不能，产品退化为"再买一份 API key 来挖矿" | ⬜ **todo（最高优先级）** | 整套 §10.1 叙事 |
+| **BLK-1** | **agent 订阅能否程序化驱动？** | 决定叙事成立与否。若不能，产品退化为"再买一份 API key 来挖矿" | ✅ **已核实（2026-10-07）：PARTIAL —— 一家 YES，一家 NO**。**Codex YES**：官方**明确文档化**在 CI/CD 用 ChatGPT 账号授权跑 `codex exec`（"Use ChatGPT-managed auth in CI/CD"）。**Claude Code NO**：Consumer ToS **明文禁止**"automated or non-human means … bot, script"（非 API key 时）→ 程序化须 BYO API key = **正是"再买一份额度"**。**→ 支持列表只写 Codex**。报告：[`blk-1-verification-plan.md`](docs/notes/blk-1-verification-plan.md) | **叙事"对 Codex 成立"**；是否继续把 Claude Code 当目标订阅 → **产品决策** |
 | **BLK-2** | 第一个真实消费方是谁？ | 上线**硬性前置条件**（`MVP.md` §10.3） | 🟡 **行动方案已就绪** — 见 [`docs/gtm/blk-2-first-consumer-plan.md`](docs/gtm/blk-2-first-consumer-plan.md)（价格/可达性 → 交易机器人；含买家画像/demo/首封信/8 周时间盒）。**接洽属人工动作，未开始** | 上线许可 |
 | **BLK-3** | 验证者指派策略（随机种子 / 防串谋） | S4 实现前必须定 | 🟢 **✅ 已裁决（2026-10-05）：取 A —— 确定性种子**（现参考实现 `EligiblePolicy`）。**机制零改动**。决策包：[`docs/notes/blk-3-assignment-policy.md`](docs/notes/blk-3-assignment-policy.md)。**剩余为部署配置**（候选集 + seed 来源 + 自动路径不用 `AllowAll`），非代码 | 验证者指派 |
 | **BLK-4** | **epoch 起点取哪个日期？** | epoch 号在**签名载荷**内，公布后不可改；改则旧回执全部失效 | 🟢 **✅ 已裁决（2026-10-05）：A —— genesis = 公开发布日 00:00 UTC**。**⏳ 仅缺"具体是哪天"**（业务日期，待给）。**已加防呆**：`-tags mainnet` 构建在 genesis 仍为占位符时**启动 panic**（`internal/epoch/release*.go`），占位符**不可能误带上线**。决策包：[`docs/notes/blk-4-genesis-decision.md`](docs/notes/blk-4-genesis-decision.md) | 开放真实挖矿前 |
