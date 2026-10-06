@@ -38,7 +38,7 @@
 | **BLK-2** | 第一个真实消费方是谁？ | 上线**硬性前置条件**（`MVP.md` §10.3） | 🟡 **行动方案已就绪** — 见 [`docs/gtm/blk-2-first-consumer-plan.md`](docs/gtm/blk-2-first-consumer-plan.md)（价格/可达性 → 交易机器人；含买家画像/demo/首封信/8 周时间盒）。**接洽属人工动作，未开始** | 上线许可 |
 | **BLK-3** | 验证者指派策略（随机种子 / 防串谋） | S4 实现前必须定 | 🟢 **✅ 已裁决（2026-10-05）：取 A —— 确定性种子**（现参考实现 `EligiblePolicy`）。**机制零改动**。决策包：[`docs/notes/blk-3-assignment-policy.md`](docs/notes/blk-3-assignment-policy.md)。**剩余为部署配置**（候选集 + seed 来源 + 自动路径不用 `AllowAll`），非代码 | 验证者指派 |
 | **BLK-4** | **epoch 起点取哪个日期？** | epoch 号在**签名载荷**内，公布后不可改；改则旧回执全部失效 | 🟢 **✅ 已裁决（2026-10-05）：A —— genesis = 公开发布日 00:00 UTC**。**⏳ 仅缺"具体是哪天"**（业务日期，待给）。**已加防呆**：`-tags mainnet` 构建在 genesis 仍为占位符时**启动 panic**（`internal/epoch/release*.go`），占位符**不可能误带上线**。决策包：[`docs/notes/blk-4-genesis-decision.md`](docs/notes/blk-4-genesis-decision.md) | 开放真实挖矿前 |
-| **BLK-5** | **节点的动机是什么？**（现状无回报；A7 禁止节点排放） | 决定网络能不能起量；"为什么安节点"若答不上，网络是空的 | 🗣️ **待裁决** —— 讨论档：[`docs/notes/node-incentives-discussion.md`](docs/notes/node-incentives-discussion.md)（三问：Q1 无激励 / Q2 声誉榜 / Q3 运维费）。**推荐 Q1 保持无激励**（与 A7/Nostr 一致） | 网络采用 |
+| **BLK-5** | **节点的动机是什么？**（现状无回报；A7 禁止节点排放） | 决定网络能不能起量；"为什么安节点"若答不上，网络是空的 | 🗣️ **已延期（deferred，2026-10-06）** —— 用户裁决：**"没有很好的完整激励方式，先放 planning"**。**技术结论**：**节点工作量不可验证**（存转字节**不可复算**），**最多 attest 不能 verify**；付钱给不可验证的声明 = A6/A7 要防的形态。**能验证的是 agent 的工作，不是节点的运营** → 激励只能挂现有机制。**保留** V2 声誉榜（非货币）。讨论档：[`node-incentives-discussion.md`](docs/notes/node-incentives-discussion.md) | 延期 |
 
 **开工建议：** BLK-1 第 1 天就开始核实；S1 可以并行推进（回执结构与 KAT 不依赖它）。
 BLK-4 直到"开放真实挖矿"之前都不阻塞开发，但**必须在那一刻之前定稿**，所以别拖到最后一刻。
