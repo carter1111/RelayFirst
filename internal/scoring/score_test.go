@@ -28,8 +28,8 @@ func TestScore_FirstSightingEarnsBasePoints(t *testing.T) {
 	if v.Diversity != 1 {
 		t.Errorf("Diversity = %v, want 1 with no repeats", v.Diversity)
 	}
-	if v.Points != BasePoints {
-		t.Errorf("Points = %v, want %v", v.Points, BasePoints)
+	if v.Work != BasePoints {
+		t.Errorf("Points = %v, want %v", v.Work, BasePoints)
 	}
 }
 
@@ -43,8 +43,8 @@ func TestScore_DoesNotConsumeNovelty(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Score: %v", err)
 		}
-		if v.Points != BasePoints {
-			t.Fatalf("iteration %d: Score mutated the ledger (Points = %v)", i, v.Points)
+		if v.Work != BasePoints {
+			t.Fatalf("iteration %d: Score mutated the ledger (Points = %v)", i, v.Work)
 		}
 	}
 	if ledger.Len() != 0 {
@@ -66,8 +66,8 @@ func TestScore_VerifiedIsBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Score: %v", err)
 	}
-	if v.Points != 0 {
-		t.Errorf("Points = %v, want 0 for an unverified result", v.Points)
+	if v.Work != 0 {
+		t.Errorf("Points = %v, want 0 for an unverified result", v.Work)
 	}
 	if v.Verified != 0 {
 		t.Errorf("Verified = %v, want 0", v.Verified)
@@ -107,39 +107,8 @@ func TestScore_DiversityAttenuates(t *testing.T) {
 			t.Errorf("repeats=%d: Diversity = %v, want %v", c.repeats, v.Diversity, c.want)
 		}
 		wantPoints := BasePoints * c.want
-		if !almostEqual(v.Points, wantPoints, 1e-9) {
-			t.Errorf("repeats=%d: Points = %v, want %v", c.repeats, v.Points, wantPoints)
-		}
-	}
-}
-
-func TestScore_BudgetFactorClampedAndScales(t *testing.T) {
-	cases := []struct {
-		in        float64
-		wantFac   float64
-		wantPoint float64
-	}{
-		{1.0, 1.0, BasePoints},
-		{0.5, 0.5, BasePoints * 0.5},
-		{2.0, 1.0, BasePoints}, // clamped down
-		{-1.0, 0.0, 0},         // clamped up, and scores nothing
-	}
-
-	for _, c := range cases {
-		ledger := NewMemLedger()
-		r := probeReceipt(agentA, testURL, testContentHash)
-		p := fullParams()
-		p.BudgetFactor = c.in
-
-		v, err := Score(r, ledger, p)
-		if err != nil {
-			t.Fatalf("Score: %v", err)
-		}
-		if !almostEqual(v.BudgetFactor, c.wantFac, 1e-9) {
-			t.Errorf("in=%v: BudgetFactor = %v, want %v", c.in, v.BudgetFactor, c.wantFac)
-		}
-		if !almostEqual(v.Points, c.wantPoint, 1e-9) {
-			t.Errorf("in=%v: Points = %v, want %v", c.in, v.Points, c.wantPoint)
+		if !almostEqual(v.Work, wantPoints, 1e-9) {
+			t.Errorf("repeats=%d: Points = %v, want %v", c.repeats, v.Work, wantPoints)
 		}
 	}
 }
@@ -166,21 +135,21 @@ func TestEmit_CreditsOnceThenZero(t *testing.T) {
 	at := time.Unix(1791015800, 0)
 	r := probeReceipt(agentA, testURL, testContentHash)
 
-	first, err := Emit(r, ledger, fullParams(), at)
+	first, err := RecordWork(r, ledger, NewMemWorkLedger(), fullParams(), at)
 	if err != nil {
 		t.Fatalf("Emit: %v", err)
 	}
-	if first.Points != BasePoints {
-		t.Errorf("first Points = %v, want %v", first.Points, BasePoints)
+	if first.Work != BasePoints {
+		t.Errorf("first Points = %v, want %v", first.Work, BasePoints)
 	}
 
 	// The same artifact from a DIFFERENT agent is still a repeat.
-	second, err := Emit(probeReceipt(agentB, testURL, testContentHash), ledger, fullParams(), at)
+	second, err := RecordWork(probeReceipt(agentB, testURL, testContentHash), ledger, NewMemWorkLedger(), fullParams(), at)
 	if err != nil {
 		t.Fatalf("Emit: %v", err)
 	}
-	if second.Points != 0 {
-		t.Errorf("second Points = %v, want 0 (artifact already seen)", second.Points)
+	if second.Work != 0 {
+		t.Errorf("second Points = %v, want 0 (artifact already seen)", second.Work)
 	}
 	if second.Reason == "" {
 		t.Error("a zero score should explain itself")
@@ -189,7 +158,7 @@ func TestEmit_CreditsOnceThenZero(t *testing.T) {
 
 func TestEmit_RequiresLedger(t *testing.T) {
 	r := probeReceipt(agentA, testURL, testContentHash)
-	if _, err := Emit(r, nil, fullParams(), time.Unix(1791015800, 0)); err == nil {
+	if _, err := RecordWork(r, nil, NewMemWorkLedger(), fullParams(), time.Unix(1791015800, 0)); err == nil {
 		t.Error("Emit without a ledger must fail")
 	}
 }
@@ -222,17 +191,17 @@ func TestRedTeam_FiveAgentsSameURLAllZeroButFirst(t *testing.T) {
 		// submissions rather than replays of one receipt.
 		r.ReceiptID = "0x" + strings.Repeat(itoa(i), 64)
 
-		v, err := Emit(r, ledger, fullParams(), at)
+		v, err := RecordWork(r, ledger, NewMemWorkLedger(), fullParams(), at)
 		if err != nil {
 			t.Fatalf("agent %d: Emit: %v", i, err)
 		}
-		if v.Points > 0 {
+		if v.Work > 0 {
 			earned++
 		}
-		total += v.Points
+		total += v.Work
 
-		if i > 0 && v.Points != 0 {
-			t.Errorf("agent %d earned %v; only the first sighting may earn (invariant A6)", i, v.Points)
+		if i > 0 && v.Work != 0 {
+			t.Errorf("agent %d earned %v; only the first sighting may earn (invariant A6)", i, v.Work)
 		}
 	}
 
@@ -266,11 +235,11 @@ func TestRedTeam_ManyAgentsFarmingIsLinearNotMultiplicative(t *testing.T) {
 	for i := 0; i < n; i++ {
 		r := probeReceipt("agent:eip155:8453:0x"+strings.Repeat(itoa(i%10), 40), testURL, testContentHash)
 		r.ReceiptID = "0x" + strings.Repeat("f", 62) + itoa(i%10) + itoa(i/10)
-		v, err := Emit(r, ledger, fullParams(), at)
+		v, err := RecordWork(r, ledger, NewMemWorkLedger(), fullParams(), at)
 		if err != nil {
 			t.Fatalf("Emit: %v", err)
 		}
-		total += v.Points
+		total += v.Work
 	}
 
 	if total != BasePoints {
@@ -296,12 +265,12 @@ func TestRedTeam_FabricatedContentHashCannotReuseNovelty(t *testing.T) {
 
 	// Honest agent observes the real content first.
 	honest := probeReceipt(agentA, testURL, testContentHash)
-	v, err := Emit(honest, ledger, fullParams(), time.Unix(1791015800, 0))
+	v, err := RecordWork(honest, ledger, NewMemWorkLedger(), fullParams(), time.Unix(1791015800, 0))
 	if err != nil {
 		t.Fatalf("Emit honest: %v", err)
 	}
-	if v.Points != BasePoints {
-		t.Fatalf("honest Points = %v, want %v", v.Points, BasePoints)
+	if v.Work != BasePoints {
+		t.Fatalf("honest Points = %v, want %v", v.Work, BasePoints)
 	}
 
 	// Attacker invents a contentHash for the same url. That yields a distinct
@@ -314,8 +283,8 @@ func TestRedTeam_FabricatedContentHashCannotReuseNovelty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Score fabricated: %v", err)
 	}
-	if v.Points != 0 {
-		t.Errorf("fabricated content scored %v, want 0", v.Points)
+	if v.Work != 0 {
+		t.Errorf("fabricated content scored %v, want 0", v.Work)
 	}
 
 	// And the fabricated key must differ from the honest one, so it cannot be
@@ -349,12 +318,12 @@ func TestRedTeam_RejectedSubmissionCannotBurnArtifact(t *testing.T) {
 	rejected := fullParams()
 	rejected.Verified = false
 
-	v, err := Emit(attacker, ledger, rejected, at)
+	v, err := RecordWork(attacker, ledger, NewMemWorkLedger(), rejected, at)
 	if err != nil {
 		t.Fatalf("Emit rejected: %v", err)
 	}
-	if v.Points != 0 {
-		t.Fatalf("rejected submission scored %v, want 0", v.Points)
+	if v.Work != 0 {
+		t.Fatalf("rejected submission scored %v, want 0", v.Work)
 	}
 	if ledger.Len() != 0 {
 		t.Fatalf("ledger Len = %d after a rejected submission, want 0 — rejection must not claim the artifact",
@@ -363,12 +332,12 @@ func TestRedTeam_RejectedSubmissionCannotBurnArtifact(t *testing.T) {
 
 	// The honest agent can still earn novelty afterwards.
 	honest := probeReceipt(agentA, testURL, testContentHash)
-	v, err = Emit(honest, ledger, fullParams(), at)
+	v, err = RecordWork(honest, ledger, NewMemWorkLedger(), fullParams(), at)
 	if err != nil {
 		t.Fatalf("Emit honest: %v", err)
 	}
-	if v.Points != BasePoints {
-		t.Errorf("honest agent earned %v after a rejected attempt, want %v", v.Points, BasePoints)
+	if v.Work != BasePoints {
+		t.Errorf("honest agent earned %v after a rejected attempt, want %v", v.Work, BasePoints)
 	}
 }
 
@@ -383,7 +352,7 @@ func TestRedTeam_UnacceptedTaskTypeCannotScore(t *testing.T) {
 		if _, err := Score(r, ledger, fullParams()); err == nil {
 			t.Errorf("task type %q must not be scoreable (invariant A2)", bad)
 		}
-		if _, err := Emit(r, ledger, fullParams(), time.Unix(1791015800, 0)); err == nil {
+		if _, err := RecordWork(r, ledger, NewMemWorkLedger(), fullParams(), time.Unix(1791015800, 0)); err == nil {
 			t.Errorf("task type %q must not be emittable", bad)
 		}
 	}

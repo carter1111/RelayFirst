@@ -109,32 +109,6 @@ func TestEpochBounds_LengthIsOneDay(t *testing.T) {
 	}
 }
 
-func TestBudgetFactor(t *testing.T) {
-	const epoch = 0
-	cap := PerAgentCap(epoch)
-
-	cases := []struct {
-		earned float64
-		want   float64
-	}{
-		{0, 1.0},
-		{cap / 2, 0.5},
-		{cap, 0.0},
-		{cap * 2, 0.0}, // overshoot still floors at 0
-		{-10, 1.0},     // negative earned treats as no earnings
-	}
-
-	for _, c := range cases {
-		got := BudgetFactor(epoch, c.earned)
-		if !almostEqual(got, c.want, 1e-9) {
-			t.Errorf("BudgetFactor(earned=%v) = %v, want %v", c.earned, got, c.want)
-		}
-		if got < 0 || got > 1 {
-			t.Errorf("BudgetFactor(%v) = %v is outside [0,1]", c.earned, got)
-		}
-	}
-}
-
 func TestAllocate_ProportionalAndCapped(t *testing.T) {
 	const epoch = 0
 

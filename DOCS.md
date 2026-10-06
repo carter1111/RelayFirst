@@ -70,7 +70,8 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/gtm/blk-2-first-consumer-plan.md`](docs/gtm/blk-2-first-consumer-plan.md) | 200 | **行动方案**（→ gtm） | **BLK-2：找第一个真实消费方**（价格/可达性 → 交易机器人）—— 买家画像 / demo 形态 / 首封信 / 反自我欺骗判据 / 8 周时间盒 | 拿到第一个使用者后 |
 | [`docs/gtm/messaging-engine-vision.md`](docs/gtm/messaging-engine-vision.md) | — | **愿景**（→ gtm） | RelayFirst 作为通用去中心化消息引擎的定位、缺口与对接 | 方向变化时 |
 | [`docs/gtm/gtm-narrative.md`](docs/gtm/gtm-narrative.md) | — | **叙事**（→ gtm） | GTM 叙事手册（"讲尖不讲大"）——讲什么见 messaging-engine-vision | 叙事调整时 |
-| [`docs/notes/emission-model-conflict.md`](docs/notes/emission-model-conflict.md) | — | **笔记** | **计分公式（§5.3）与 epoch 发行模型（§6.2）互相矛盾**——需人裁决 | 用户裁决后 |
+| [`docs/notes/emission-model-conflict.md`](docs/notes/emission-model-conflict.md) | — | **笔记** | **计分公式（§5.3）与 epoch 发行模型（§6.2）的矛盾** —— ✅ **已裁决（D1）：模型 B**；L0 已统一 | 已裁决 |
+| [`docs/notes/settlement-trigger.md`](docs/notes/settlement-trigger.md) | — | **笔记** | **epoch 结算触发器（D1 条件 2）**：谁/何时调 `Settle`；为何不能每回执结算；`relayfirst settle` 幂等 | 调度方式变化时 |
 | [`docs/notes/blk-1-verification-plan.md`](docs/notes/blk-1-verification-plan.md) | — | **规划**（→ planning） | **BLK-1 核实计划**：订阅能否程序化驱动；一周内给书面 yes/no | 结论出来后 |
 | [`docs/notes/s13-e2ee-plan.md`](docs/notes/s13-e2ee-plan.md) | — | **记录**（S13 已实现） | **S13 完整方案**（E2EE + 密钥层级）：论证过程，已落地 | S13 变更时 |
 | [`docs/notes/wukongim-tech-advantages.md`](docs/notes/wukongim-tech-advantages.md) | — | **笔记** | WuKongIM 技术优势（供借鉴；benchmark 门禁与批量事务已取用） | 不再更新 |

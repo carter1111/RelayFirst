@@ -126,6 +126,7 @@ func (s *stack) score(t *testing.T, r *receipt.Receipt, verdicts mining.VerdictS
 		Inner:     s.receipts,
 		Receipts:  s.receipts,
 		Artifacts: s.ledgers.Artifacts,
+		Work:      s.ledgers.Work,
 		Points:    s.ledgers.Points,
 		Verdicts:  verdicts,
 		Clock:     func() time.Time { return time.Unix(1791015900, 0) },
@@ -133,6 +134,12 @@ func (s *stack) score(t *testing.T, r *receipt.Receipt, verdicts mining.VerdictS
 
 	if err := sink.Save(r, key, time.Unix(1791015900, 0)); err != nil {
 		t.Fatalf("Save: %v", err)
+	}
+	// A receipt contributes WORK; the points appear when the epoch settles (D1). The red
+	// team is about which work an attack can claim, so settlement is run to make the
+	// effect visible as a balance — the same step production runs once per epoch.
+	if _, err := sink.Finalize(r.Epoch, time.Unix(1791015900, 0)); err != nil {
+		t.Fatalf("Finalize: %v", err)
 	}
 	return s.ledgers.Points.Balance(r.AgentID)
 }

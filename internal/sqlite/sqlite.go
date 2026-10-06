@@ -181,6 +181,29 @@ CREATE TABLE IF NOT EXISTS point_entries (
 CREATE INDEX IF NOT EXISTS point_entries_agent_idx ON point_entries (agent_id);
 CREATE INDEX IF NOT EXISTS point_entries_epoch_idx ON point_entries (agent_id, epoch);
 
+-- ACCUMULATED WORK, before settlement (MVP.md §5.3 -> §6.2; D1).
+--
+-- This is the settlement INPUT and the audit trail: an epoch's points are the budget
+-- shared by these work totals, so the totals must be recomputable from durable records
+-- and "why did this agent get X" must be answerable. Points are derived from this
+-- table; keeping only points would discard the inputs.
+--
+-- Keyed by receipt_id so recording the same receipt twice is a no-op (the dedup ledger
+-- already gates novelty, but idempotency here means a retry cannot double a total).
+-- micro_work is fixed-point for the same reason micro_points is: accumulating floats
+-- drifts.
+CREATE TABLE IF NOT EXISTS work_records (
+    receipt_id   TEXT    PRIMARY KEY,
+    agent_id     TEXT    NOT NULL,
+    epoch        INTEGER NOT NULL,
+    micro_work   INTEGER NOT NULL,
+    artifact_key TEXT    NOT NULL,
+    recorded_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS work_records_agent_idx ON work_records (agent_id, epoch);
+CREATE INDEX IF NOT EXISTS work_records_epoch_idx ON work_records (epoch);
+
 -- Receipts produced by mining (S2-8).
 --
 -- The canonical JSON is stored verbatim alongside a few indexed columns. Storing

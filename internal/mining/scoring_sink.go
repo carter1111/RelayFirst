@@ -60,8 +60,17 @@ type ScoringSink struct {
 	// trusting the submitter; see VerdictSource.
 	Verdicts VerdictSource
 
-	// Points is the append-only credit ledger (invariant A5). Required to credit;
-	// when nil, receipts are stored but nothing is credited.
+	// Work accumulates a receipt's measured WORK, which is the settlement input
+	// (MVP.md §5.3 -> §6.2). Required to score; when nil, receipts are stored but
+	// nothing is recorded.
+	//
+	// This replaced a direct points Credit (D1): a receipt contributes work, and an
+	// epoch's points come from settling the work totals, not from a per-receipt rate.
+	Work scoring.WorkLedger
+
+	// Points receives the SETTLED points when an epoch is finalized (see Finalize).
+	// Required only for finalization; a miner that never finalizes (or has no points
+	// ledger) still records work.
 	Points scoring.PointsLedger
 
 	// Clock is injected for tests. Nil means time.Now.
@@ -128,29 +137,82 @@ func (s *ScoringSink) Save(r *receipt.Receipt, artifactKey string, at time.Time)
 // nobody can see is indistinguishable from "this receipt earned nothing", and the
 // miner cannot act on a problem it cannot observe.
 func (s *ScoringSink) score(r *receipt.Receipt, at time.Time) {
-	if s.Artifacts == nil || s.Points == nil {
+	if s.Artifacts == nil || s.Work == nil {
 		return
 	}
 
-	verdict, err := scoring.Emit(r, s.Artifacts, s.paramsFor(r), at)
+	// RecordWork claims the artifact (dedup, A6) and records the work. It no longer
+	// credits points: points come from Finalize.
+	verdict, err := scoring.RecordWork(r, s.Artifacts, s.Work, s.paramsFor(r), at)
 	if err != nil {
-		s.reportError(r, "emit", err)
+		s.reportError(r, "record-work", err)
 		return
-	}
-
-	if verdict.Points > 0 {
-		// Emit already recorded the sighting; crediting is separate because the
-		// points ledger is the thing that must be idempotent per receipt.
-		if _, err := s.Points.Credit(r.ReceiptID, r.AgentID, r.Epoch, verdict.Points, at); err != nil {
-			// The receipt earned points that were NOT recorded. That is the case a
-			// miner most needs to know about, and the one that used to be silent.
-			s.reportError(r, "credit", err)
-		}
 	}
 
 	if s.OnVerdict != nil {
 		s.OnVerdict(r, verdict)
 	}
+}
+
+// Finalize settles an epoch: it turns the accumulated WORK into POINTS and writes
+// them, once.
+//
+// # Who calls this, and when (condition 2, D1)
+//
+// Settlement is NOT automatic on the mining path, on purpose: it is an epoch-level,
+// once-per-epoch step, and running it on every receipt would settle a moving total and
+// produce a number that changes as more work arrives — the opposite of a settlement.
+// The trigger is therefore explicit: an operator (or a scheduler) runs the finalize
+// step once an epoch has closed, with `relayfirst settle`, and it is idempotent per
+// epoch through the points ledger. See docs/notes/settlement-trigger.md.
+//
+// # What it does
+//
+//  1. Reads the epoch's work totals (the settlement input).
+//  2. Runs scoring.Settle: share the fixed budget, then apply the per-agent cap.
+//  3. Writes one points entry per agent for the epoch.
+//
+// Returning the settled map lets a caller build the epoch's Merkle root (S7) from the
+// same numbers, so the published root and the credited points cannot disagree.
+func (s *ScoringSink) Finalize(epoch uint64, at time.Time) (map[string]float64, error) {
+	if s.Work == nil {
+		return nil, fmt.Errorf("mining: no work ledger to settle")
+	}
+	if s.Points == nil {
+		return nil, fmt.Errorf("mining: no points ledger to settle into")
+	}
+
+	totals, err := s.Work.Totals(epoch)
+	if err != nil {
+		return nil, fmt.Errorf("mining: read work totals for epoch %d: %w", epoch, err)
+	}
+	settled, err := scoring.Settle(epoch, totals)
+	if err != nil {
+		return nil, fmt.Errorf("mining: settle epoch %d: %w", epoch, err)
+	}
+
+	// Write one entry per agent. The entry id is derived from the epoch and agent, NOT
+	// from a receipt — settlement is per agent, and the points ledger's idempotency key
+	// is what makes a re-run of Finalize a no-op rather than a double credit.
+	for agent, points := range settled {
+		if points <= 0 {
+			continue
+		}
+		if _, err := s.Points.Credit(settlementEntryID(epoch, agent), agent, epoch, points, at); err != nil {
+			return settled, fmt.Errorf("mining: credit settled points for %s epoch %d: %w", agent, epoch, err)
+		}
+	}
+	return settled, nil
+}
+
+// settlementEntryID is the points-ledger idempotency key for an (epoch, agent)
+// settlement.
+//
+// It is derived rather than random so a second Finalize of the same epoch collides with
+// the first and is ignored, which is what makes finalization safe to re-run after a
+// crash. The "settle:" prefix keeps it from ever colliding with a receipt id.
+func settlementEntryID(epoch uint64, agent string) string {
+	return fmt.Sprintf("settle:%d:%s", epoch, agent)
 }
 
 // reportError surfaces a swallowed scoring failure when a reporter is configured.
@@ -195,7 +257,6 @@ func (s *ScoringSink) paramsFor(r *receipt.Receipt) scoring.Params {
 	return scoring.Params{
 		Verified:          verified,
 		SameDomainRepeats: s.sameDomainRepeats(r, epoch),
-		BudgetFactor:      scoring.BudgetFactor(epoch, s.Points.EpochBalance(r.AgentID, epoch)),
 	}
 }
 
@@ -246,14 +307,19 @@ func (s *ScoringSink) sameDomainRepeats(r *receipt.Receipt, epoch uint64) int {
 }
 
 // DescribeVerdict renders a verdict for a progress line.
+// DescribeVerdict renders a verdict for a progress line.
+//
+// It reports WORK, not points, because a receipt no longer earns points directly
+// (D1): the points appear when the epoch settles. Saying "+X points" here would be the
+// model that was migrated away from.
 func DescribeVerdict(v scoring.Verdict) string {
-	if v.Points <= 0 {
+	if v.Work <= 0 {
 		if v.Reason != "" {
-			return "no credit: " + v.Reason
+			return "no work: " + v.Reason
 		}
-		return "no credit"
+		return "no work"
 	}
-	return fmt.Sprintf("+%.4f points", v.Points)
+	return fmt.Sprintf("+%.4f work", v.Work)
 }
 
 // ShortArtifact trims an artifact key for display.

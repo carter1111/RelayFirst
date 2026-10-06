@@ -39,14 +39,14 @@ func verdictTestReceipt(t *testing.T, url string) *receipt.Receipt {
 func TestScoringSink_UsesInjectedVerdictSource(t *testing.T) {
 	t.Run("verifier says yes, the receipt earns", func(t *testing.T) {
 		inner := newFakeStore()
-		points := scoring.NewMemPointsLedger()
+		work := scoring.NewMemWorkLedger()
 		source := &stubVerdicts{verified: true}
 
 		sink := &ScoringSink{
 			Inner:     inner,
 			Receipts:  inner,
 			Artifacts: scoring.NewMemLedger(),
-			Points:    points,
+			Work:      work,
 			Verdicts:  source,
 			Clock:     func() time.Time { return time.Unix(1791015800, 0) },
 		}
@@ -59,14 +59,15 @@ func TestScoringSink_UsesInjectedVerdictSource(t *testing.T) {
 		if source.seen == 0 {
 			t.Fatal("the verdict source was never consulted, so the injection is decorative")
 		}
-		if got := points.Balance(r.AgentID); got <= 0 {
-			t.Errorf("Balance = %v, want a credit when the verifier agreed", got)
+		// The verdict decides whether WORK is recorded (D1: points come from settlement).
+		if got := work.Count(); got != 1 {
+			t.Errorf("work records = %d, want 1 when the verifier agreed", got)
 		}
 	})
 
 	t.Run("verifier says no, the receipt earns nothing", func(t *testing.T) {
 		inner := newFakeStore()
-		points := scoring.NewMemPointsLedger()
+		work := scoring.NewMemWorkLedger()
 		ledger := scoring.NewMemLedger()
 		source := &stubVerdicts{verified: false}
 
@@ -74,7 +75,7 @@ func TestScoringSink_UsesInjectedVerdictSource(t *testing.T) {
 			Inner:     inner,
 			Receipts:  inner,
 			Artifacts: ledger,
-			Points:    points,
+			Work:      work,
 			Verdicts:  source,
 			Clock:     func() time.Time { return time.Unix(1791015800, 0) },
 		}
@@ -84,8 +85,8 @@ func TestScoringSink_UsesInjectedVerdictSource(t *testing.T) {
 			t.Fatalf("Save: %v", err)
 		}
 
-		if got := points.Balance(r.AgentID); got != 0 {
-			t.Errorf("Balance = %v, want 0 when the verifier disagreed", got)
+		if got := work.Count(); got != 0 {
+			t.Errorf("work records = %d, want 0 when the verifier disagreed", got)
 		}
 		// A rejected receipt must not consume the artifact either, or it would deny
 		// novelty to whoever later does the work honestly.
@@ -99,14 +100,14 @@ func TestScoringSink_UsesInjectedVerdictSource(t *testing.T) {
 // explicitly, so the fallback is a documented decision rather than an accident.
 func TestScoringSink_DefaultSourceIsTheSelfCheck(t *testing.T) {
 	inner := newFakeStore()
-	points := scoring.NewMemPointsLedger()
+	work := scoring.NewMemWorkLedger()
 
 	// No Verdicts configured.
 	sink := &ScoringSink{
 		Inner:     inner,
 		Receipts:  inner,
 		Artifacts: scoring.NewMemLedger(),
-		Points:    points,
+		Work:      work,
 		Clock:     func() time.Time { return time.Unix(1791015800, 0) },
 	}
 
@@ -115,9 +116,9 @@ func TestScoringSink_DefaultSourceIsTheSelfCheck(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	if got := points.Balance(r.AgentID); got <= 0 {
-		t.Errorf("Balance = %v; the documented default reproduces the pre-S4 behaviour "+
-			"(self-check), so a well-formed receipt should still credit", got)
+	if got := work.Count(); got != 1 {
+		t.Errorf("work records = %d; the documented default reproduces the pre-S4 behaviour "+
+			"(self-check), so a well-formed receipt should still record work", got)
 	}
 }
 

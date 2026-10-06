@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/relayfirst/relayfirst/internal/scoring"
+	"github.com/relayfirst/relayfirst/internal/sqlite"
 )
 
 // SQLArtifactLedger is a durable scoring.Ledger.
@@ -236,6 +237,120 @@ func (l *SQLPointsLedger) AgentCount() int {
 	if err := l.db.Handle().QueryRow(
 		`SELECT COUNT(DISTINCT agent_id) FROM point_entries`,
 	).Scan(&n); err != nil {
+		return 0
+	}
+	return n
+}
+
+// SQLWorkLedger is a durable scoring.WorkLedger.
+//
+// It is the settlement input and the audit trail (D1): an epoch's points are derived
+// from these records, so they must survive a restart for the settlement to be
+// recomputable. Keyed by receipt id, so recording the same receipt twice is a no-op and
+// a retry cannot double a total.
+type SQLWorkLedger struct {
+	db *DB
+}
+
+// NewWorkLedger wraps db as a scoring.WorkLedger.
+func NewWorkLedger(db *DB) *SQLWorkLedger { return &SQLWorkLedger{db: db} }
+
+var _ scoring.WorkLedger = (*SQLWorkLedger)(nil)
+
+// Record appends one record, idempotently per receipt id.
+func (l *SQLWorkLedger) Record(rec scoring.WorkRecord) (bool, error) {
+	if rec.ReceiptID == "" {
+		return false, fmt.Errorf("store: work record has no receipt id")
+	}
+	if rec.AgentID == "" {
+		return false, fmt.Errorf("store: work record for %s has no agent", rec.ReceiptID)
+	}
+	if rec.Work <= 0 {
+		// Non-positive work is noise; the caller already knows the verdict was a miss.
+		return false, nil
+	}
+
+	micro := int64(rec.Work*scoring.MicroPerPoint + 0.5)
+	if micro <= 0 {
+		return false, nil
+	}
+
+	res, err := l.db.Handle().Exec(`
+		INSERT INTO work_records (receipt_id, agent_id, epoch, micro_work, artifact_key, recorded_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(receipt_id) DO NOTHING
+	`, rec.ReceiptID, rec.AgentID, rec.Epoch, micro, rec.ArtifactKey, timeToUnix(rec.RecordedAt))
+	if err != nil {
+		return false, fmt.Errorf("store: record work: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("store: record work rows: %w", err)
+	}
+	return n > 0, nil
+}
+
+// Totals returns each agent's summed work for an epoch.
+func (l *SQLWorkLedger) Totals(epoch uint64) (map[string]float64, error) {
+	rows, err := l.db.Handle().Query(
+		`SELECT agent_id, SUM(micro_work) FROM work_records WHERE epoch = ? GROUP BY agent_id`, epoch,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: work totals: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]float64{}
+	for rows.Next() {
+		var agent string
+		var micro int64
+		if err := rows.Scan(&agent, &micro); err != nil {
+			return nil, fmt.Errorf("store: scan work total: %w", err)
+		}
+		out[agent] = float64(micro) / scoring.MicroPerPoint
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterate work totals: %w", err)
+	}
+	return out, nil
+}
+
+// ForAgent returns one agent's records for an epoch, in the order recorded.
+func (l *SQLWorkLedger) ForAgent(agentID string, epoch uint64) ([]scoring.WorkRecord, error) {
+	rows, err := l.db.Handle().Query(`
+		SELECT receipt_id, agent_id, epoch, micro_work, artifact_key, recorded_at
+		FROM work_records WHERE agent_id = ? AND epoch = ? ORDER BY recorded_at, receipt_id
+	`, agentID, epoch)
+	if err != nil {
+		return nil, fmt.Errorf("store: work for agent: %w", err)
+	}
+	defer rows.Close()
+
+	var out []scoring.WorkRecord
+	for rows.Next() {
+		var (
+			rec   scoring.WorkRecord
+			micro int64
+			at    int64
+		)
+		if err := rows.Scan(&rec.ReceiptID, &rec.AgentID, &rec.Epoch, &micro, &rec.ArtifactKey, &at); err != nil {
+			return nil, fmt.Errorf("store: scan work record: %w", err)
+		}
+		rec.Work = float64(micro) / scoring.MicroPerPoint
+		rec.RecordedAt = sqlite.UnixToTime(at)
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterate work records: %w", err)
+	}
+	return out, nil
+}
+
+// Count returns the number of work records.
+func (l *SQLWorkLedger) Count() int {
+	var n int
+	err := l.db.Handle().QueryRow(`SELECT COUNT(*) FROM work_records`).Scan(&n)
+	if err != nil {
 		return 0
 	}
 	return n

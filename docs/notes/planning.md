@@ -77,8 +77,15 @@
 ⑤ 不选 C：复杂度×2、解释成本×2；散户听不懂的经济模型等于没有。
 ```
 
-**→ 后续影响**：`Allocate`/`CapAllocation`（`internal/scoring/emission.go`，**目前未接线**）**接线才有意义**。
+**→ 后续影响**：`Allocate`/`CapAllocation`（`internal/scoring/emission.go`）**接线才有意义**。
 **顺序：先定模型（已定），再接线 —— 不要反过来。**
+
+**✅ 接线已完成（2026-10-07）**：
+- **`scoring.Settle`**（纯函数，份额 + 5% cap）+ **`WorkLedger`/`WorkRecord`**（work 累积，**条件 1**）
+- **`Emit` → `RecordWork`**（回执记 work，不再记 points）；`Verdict.Points` → `Verdict.Work`；删 `BudgetFactor`
+- **`ScoringSink.Finalize`**（epoch 末结算，points entry id = `settle:<epoch>:<agent>` **幂等**）
+- **`relayfirst settle`** 命令；**触发器定死为显式命令**（**条件 2**，见 [`settlement-trigger.md`](settlement-trigger.md)）
+- **全链路测试**：work → Settle → points → Merkle root（**条件 3**，`TestSettlementChain_...`）
 
 **⚠️ 这触及 L0**（`MVP.md` §5.3 / §6.2 / §6.3 的两套模型需统一）→ 按 `AGENTS.md §5.1`，**要先改 `MVP.md`**。
 **接线本身是新的范围**（属 S3 的延伸），需先改 L0。

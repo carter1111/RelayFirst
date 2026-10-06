@@ -100,6 +100,7 @@ func newSink(db *store.DB) *mining.ScoringSink {
 		Inner:     receipts,
 		Receipts:  receipts,
 		Artifacts: ledgers.Artifacts,
+		Work:      ledgers.Work,
 		Points:    ledgers.Points,
 		Clock:     at,
 	}
@@ -115,7 +116,8 @@ func agentOf(t *testing.T, key string) string {
 }
 
 // TestMiningLoopCreditsPointsDurably is the core assertion of this change:
-// mining through the real store must move the points balance.
+// mining through the real store must move the points balance — via the work ledger
+// and an explicit settlement now (D1), not a per-receipt credit.
 func TestMiningLoopCreditsPointsDurably(t *testing.T) {
 	db := openStore(t)
 	sink := newSink(db)
@@ -128,8 +130,20 @@ func TestMiningLoopCreditsPointsDurably(t *testing.T) {
 	ledgers := store.NewScoringLedgers(db)
 	agent := agentOf(t, testKey1)
 
-	if got := ledgers.Points.Balance(agent); got != scoring.BasePoints {
-		t.Errorf("Balance = %v, want %v — mining must credit points through the real store", got, scoring.BasePoints)
+	// Before settlement the work exists but no points do.
+	if got := ledgers.Work.Count(); got != 1 {
+		t.Errorf("work records = %d, want 1", got)
+	}
+	if got := ledgers.Points.Balance(agent); got != 0 {
+		t.Errorf("points before settlement = %v, want 0", got)
+	}
+
+	// Settling turns the work into points.
+	if _, err := sink.Finalize(r.Epoch, at()); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	if got := ledgers.Points.Balance(agent); got <= 0 {
+		t.Errorf("Balance after settlement = %v, want a positive award", got)
 	}
 	if got := store.NewReceiptStore(db).Count(); got != 1 {
 		t.Errorf("receipts = %d, want 1", got)
@@ -153,8 +167,20 @@ func TestMiningLoopReplayIsNotDoubleCredited(t *testing.T) {
 	ledgers := store.NewScoringLedgers(db)
 	agent := agentOf(t, testKey1)
 
-	if got := ledgers.Points.Balance(agent); got != scoring.BasePoints {
-		t.Errorf("Balance after 5 saves = %v, want %v", got, scoring.BasePoints)
+	// A replay must not accumulate work twice.
+	if got := ledgers.Work.Count(); got != 1 {
+		t.Errorf("work records after 5 saves = %d, want 1", got)
+	}
+	// Settle twice, as a retry would: the points must not double.
+	if _, err := sink.Finalize(r.Epoch, at()); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	first := ledgers.Points.Balance(agent)
+	if _, err := sink.Finalize(r.Epoch, at()); err != nil {
+		t.Fatalf("Finalize (second): %v", err)
+	}
+	if got := ledgers.Points.Balance(agent); got != first {
+		t.Errorf("Balance after re-settling = %v, want the same %v", got, first)
 	}
 	if got := len(ledgers.Points.Entries()); got != 1 {
 		t.Errorf("entries = %d, want 1", got)
@@ -209,24 +235,42 @@ func TestMiningLoopFiveAgentsOneArtifactDurably(t *testing.T) {
 
 	ledgers := store.NewScoringLedgers(db)
 
+	// The dedup gate is at the WORK level (D1). Exactly one agent may have recorded work.
 	credited := 0
 	total := 0.0
 	for _, key := range keys {
-		got := ledgers.Points.Balance(agentOf(t, key))
-		if got > 0 {
-			credited++
+		recs, err := ledgers.Work.ForAgent(agentOf(t, key), testEpoch)
+		if err != nil {
+			t.Fatalf("ForAgent: %v", err)
 		}
-		total += got
+		if len(recs) > 0 {
+			credited++
+			total += recs[0].Work
+		}
 	}
 
 	if credited != 1 {
-		t.Errorf("%d of 5 agents credited, want exactly 1", credited)
+		t.Errorf("%d of 5 agents recorded work, want exactly 1", credited)
 	}
 	if diff := total - scoring.BasePoints; diff > 1e-9 || diff < -1e-9 {
-		t.Errorf("total credited = %v, want %v", total, scoring.BasePoints)
+		t.Errorf("total work = %v, want %v", total, scoring.BasePoints)
 	}
 	if got := ledgers.Artifacts.Len(); got != 1 {
 		t.Errorf("distinct artifacts = %d, want 1", got)
+	}
+
+	// Settlement pays exactly one agent.
+	if _, err := sink.Finalize(testEpoch, at()); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	paid := 0
+	for _, key := range keys {
+		if ledgers.Points.Balance(agentOf(t, key)) > 0 {
+			paid++
+		}
+	}
+	if paid != 1 {
+		t.Errorf("settlement paid %d agents, want exactly 1", paid)
 	}
 }
 
@@ -247,6 +291,10 @@ func TestMiningPointsSurviveReopen(t *testing.T) {
 	if err := sink.Save(r, "sha256:k1", at()); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
+	// Settle before closing, so the points (not just the work) are what must survive.
+	if _, err := sink.Finalize(r.Epoch, at()); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
 	if err := db.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -258,7 +306,12 @@ func TestMiningPointsSurviveReopen(t *testing.T) {
 	defer reopened.Close()
 
 	ledgers := store.NewScoringLedgers(reopened)
-	if got := ledgers.Points.Balance(agentOf(t, testKey1)); got != scoring.BasePoints {
-		t.Errorf("balance after reopen = %v, want %v", got, scoring.BasePoints)
+	// The settled points survive...
+	if got := ledgers.Points.Balance(agentOf(t, testKey1)); got <= 0 {
+		t.Errorf("balance after reopen = %v, want a positive settled balance", got)
+	}
+	// ...and so does the work, so a re-settlement after reopen recomputes the same.
+	if got := ledgers.Work.Count(); got != 1 {
+		t.Errorf("work records after reopen = %d, want 1", got)
 	}
 }

@@ -340,13 +340,17 @@ func (s *ReceiptStore) query(q string, args ...any) ([]*receipt.Receipt, error) 
 // in-memory side forgot.
 type ScoringLedgers struct {
 	Artifacts scoring.Ledger
-	Points    scoring.PointsLedger
+	// Work accumulates the settlement input (D1). A receipt contributes work, and an
+	// epoch's points come from settling the work totals.
+	Work   scoring.WorkLedger
+	Points scoring.PointsLedger
 }
 
 // NewScoringLedgers returns durable ledgers backed by db.
 func NewScoringLedgers(db *DB) ScoringLedgers {
 	return ScoringLedgers{
 		Artifacts: NewArtifactLedger(db),
+		Work:      NewWorkLedger(db),
 		Points:    NewPointsLedger(db),
 	}
 }

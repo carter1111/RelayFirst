@@ -201,6 +201,9 @@ func run(args []string) error {
 	case "mine":
 		return runMine(args[1:])
 
+	case "settle":
+		return runSettle(args[1:])
+
 	case "stats":
 		// `stats` predates `status`. Kept as an alias rather than a second
 		// implementation, because two commands that report the same thing would
@@ -625,6 +628,7 @@ func runMine(args []string) error {
 		Inner:     receipts,
 		Receipts:  receipts,
 		Artifacts: ledgers.Artifacts,
+		Work:      ledgers.Work,
 		Points:    ledgers.Points,
 		Verdicts:  verdicts,
 		OnVerdict: reportVerdict,
@@ -796,6 +800,74 @@ func runOnce(_ context.Context, loop *mining.Loop, sink mining.ReceiptSink) erro
 	})
 }
 
+// runSettle finalizes an epoch: it turns accumulated WORK into POINTS (D1).
+//
+// # Why settlement is an explicit command and not automatic
+//
+// Settlement is a once-per-epoch step over a CLOSED epoch. Doing it on the mining path
+// would settle a moving total, and the number would change as more work arrived — the
+// opposite of a settlement. So the trigger is a deliberate command an operator or a
+// scheduler runs, and it is idempotent per epoch (see ScoringSink.Finalize), which
+// makes re-running it safe after a crash. See docs/notes/settlement-trigger.md.
+func runSettle(args []string) error {
+	f, err := parseFlags(args)
+	if err != nil {
+		return err
+	}
+
+	dbPath := f.get("db", "./relayfirst.db")
+	epoch := scoring.EpochOf(time.Now())
+	if raw := f.get("epoch", ""); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &epoch); err != nil {
+			return fmt.Errorf("--epoch must be a number, got %q", raw)
+		}
+	}
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	ledgers := store.NewScoringLedgers(db)
+	sink := &mining.ScoringSink{Work: ledgers.Work, Points: ledgers.Points}
+
+	settled, err := sink.Finalize(epoch, time.Now())
+	if err != nil {
+		return err
+	}
+
+	// Report what was settled, in a stable order, so an operator can see each agent's
+	// emitted points rather than only a total.
+	agents := make([]string, 0, len(settled))
+	for a := range settled {
+		agents = append(agents, a)
+	}
+	sort.Strings(agents)
+
+	type row struct {
+		AgentID string  `json:"agentId"`
+		Points  float64 `json:"points"`
+	}
+	rows := make([]row, 0, len(agents))
+	var total float64
+	for _, a := range agents {
+		rows = append(rows, row{AgentID: a, Points: settled[a]})
+		total += settled[a]
+	}
+
+	return printJSON(map[string]any{
+		"epoch":         epoch,
+		"budget":        scoring.EpochBudget(epoch),
+		"settledAgents": len(rows),
+		"settledTotal":  total,
+		"points":        rows,
+		"note": "settled points are derived from accumulated work and are idempotent per " +
+			"epoch: re-running this command writes nothing new. Where the total is below the " +
+			"budget, the per-agent cap withheld the surplus (that direction is safe).",
+	})
+}
+
 // reportVerdict prints the outcome of scoring one receipt.
 //
 // Seeing this line is how an operator knows the economy is actually moving. A
@@ -803,8 +875,11 @@ func runOnce(_ context.Context, loop *mining.Loop, sink mining.ReceiptSink) erro
 // producing worthless work.
 func reportVerdict(r *receipt.Receipt, v scoring.Verdict) {
 	clearLiveLine()
-	if v.Points > 0 {
-		fmt.Printf("  + %s → +%.4f points\n", shortID(r.ReceiptID), v.Points)
+	// This reports WORK, not points (D1). A receipt contributes work; points appear
+	// when the epoch settles (`relayfirst settle`). Printing "+points" here would
+	// promise points the run has not yet, and may never, emit.
+	if v.Work > 0 {
+		fmt.Printf("  + %s → +%.4f work (points at epoch settlement)\n", shortID(r.ReceiptID), v.Work)
 		return
 	}
 	// A zero award is informative rather than noisy: it is the dedup ledger

@@ -60,27 +60,6 @@ func EpochBounds(epochIndex uint64) (start, end time.Time) {
 	return epoch.Bounds(epochIndex, EpochLength)
 }
 
-// BudgetFactor reports the remaining headroom for an agent that has already
-// earned a certain amount this epoch.
-//
-// It returns a value in [0,1] suitable for Params.BudgetFactor. The shape is
-// deliberately a hard ceiling rather than a smooth taper: once an agent reaches
-// its cap, further work earns nothing, which is easy to reason about and easy to
-// test.
-func BudgetFactor(epoch uint64, alreadyEarned float64) float64 {
-	cap := PerAgentCap(epoch)
-	if cap <= 0 {
-		return 0
-	}
-	if alreadyEarned <= 0 {
-		return 1
-	}
-	if alreadyEarned >= cap {
-		return 0
-	}
-	return 1 - (alreadyEarned / cap)
-}
-
 // Settle turns an epoch's accumulated WORK into the POINTS actually emitted.
 //
 // # This is the settlement step model B requires (D1, 2026-10-07)

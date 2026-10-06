@@ -52,7 +52,7 @@ const agentA = "agent:eip155:8453:0x000000000000000000000000000000000000000a"
 const agentB = "agent:eip155:8453:0x000000000000000000000000000000000000000b"
 
 func fullParams() Params {
-	return Params{Verified: true, SameDomainRepeats: 0, BudgetFactor: 1}
+	return Params{Verified: true, SameDomainRepeats: 0}
 }
 
 // artifactKey ------------------------------------------------------------
