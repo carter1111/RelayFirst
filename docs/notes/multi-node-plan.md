@@ -103,12 +103,14 @@ for seed in seeds:
 
 ## 3. 任务分解
 
-| id | 任务 | 依赖 | 验收 |
+| id | 任务 | 依赖 | 状态 |
 |---|---|---|---|
-| **MN-1** | **跨节点去重**：`mergeViews` 按 envelopeId 去重；同一 receipt 被 2+ 节点投递 → **只算一次** | — | 投同一 id 到 n 个节点 → 合并后**计数 = 1**；变异：去掉去重 → FAIL |
-| **MN-2** | **属性化测试**（§1.3）：随机事件集 × 随机 N(1..8) 切分 × 随机重复/乱序 → 断言各视图与并集**推导一致** | MN-1 | 多 seed 稳定；**去掉"按 id 去重" → FAIL**（证明属性非空转） |
-| **MN-3** | **封闭性质单测**：`merge(A,B)` 在 A/B 一致时仍一致（归纳基+步） | MN-1 | 直接断言封闭性；这是归纳的**基** |
-| **MN-4** | **N=1..8 参数化冒烟**：把现有 4 项 twonode 语义在 N 路下重跑 | MN-1 | N=1 退化为"单节点"；不回归 |
+| **MN-1** | **跨节点去重**：`mergeViews` 按 `EventID` 去重；同一事件被 n 节点投递 → 只算一次 | — | ✅ **done** —— `internal/publish/multinode_test.go` 的 `mergeViews` + 两项测试（纯函数 + 端到端 3 节点同历史 → 合并 == 原历史、链有效）。**变异验证**：去掉去重 → 重复读作 **replay**，`ValidateChain` FAIL |
+| **MN-2** | **属性化测试**（§1.3）：随机 **N(1..8)** × 随机切分 × 随机乱序/重复 → 断言合并 == 全历史、链有效、状态 `Completed`、**反序合并仍一致** | MN-1 | ✅ **done** —— 8 seeds，N=1..8。含**顺序无关**断言（反序合并同状态） |
+| **MN-3** | **封闭性质单测**：`merge(A,B)` 在 A/B 一致时仍一致（归纳基+步） | MN-1 | ✅ **done** —— `TestMultinode_MergeIsClosure`（先证两视图已一致，再证合并后不变） |
+| **MN-4** | **N=1..8 参数化冒烟**：现有 twonode 语义在 N 路下 | MN-1 | 🔸 **部分** —— N 路覆盖已在 MN-2 内含（N=1..8）；现有 4 项 twonode 保持独立不改语义 |
+
+**实现位置**：`internal/publish/multinode_test.go`（**复用**现有 `newIndependentNode`/`publishEventsTo`/`pullEvents`/`lifecycleEvents`，**不新建包** —— 避免导入图分叉）。
 
 **顺序**：MN-1 → MN-3 → MN-2 → MN-4（去重是其余的前提）。
 
