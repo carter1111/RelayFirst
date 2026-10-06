@@ -50,21 +50,21 @@
 ```text
 ✅ ARCHITECTURE.md   长期路线图（L4，不实现）
 ✅ MVP.md            v2.0，范围定义（L0，唯一有工期）
-✅ TASKS.md          任务源 —— 已推进到 S11
+✅ TASKS.md          任务源 —— 已推进到 S13；代码侧自闭环项已清空
 ✅ HANDOFF.md        本文件
-✅ 代码              S1–S11 已实现（部分项见下方"未达成"）
+✅ 代码              S1–S13 已实现（部分项见下方"未达成"）
 ```
 
 - 目录：`/Users/cartermacbook/Desktop/Dev/RelayFirst`
-- **是 git repo。** `main` 分支，已有提交历史；`.gitignore` 排除 `relayfirst.db` 与密钥。
+- **是 git repo。** `main` 分支，已推 GitHub（`github.com/carter1111/RelayFirst`）；`.gitignore` 排除 db 与密钥。
 - 工具链：`go.mod`（Go 1.27.1）、`package.json`（viem，TS 侧）、`foundry.toml`（Solidity 侧）。
-- **门禁：`./scripts/ci.sh` → 13 道**，全绿：
+- **门禁：`./scripts/ci.sh` → 17 道**，全绿：
   静态构建（A3 no-CGO）/ vet / gofmt / `go test` / `go test -race` /
   EIP-712 KAT（A4）/ **A5 合规** / **冻结回执语料（A9）** / **跨版本矩阵** /
-  **导入图分离（节点不能验签 + 挖矿核心不含 a2a + verifier 不能签回执）** /
-  Merkle 新鲜度 / forge / viem 第三实现。
-- 测试规模：**Go 21 包 ~680 项** + **Solidity 27 项**。
-- **未上线。** 见 §8 阻塞项。
+  **导入图分离（节点不能验签 + 挖矿核心不含 a2a + verifier 不能签回执 + dashboard 只读 + 节点无 UI）** /
+  Merkle 新鲜度 / forge / viem 第三实现 / **npm 打包（主包无二进制 + launcher 解析子包）** / **发布路径（genesis 守卫已武装）**。
+- 测试规模：**Go ~906 项** + **Solidity 45 项**。
+- **未上线。** 见 §8 阻塞项 —— **BLK-1 已核实**，**BLK-2 待接洽（人的动作）**。
 
 **已交付的能力（这是 v1.0 之外新增的）：**
 
@@ -90,6 +90,13 @@
 | **E2EE 加密层（X25519 + XChaCha20-Poly1305）** | ✅（S13-1/S13-2；§9 验收② 已由 CI 门禁强制） |
 | **Session Delegation（作用域 + nonce 撤销；**回执永不可委派**）** | ✅（S13-3） |
 | **MCP server（零密码学，结构上不能签名）** | ✅（S13-4；新增 CI 门禁） |
+| **Emission 模型 B 接线（work 账本 + epoch 结算 + `relayfirst settle`）** | ✅（D1；`planning.md §A2`、`settlement-trigger.md`） |
+| **npm 跨平台分包（主包 8kB + 每平台子包）** | ✅（PKG-1；`npm-packaging-plan.md`；CI 门禁 + 变异验证） |
+| **多节点属性化测试（去重 + 封闭性 + N=1..8 一致性）** | ✅（`internal/publish/multinode_test.go`；`multi-node-plan.md`） |
+| **真 `RelayAnchor` 的 claim 端到端测试** | ✅（S11-8 补强；抓到 stub 抓不到的叶/节点编码不匹配） |
+| **真 anchor 的 `relayfirst-dashboard`（只读、5 tab、命令菜单）** | ✅（UX-1；`node-tui-dashboard-plan.md`） |
+| **`relayfirst observations` demo（BLK-2 用）** | ✅（此前计划写了、命令不存在） |
+| **BLK-1 核实（订阅可程序化驱动）** | ✅ **PARTIAL** —— Codex 可行 / Claude Code 不可；`MVP.md §9.3` 已同步 |
 
 **⚠️ 明确未达成（不要误读为已完成）：**
 
@@ -134,6 +141,12 @@
 | **代币效用** | **待定** | 故意不定。纯叙事驱动。 |
 | **技术栈** | **定死**（见 §6） | 不在 MVP 期间更换 |
 | **不做 token 挖矿** | **non-goal** | 不做质押奖励网络、不做节点排放 |
+| **Emission 模型** | **B：固定预算按份额**（D1，`planning.md §A2`） | epoch 末结算 `points_i = B(n)×(Σwork_i/Σwork)`，再施 5% cap。**回执记 work，不记 points**；`Allocate`/`CapAllocation`/`Settle` 已接线。**不选 C**（复杂度×2、散户听不懂） |
+| **结算触发** | **显式命令 `relayfirst settle`**（`docs/notes/settlement-trigger.md`） | **不自动**（自动 = 结算动分母 = 不可复核）。**幂等**（`settle:<epoch>:<agent>`）。**不需密钥** |
+| **npm 分发** | **主包 + 每平台子包**（PKG-1，`docs/notes/npm-packaging-plan.md`） | 主包 8kB（仅 launcher）、`@relayfirst/<os>-<arch>` 子包。平台名映射只在一处。**节点刻意不发 npm**（长驻服务 → Docker） |
+| **MCP 实现** | **手写 stdlib，不迁官方 SDK**（ADR-0008） | 零依赖 vs 攻击面；**重估条件**：工具数↑ / 需 sampling / spec 超 2025-06-18 / 外部贡献者 |
+| **回执委派** | **永不可委派**（ADR-0007） | Scope **闭集**，**无 receipt 值** —— 不是"校验禁止"，是**无法表达** |
+| **订阅支持范围** | **只写 Codex**（BLK-1 核实） | Codex（ChatGPT）**官方文档化**程序化；**Claude Code 订阅不可**（Consumer ToS 禁自动化）→ 走 BYO API key |
 
 **v1.0 中被推翻的三条（不要再按它们做事）：**
 
@@ -295,26 +308,29 @@ testdata/eip712-vectors.json
 
 | # | 问题 | 优先级 | 状态 |
 |---|---|---|---|
-| **BLK-1 / Q2** | **agent 订阅能否程序化驱动？** | **最高** | ⬜ 待核实 |
-| **BLK-2 / Q3** | 第一个真实消费方是谁？ | 高（上线前置） | ⬜ 待定 |
-| **BLK-3 / Q7** | 验证者指派策略 | 中（S4 前） | ⬜ 待定 |
+| **BLK-1 / Q2** | **agent 订阅能否程序化驱动？** | ~~最高~~ → **已解决** | ✅ **已核实（2026-10-07）：PARTIAL** —— **Codex 可行**（官方文档化用 ChatGPT 账号跑 `codex exec`）/ **Claude Code 不可**（Consumer ToS 禁自动化，须 BYO API key）。**支持列表只写 Codex**。见 [`blk-1-verification-plan.md`](docs/notes/blk-1-verification-plan.md) |
+| **BLK-2 / Q3** | 第一个真实消费方是谁？ | 高（上线前置） | 🟡 **技术侧完成、接洽未开始** —— demo 命令已实现（此前不存在）；方案 + 首封信就绪（[`blk-2-first-consumer-plan.md`](docs/gtm/blk-2-first-consumer-plan.md)）。**接洽是人的动作** |
+| **BLK-3 / Q7** | 验证者指派策略 | 中（S4 前） | 🟢 **方向已定（确定性种子）**；缺部署配置（候选集 + seed 来源） |
+| **BLK-4** | epoch 起点日期 | 上线前 | 🟢 **方向已定（=发布日）**；缺具体日期。`-tags mainnet` 防呆已就位 |
+| **BLK-5** | 节点动机 | 低 | 🗣️ **已延期**（工作量不可验证） |
 | Q4 | 代币效用是什么？ | 低（TGE 前） | 故意待定 |
 | Q5 | 积分 → 代币换算比例 | 低 | 待定 |
 | Q6 | TGE 时机 | 低 | 待定 |
 
-### BLK-1 为什么是最高优先级
+### BLK-1 的核实结果（2026-10-07）
 
-**"消耗 Codex / Claude Code 订阅额度"这个叙事，可能无法用 API 实现。**
+**两家答案相反：**
 
 | 路径 | 可行性 | 经济含义 |
 |---|---|---|
 | **BYO API key** | ✅ 今天就能做 | 用户**额外**花钱，**不是**变现沉没成本 |
-| 驱动订阅 | ❓ **未知** | 若能做，叙事才真正成立 |
+| **驱动 Codex（ChatGPT）订阅** | ✅ **官方文档化** | **叙事成立** |
+| **驱动 Claude Code（Claude）订阅** | ❌ **ToS 禁止** | 必须 BYO API key |
 | 本地模型 | ✅ 可做 | 电费成本，无订阅叙事 |
 
-**若订阅无法程序化驱动，整个叙事退化为"再买一份 API 额度来挖矿"，吸引力大幅下降。**
+**结论**：**"订阅变现"对 Codex 成立，对 Claude Code 不成立。** 上线文案**只准声称支持 Codex**。
 
-**策略：先做 BYO API key（保证能跑），同时第 1 天就开始核实订阅路径。**
+**两步 blocker 现在都指向同一动作：人去接洽**（BLK-2）。**这不是代码能关的。**
 
 ---
 
@@ -402,7 +418,7 @@ testdata/eip712-vectors.json
 
 | 假设 | 风险 | 若不成立 |
 |---|---|---|
-| agent 订阅可程序化驱动 | **极高** | 叙事重写（R1） |
+| agent 订阅可程序化驱动 | ~~极高~~ → **中（已解决，PARTIAL）** | 叙事**对 Codex 成立**；Claude Code 走 API key（BLK-1） |
 | 有真实消费方愿意用挖矿产出 | 高 | 纯农场，经不起尽调（R4） |
 | 全局去重能压住刷量 | 中 | 需加任务类型白名单 |
 | 农民愿意为"未来 TGE"预期投入 | 中 | 冷启动失败 |
