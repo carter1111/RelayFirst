@@ -33,10 +33,15 @@
 import { existsSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
+
+// This is an ES module, so there is no `require`; createRequire gives a resolver
+// anchored at this file, which is what lets us locate the installed sub-package.
+const require = createRequire(import.meta.url);
 
 const NAME = "relayfirst";
 const EXE = process.platform === "win32" ? ".exe" : "";
@@ -45,13 +50,35 @@ const EXE = process.platform === "win32" ? ".exe" : "";
 const GOARCH = process.arch === "x64" ? "amd64" : process.arch;
 const platformBinary = join(repoRoot, "bin", "npm", `${NAME}-${process.platform}-${GOARCH}${EXE}`);
 
-// A source checkout may have bin/<name> from `go build -o bin/<name>`; prefer the
-// platform-specific tarball binary, then that.
+// The per-platform npm sub-package (PKG-1). Its name uses npm's own spelling of the
+// platform (process.platform / process.arch), so there is no Go<->npm mapping here:
+// the mapping lives in scripts/pack-platform-packages.sh, in one place, with a test.
+const subPackage = findSubPackage();
+
+function findSubPackage() {
+  // Resolve the sub-package by READing its package.json, not by require.resolve:
+  // require.resolve honours "exports", and the sub-package has none, so it would
+  // fail to find the very file we need to locate the directory of.
+  const rel = `@relayfirst/${process.platform}-${process.arch}/package.json`;
+  try {
+    const manifest = require.resolve(rel);
+    return join(dirname(manifest), `${NAME}${EXE}`);
+  } catch {
+    // Not installed (source checkout, or a platform with no sub-package): fall through.
+    return null;
+  }
+}
+
+// The order matters and is documented in docs/notes/npm-packaging-plan.md:
+//   1. bin/npm/<name>-<os>-<arch>   the local cross-build (CI and source checkouts)
+//   2. the npm sub-package          the published per-platform install
+//   3. bin/<name> or ./<name>       a plain `go build -o bin/<name>`
 const candidates = [
   platformBinary,
+  subPackage,
   join(repoRoot, "bin", NAME),
   join(repoRoot, NAME),
-];
+].filter(Boolean);
 
 function findPrebuilt() {
   for (const p of candidates) {

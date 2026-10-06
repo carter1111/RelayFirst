@@ -817,7 +817,7 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 
 | id | 项 | 类别 | 现状 | 备注 |
 |---|---|---|---|---|
-| **PKG-1** | npm **按平台分包**（或 `postinstall` 下载单平台） | 发布优化 | ⬜ **未做** | 现在 tarball 含 5 平台二进制 → **~42MB**。改法：`optionalDependencies` + `os`/`cpu` 子包 |
+| **PKG-1** | npm **按平台分包** | 发布优化 | ✅ **done（2026-10-06）** | 主包 **42MB → 8.0kB**（仅 launcher）；5 个 `@relayfirst/<os>-<arch>` 子包（`os`/`cpu` 自动筛选，各 **~11MB**）。**平台名映射（`win32`/`x64`）只在一处** + CI 门禁（变异验证）。**端到端**：临时目录只放子包（无 `bin/npm`、无 Go）→ launcher 跑通。计划见 [`npm-packaging-plan.md`](docs/notes/npm-packaging-plan.md) |
 | **PKG-2** | macOS 二进制**签名 / 公证** | 发布 | ⬜ **未做** | 交叉编译产物未签名 → Gatekeeper 可能拦。首次发布可先发 linux/windows |
 | **PKG-3** | `npm publish` 本体 | 发布（外部凭据） | ⏳ 打包就绪 | 需 npm 帐号；步骤见 `planning.md` C1。**用户 2026-10-06 已确认"npm 也要做"** |
 | **PKG-4** | **`relayfirst-dashboard` 纳入 npm 打包** | 发布 | ✅ **done（2026-10-06）** | `package.json` 加 `bin` + `files`；`scripts/build-npm-binaries.sh` 加该命令（**5 平台 × 3 工具**）；新增 `scripts/npx-relayfirst-dashboard.mjs`；**CI npm 门禁**已验证两个 launcher 都能跑预编译二进制。**实测**：`env -i PATH=<only node> node scripts/npx-relayfirst-dashboard.mjs --version` → `0.1.0`（**PATH 无 `go`**） |

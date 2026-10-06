@@ -6,6 +6,12 @@
 *.out
 coverage.*
 
+# npm per-platform sub-packages (PKG-1). Build output produced by
+# scripts/pack-platform-packages.sh from bin/npm — it holds cross-compiled binaries
+# (~11MB each), so it must never be committed. 15MB of binaries in a git history is
+# not recoverable by a later delete.
+/packages/
+
 # Node / TypeScript
 node_modules/
 npm-debug.log*

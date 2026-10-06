@@ -12,12 +12,19 @@
     "scripts/npx-relayfirst.mjs",
     "scripts/npx-relayfirst-mcp.mjs",
     "scripts/npx-relayfirst-dashboard.mjs",
-    "bin/npm",
     "README.md"
   ],
+  "optionalDependencies": {
+    "@relayfirst/darwin-arm64": "0.5.0",
+    "@relayfirst/darwin-x64": "0.5.0",
+    "@relayfirst/linux-arm64": "0.5.0",
+    "@relayfirst/linux-x64": "0.5.0",
+    "@relayfirst/win32-x64": "0.5.0"
+  },
   "scripts": {
     "gen:kat": "tsx scripts/gen-kat.ts",
     "build:binaries": "bash scripts/build-npm-binaries.sh",
+    "pack:platforms": "bash scripts/pack-platform-packages.sh",
     "prepublishOnly": "bash scripts/build-npm-binaries.sh",
     "relayfirst": "node scripts/npx-relayfirst.mjs",
     "relayfirst-mcp": "node scripts/npx-relayfirst-mcp.mjs",

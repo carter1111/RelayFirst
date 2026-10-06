@@ -485,13 +485,81 @@ else
     npm_ok=0
   fi
 
-  # (2) The binary build must run at publish time, and bin/npm must be in `files`.
+  # (2) The binary build must run at publish time, and the packer must be wired as a
+  # script. After PKG-1 the MAIN package ships no binaries (they live in the
+  # per-platform sub-packages), so `files` must NOT include bin/npm — including it
+  # would put all five platforms back into every install.
   if ! grep -qE '"prepublishOnly"' package.json; then
-    fail "package.json has no prepublishOnly, so the platform binaries would not be built before publish"
+    fail "package.json has no prepublishOnly, so the per-platform binaries would not be built before publish"
     npm_ok=0
   fi
-  if ! grep -qE '"bin/npm"' package.json; then
-    fail "package.json 'files' does not include bin/npm, so the tarball would ship no binary"
+  if ! grep -qE '"pack:platforms"' package.json; then
+    fail "package.json has no pack:platforms script, so the per-platform sub-packages have no builder"
+    npm_ok=0
+  fi
+  if grep -qE '"bin/npm"' package.json; then
+    fail "package.json 'files' includes bin/npm, which puts every platform back into the main tarball (PKG-1 regression)"
+    npm_ok=0
+  fi
+
+  # (2b) PKG-1: the main package must NOT actually ship binaries. Checked by packing,
+  # not by reading `files`: the two can disagree, and the pack is what a user gets.
+  if npm pack --dry-run 2>/dev/null | grep -q 'bin/npm/'; then
+    fail "the main package still ships bin/npm, so PKG-1's per-platform split regressed"
+    npm_ok=0
+  fi
+
+  # (2c) PKG-1: the sub-package names are the Go<->npm mapping, and a wrong one is a
+  # silent install failure on that platform. Checked against a literal table so a
+  # typo in optionalDependencies is caught here rather than by a user.
+  for want in "@relayfirst/darwin-arm64" "@relayfirst/darwin-x64" \
+              "@relayfirst/linux-arm64" "@relayfirst/linux-x64" \
+              "@relayfirst/win32-x64"; do
+    if ! grep -qF "\"$want\"" package.json; then
+      fail "package.json optionalDependencies is missing $want"
+      npm_ok=0
+    fi
+  done
+fi
+
+# (3b) PKG-1 packing: run the packer and verify ONE sub-package has the right os/cpu
+# and carries the binaries under their plain names. This is the mapping made real.
+if [ "$npm_ok" -eq 1 ]; then
+  if bash scripts/build-npm-binaries.sh >/dev/null 2>&1 && rm -rf packages && bash scripts/pack-platform-packages.sh >/tmp/rf-ci-pack.log 2>&1; then
+    # The current platform's sub-package must exist and be correct.
+    cur_os="linux"; [ "$(uname -s)" = "Darwin" ] && cur_os="darwin"
+    cur_arch="x64"; [ "$(uname -m)" = "arm64" ] && cur_arch="arm64"
+    sub="packages/$cur_os-$cur_arch"
+    if [ ! -f "$sub/package.json" ]; then
+      fail "the packer did not produce $sub"
+      npm_ok=0
+    elif ! grep -qF "\"os\": [\"$cur_os\"]" "$sub/package.json" || ! grep -qF "\"cpu\": [\"$cur_arch\"]" "$sub/package.json"; then
+      fail "$sub has the wrong os/cpu fields (the Go<->npm mapping is off)"
+      npm_ok=0
+    else
+      pass "per-platform sub-packages packed; main is launcher-only; mapping correct ($cur_os-$cur_arch)"
+    fi
+
+    # (3c) The launcher must RESOLVE the sub-package. Simulated in a temp dir with
+    # only the current platform's sub-package installed and NO bin/npm, which is the
+    # shape of a real `npm i relayfirst`: the main package plus one sub-package. If the
+    # launcher cannot find it, a published install would silently fall back to `go
+    # build`, which is the failure PKG-1 exists to remove.
+    sim="$(mktemp -d)"
+    mkdir -p "$sim/node_modules/@relayfirst" "$sim/scripts"
+    cp -r "packages/$cur_os-$cur_arch" "$sim/node_modules/@relayfirst/$cur_os-$cur_arch"
+    cp scripts/npx-relayfirst.mjs "$sim/scripts/"
+    if node "$sim/scripts/npx-relayfirst.mjs" version >/tmp/rf-ci-subpkg.log 2>&1; then
+      pass "launcher resolves the installed per-platform sub-package (no bin/npm, no Go)"
+    else
+      fail "the launcher did not resolve the sub-package (installed-then-run would fail):"
+      sed 's/^/      /' /tmp/rf-ci-subpkg.log | tail -6
+      npm_ok=0
+    fi
+    rm -rf "$sim"
+  else
+    fail "the per-platform packer failed:"
+    sed 's/^/      /' /tmp/rf-ci-pack.log | tail -10
     npm_ok=0
   fi
 fi

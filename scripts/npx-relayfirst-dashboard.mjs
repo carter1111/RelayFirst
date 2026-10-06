@@ -21,21 +21,38 @@
 import { existsSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
+const require = createRequire(import.meta.url);
 
 const NAME = "relayfirst-dashboard";
 const EXE = process.platform === "win32" ? ".exe" : "";
 const GOARCH = process.arch === "x64" ? "amd64" : process.arch;
 const platformBinary = join(repoRoot, "bin", "npm", `${NAME}-${process.platform}-${GOARCH}${EXE}`);
 
+// The per-platform npm sub-package (PKG-1); its name uses npm's own platform
+// spelling, so no Go<->npm mapping is needed here.
+const subPackage = findSubPackage();
+
+function findSubPackage() {
+  const rel = `@relayfirst/${process.platform}-${process.arch}/package.json`;
+  try {
+    const manifest = require.resolve(rel);
+    return join(dirname(manifest), `${NAME}${EXE}`);
+  } catch {
+    return null;
+  }
+}
+
 const candidates = [
   platformBinary,
+  subPackage,
   join(repoRoot, "bin", NAME),
   join(repoRoot, NAME),
-];
+].filter(Boolean);
 
 function findPrebuilt() {
   for (const p of candidates) {

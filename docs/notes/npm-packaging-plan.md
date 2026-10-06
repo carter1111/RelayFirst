@@ -73,13 +73,16 @@ npm publish                              ← 再发主包（triggers prepublishO
 
 ## 5. 任务分解
 
-| id | 任务 | 依赖 | 验收 |
+| id | 任务 | 依赖 | 状态 |
 |---|---|---|---|
-| **PKG1-1** | 平台名映射函数（Go↔npm）+ 测试 | — | `(darwin,arm64)→darwin-arm64`、`(windows,amd64)→win32-x64`、`(linux,amd64)→linux-x64` |
-| **PKG1-2** | 3 个 launcher 加 **子包解析**（顺序见 §3） | PKG1-1 | 有子包时用它；无则回退；**CI 两条路径都测** |
-| **PKG1-3** | `scripts/pack-platform-packages.sh`：生成 5 个子包 | — | 每个子包含对应平台 3 个二进制 + `os`/`cpu` 字段 |
-| **PKG1-4** | `package.json` 加 `optionalDependencies`（指向 `@relayfirst/*`） | PKG1-3 | `npm pack --dry-run` 主包**不含**二进制 |
-| **PKG1-5** | **CI 门禁扩展**：主包无二进制 + 子包平台映射正确 | PKG1-1..4 | 变异：把 `win32-x64` 写成 `windows-amd64` → 门禁 FAIL |
+| **PKG1-1** | 平台名映射（Go↔npm） | — | ✅ **done** —— `npm_os`/`npm_cpu`（`windows→win32`、`amd64→x64`）**只在一处**（`pack-platform-packages.sh`）；子包名用 npm 拼法，**launcher 无需映射** |
+| **PKG1-2** | 3 个 launcher 加**子包解析**（§3 顺序） | PKG1-1 | ✅ **done** —— `createRequire` + `require.resolve("@relayfirst/<os>-<arch>/package.json")`（**不用 exports**，故能解析）；顺序 `bin/npm → 子包 → 本地建 → go build` |
+| **PKG1-3** | `scripts/pack-platform-packages.sh`：生成 5 个子包 | — | ✅ **done** —— 每子包含 3 个二进制（**平名**）+ `os`/`cpu` + `files`；**macOS 子包带 `UNSIGNED.txt`** |
+| **PKG1-4** | `package.json` 加 `optionalDependencies`；`files` **移除** `bin/npm` | PKG1-3 | ✅ **done** —— 主包 **8.0kB / 无二进制**（实测），子包 **11.3MB** |
+| **PKG1-5** | **CI 门禁**：主包无二进制 + 映射正确 + **launcher 能解析子包** | PKG1-1..4 | ✅ **done** —— 三项新增断言。**变异验证**：`win32-x64` 写成 `windows-amd64` → **门禁 FAIL** |
+
+**实测**：主包 **42MB → 8.0kB**；每平台子包 **11.3MB** → 用户下 **~11MB**（而非 42MB）。
+**端到端**：临时目录只放子包（**无 `bin/npm`、无 Go**）→ launcher 跑通 `0.5.0-s6`。
 
 ---
 

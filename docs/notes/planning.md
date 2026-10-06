@@ -102,7 +102,7 @@
 
 | 点 | 说明 |
 |---|---|
-| **tarball 体积** | 含 5 平台二进制 → **~42MB**（`npm pack --dry-run`）。若嫌大，可改**按平台分包**（`optionalDependencies` + `os`/`cpu`），或用 `postinstall` 下载单个平台。**未做** |
+| **tarball 体积** | ✅ **已解决（PKG-1，2026-10-06）** —— 主包 **42MB → 8.0kB**（仅 launcher）；5 个每平台子包（各 ~11MB，`os`/`cpu` 自动筛选）。见 [`npm-packaging-plan.md`](npm-packaging-plan.md) |
 | **macOS 未签名** | 交叉编译出的 macOS 二进制**未签名/未公证** → Gatekeeper 可能拦截。首次发布建议先发 linux/windows，或补签名流程 |
 
 > 相关代码：`scripts/npx-relayfirst.mjs` / `scripts/npx-relayfirst-mcp.mjs`（**启动器，不是重实现** ——
