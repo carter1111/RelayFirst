@@ -38,6 +38,10 @@
 | `kind` | 过滤 `receipt` / `event` / `grant`（可重复） | 大小写不敏感？**否** —— 精确匹配，避免多写一个真相 |
 | `limit` | 同今天 | 保留 |
 
+> **🔗 与"第三方建 IM"的关系（2026-10-07）**：本节 G2 就是 **IM-2** —— 第三方在 RelayFirst 上
+> 建 IM 的**功能性硬前置**（无增量同步，IM 做不出来）。第三方上手的完整缺口（**TS SDK 最高优先级**、
+> conventions v0、builder 文档、relay bootstrap）见 [`planning.md` §D3](planning.md)。
+
 ### 1.2b ⚠️ 性质澄清（2026-10-06）：G2 是 **Post-MVP 便利**，不是 MVP 缺口
 
 **核正**：**"增量轮询"现有机制已满足** —— `GET /messages/{agentId}?limit=N`（截断）+ `envelopeId` 去重

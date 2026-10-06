@@ -181,6 +181,38 @@ blank env 视为未设（`envOr`）。**无 config 文件**（如上述理由）
 
 ---
 
+## D3. 第三方在 RelayFirst 上建 IM —— readiness 缺口（2026-10-07 记录，**只记录不写代码**）
+
+> **背景结论（已定）**：**底座就绪，但第三方开发者上不来 —— 高速路通了，没修上下匝道。**
+> 就绪的部分：permissionless relay · 通用 envelope · E2EE · relay-set。
+> 缺失的是**让"外人"能上手的那层**。
+>
+> **纪律**：与 `TASKS.md §11.1`（GAP 表）和 [`discovery-plan.md`](discovery-plan.md) **交叉引用，不另起编号**。
+> **粗估工作量，不承诺精确排期。**
+
+| # | 缺口 | 一句话 | 为什么是 blocker | 依赖 | 粗估 |
+|---|---|---|---|---|---|
+| **IM-1** | **TS SDK**（最高优先级） | relay 客户端 + envelope 收发 + relay-set + E2EE 封装 | IM 开发者是 **TS 栈**；**无 SDK = 手搓协议** | 无（但最好在 dogfood 之后定型 API） | **~2–3 周** |
+| **IM-2** | **GAP-G2** relay 查询过滤 | `since`/`until`/`kinds`/`authors`（Nostr `REQ` 对应物） | **功能性 blocker** —— 无增量同步，**IM 做不出来** | **先定 `author` 字段协议设计**（见 `messaging-engine-vision.md §3`） | 天级（设计+实现） |
+| **IM-3** | **IM conventions spec v0** | Kind 命名注册表（message / 已读回执 / presence / typing）+ payload 格式 | **无约定则各家互不通** | 无 | 天级 |
+| **IM-4** | **Builder 文档** | quickstart（10 分钟跑起 IM demo）+ API reference + 示例应用 | 现有文档**写给 core team**；第三方要 **on-ramp** 文档 | IM-1（API 定型后写才不返工） | 天级 |
+| **IM-5** | **Relay 发现 / bootstrap** | 客户端首次"连哪个 relay"的答案（起步可**硬编码种子列表**） | 无它则第一个客户端不知连谁 | 无（种子列表起步） | 小时级 |
+
+**IM-3 的硬原则**：**relay 不感知 conventions，纯客户端约定** —— 否则把语义塞回中继，违反"哑relay"/NET-1。
+
+### 顺序（Phase）
+
+```text
+Phase A  JimAIM dogfood        自己跑顺、踩坑 —— 在把 API 固化前暴露问题
+Phase B  TS SDK + GAP-G2       第三方的【硬前置】
+Phase C  conventions v0 + builder 文档 + 发现
+Phase D  正式邀请第三方         first impression 只有一次，【匝道修好再开门】
+```
+
+**关键纪律（Phase D）**：**匝道修好再开门** —— 提前邀请第三方，第一次印象就废了。
+
+---
+
 ## E. 已闭环（本轮及近期完成，登记备查）
 
 - **S13-3d** 委托签发者 + 消费者（`session grant` / `session verify`）
