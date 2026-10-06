@@ -38,6 +38,16 @@
 | `kind` | 过滤 `receipt` / `event` / `grant`（可重复） | 大小写不敏感？**否** —— 精确匹配，避免多写一个真相 |
 | `limit` | 同今天 | 保留 |
 
+### 1.2b ⚠️ 性质澄清（2026-10-06）：G2 是 **Post-MVP 便利**，不是 MVP 缺口
+
+**核正**：**"增量轮询"现有机制已满足** —— `GET /messages/{agentId}?limit=N`（截断）+ `envelopeId` 去重
+= "拉最新 N 条 + 按 id 去重"，**正确且已支持**。
+
+**`MVP.md §7.3/§12` 列出的 MVP 节点端点**只有：`GET /messages/{agentId}`、`GET /observations?subject=`
+—— **没有"时间窗过滤"**。所以 **`since`/`until`（时间窗）是新便利，不在 MVP 端点上**。
+
+→ **G2 归 `ARCHITECTURE.md` / 发现层（Post-MVP）**。要排进工期，**先改 `MVP.md`**（`AGENTS.md §5.1`）。
+
 ### 1.3 三条设计约束（承重）
 
 1. **只用 `received_at`，不用签名内时间。**

@@ -61,9 +61,10 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`CHANGELOG.md`](CHANGELOG.md) | — | **门面** | Keep a Changelog 格式，语义化版本号 | 每个 release tag |
 | [`docs/requirements.md`](docs/requirements.md) | — | **派生** | **需求汇总索引**（可追溯；权威仍在 `MVP.md`） | 需求变化或阶段推进时 |
 | [`docs/getting-started.md`](docs/getting-started.md) | — | **指南** | 从零到首次出分；**明确说明密钥为何由用户自备** | 上手路径变化时 |
+| [`docs/guidelines/development-methodology.md`](docs/guidelines/development-methodology.md) | — | **方法论** | **Planning → TASKS → Action → DevOps** 方法论（适用于**无中心服务器**的分布式协议项目）；与 `AGENTS.md §5.0` 的生命周期同构 | 方法论调整时 |
 | [`docs/notes/inference-cost-gap.md`](docs/notes/inference-cost-gap.md) | — | **笔记** | 调研：挖矿不消耗推理额度的断层 | 已被 ADR-0002 修复，保留为决策依据 |
 | [`docs/notes/epoch-anchoring.md`](docs/notes/epoch-anchoring.md) | — | **笔记** | **epoch 缺起点导致发行量恒为零**（已修复；起点值待定稿 → BLK-4） | 起点定稿后 |
-| [`docs/notes/sqlite-write-path.md`](docs/notes/sqlite-write-path.md) | — | **笔记** | SQLite 写路径：Phase 1 度量（基线 + 第 14 道门禁）；含对 A6 因果的修正线索 | 进行中（Phase 2 未开工） |
+| [`docs/notes/sqlite-write-path.md`](docs/notes/sqlite-write-path.md) | — | **笔记** | SQLite 写路径：Phase 1/2/3（基线 + 门禁 + 批量事务 + 按连接 busy_timeout）；含对 A6 因果的修正 | Phase 3 已交付 |
 | [`docs/notes/s9-0-security-review.md`](docs/notes/s9-0-security-review.md) | 200 | **安全审查** | **S9-0 版本化地基的对抗审查**：4 个发布前阻断项（B1–B4）+ H1–H2 + M1–M3 + L1–L3，含攻击路径与修法 | 阻断项修复后 |
 | [`docs/notes/upgrade-architecture-plan.md`](docs/notes/upgrade-architecture-plan.md) | 651 | **笔记** | **MVP 2.0 → 全架构升级方案**：反分叉版本化（A9 论证）、升级顺序、库采用表、风险登记册 | 版本化地基（S9-0）落地后 |
 | [`docs/gtm/blk-2-first-consumer-plan.md`](docs/gtm/blk-2-first-consumer-plan.md) | 200 | **行动方案**（→ gtm） | **BLK-2：找第一个真实消费方**（价格/可达性 → 交易机器人）—— 买家画像 / demo 形态 / 首封信 / 反自我欺骗判据 / 8 周时间盒 | 拿到第一个使用者后 |

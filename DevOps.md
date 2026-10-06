@@ -33,7 +33,7 @@ Dev → Staging → Prod          Dev → Release Candidate → "Live"
 ## 1. 本地门禁
 
 ```bash
-# 全部 14 道 gate
+# 全部 17 道 gate
 ./scripts/ci.sh
 ```
 
@@ -91,7 +91,7 @@ Release **不由 CI 自动触发**。由人判断：
 
 ```
 什么时候可以发 release？
-├── 全部 14 道 CI gate 绿 ✅
+├── 全部 17 道 CI gate 绿 ✅
 ├── 目标 stage 的所有任务标 done ✅
 ├── docs/stages/S<N>-report.md 写了 ✅
 ├── TASKS.md 已同步 ✅
