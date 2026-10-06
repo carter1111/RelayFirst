@@ -350,21 +350,34 @@ artifactKey = sha256(task.type + task.spec.url + contentHash)
 
 **为什么不会误伤：** `contentHash` 会随数据源更新而变化 → 新的 `artifactKey` → **取到新鲜内容的 agent 正常得分。**
 
-### 5.3 计分公式
+### 5.3 工作计量（work measure）
+
+> **⚠️ v2.0 修正（D1，2026-10-07）：本节原先直接给出 `points`，与 §6.2 冲突。**
+> 仓库里曾**并存两套发行模型**：本节给**绝对分**（按回执印），§6.2 给**固定预算按份额**。
+> **现已统一为【模型 B：固定预算按份额】**（见 §6.2）。
+> 因此**本节只定义【工作量 `work`】**；**`points` 在 epoch 末由 §6.2 按份额分配**。
 
 ```text
-points(receipt) = BASE × verified × novelty × diversity × budgetFactor
+work(receipt) = BASE × verified × novelty × diversity
 
 其中：
-  BASE          = 10                      // 固定基数
+  BASE          = 10                      // 固定基数（work 单位，不是积分）
   verified      = 1.0（验证者重算一致）
                 = 0.0（不一致 → 拒收，且触发 §5.6 罚则）
   novelty       = 1.0 / 0.0               // 见 §5.2
   diversity     = 1.0 / (1 + sameDomainRepeats × 0.5)
                                           // 同一 domain 重复 → 递减
-  budgetFactor  = 该 agent 本 epoch 已得分 / 全 epoch 上限
-                                          // 防单点鲸鱼，见 §6.3
 ```
+
+**`work` 不是 `points`。** 它在 epoch 内**累积**为 `Σwork`；**epoch 结束时**：
+
+```text
+points_i = B(n) × (Σwork_i / Σwork)          // §6.2，B(n) 见 §6.2
+```
+
+**per-agent 上限**（`B(n) × 5%`）在**分配时**施加，见 §6.3 —— **不再**由本节里的
+`budgetFactor` 表达（旧公式 `1 − earned/cap` 既与份额模型矛盾，也在 `alreadyEarned=0`
+时退化为满分，是个已记录的 bug，见 `docs/notes/epoch-anchoring.md`）。
 
 **`verified` 是 0/1 二值** —— 重算不一致的回执**直接作废**，不给部分分。这让伪造的期望收益为零。
 
@@ -518,13 +531,24 @@ agent 在本 epoch 的得分：
   points_i = B(n) × (work_i / Σwork)
 ```
 
+**这是唯一的发行模型（D1，2026-10-07 统一）。** §5.3 定义的 `work` 在 epoch 内累积，
+**epoch 结束时**按下式**结算**：
+
+```text
+epoch n 结束时（结算步骤）：
+  1. 汇总本 epoch 所有 agent 的 Σwork_i
+  2. points_i = B(n) × (Σwork_i / Σwork)     ← 份额
+  3. 对 points_i 施加 per-agent 上限 B(n) × 5%（§6.3）
+  4. 结果进入 Merkle root（S7），供 SBT 累计 claim（S11）
+```
+
 **这个设计的三个效果：**
 
 | 效果 | 机制 |
 |---|---|
-| **头矿叙事成立** | 越早参与，同样的工作量分到越多（B(n) 递减，竞争者少） |
-| **通胀可控** | 总预算指数衰减，不会无限膨胀 |
-| **抗鲸鱼** | 见 §6.3 的 per-agent 上限 |
+| **头矿叙事成立** | 越早参与，同样的工作量分到越多（B(n) 递减，竞争者少）**且**早期竞争者少 → 份额大。**双重 premium**，且都来自【固定盘子】 |
+| **通胀可控** | 总预算指数衰减，不会无限膨胀；**总量有纪律**（不是按回执印） |
+| **抗鲸鱼** | per-agent 上限 `B(n) × 5%`（§6.3）—— **"5% of 预算"才有定义**；按回执印的模型回答不了"5% of what" |
 
 ### 6.3 Per-agent 上限
 

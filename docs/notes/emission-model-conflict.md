@@ -102,7 +102,24 @@ $ rg 'Allocate\(|CapAllocation\(' --glob '*.go' | grep -v _test.go
 
 ---
 
-## 5. 需要你回答的问题
+## 4b. ✅ 已裁决（2026-10-07）：模型 B，且 L0 已统一
+
+**决定：模型 B（固定预算按份额）**，理由见 [`planning.md §A2`](planning.md)。
+**`MVP.md` 已改**（先 doc diff 再动手）：
+
+- **§5.3** 改为**只定义 `work`**（工作量），并写明 `points` 由 §6.2 在 epoch 末按份额结算。
+- **§6.2** 加**结算步骤**（汇总 `Σwork` → 份额 → 5% cap → Merkle root）。
+- **`docs/requirements.md`** 的 `REQ-SCORE-1/5` 同步。
+
+**实现**：新增 `scoring.Settle(epoch, work)` = `CapAllocation(Allocate(work))` —— **一个函数**，
+让调用方**无法只应用份额或只应用上限**。测试锁住 **decay** 与 **5% cap**。
+
+**⚠️ 仍未接线**：`Emit` 仍按**每回执**写 points（模型 A 的形状）。**从"每回执写分"切到"epoch 末结算"
+是账本模型变更**（S3 范围延伸），**未做** —— 见 `TASKS.md`。
+
+---
+
+## 5. 需要你回答的问题（已由 4b 取代）
 
 **哪个是意图？**
 

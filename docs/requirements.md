@@ -114,11 +114,11 @@
 
 | ID | 需求 | 来源 | 验证方式 | 状态 |
 |---|---|---|---|---|
-| **REQ-SCORE-1** | `points = BASE × verified × novelty × diversity × budgetFactor` | §5.3 | 与公式逐项一致 | ✅ S3 — `score.go` |
-| **REQ-SCORE-2** | `BASE = 10` | §5.3 | 常量断言 | ✅ S3 — `BasePoints` |
+| **REQ-SCORE-1** | `work = BASE × verified × novelty × diversity`（**工作量**；`points` 由 §6.2 按份额结算） | §5.3（**D1 修正 2026-10-07**） | 与公式逐项一致 | ✅ S3 — `score.go`。**⚠ D1**：原为 `points = … × budgetFactor`（模型 A），已统一为模型 B；`budgetFactor` 不再在公式内 |
+| **REQ-SCORE-2** | `BASE = 10`（**work 单位**） | §5.3 | 常量断言 | ✅ S3 — `BasePoints` |
 | **REQ-SCORE-3** | `verified` 为 **0/1 二值**，不一致直接作废（不给部分分） | §5.3 | 边界测试 | ✅ S3 — `TestScore_VerifiedIsBinary` |
 | **REQ-SCORE-4** | `diversity = 1 / (1 + sameDomainRepeats × 0.5)` —— 同 domain 递减 | §5.3 | 同 domain 重复 → 衰减 | ✅ S3 — `TestScore_DiversityAttenuates` |
-| **REQ-SCORE-5** | `budgetFactor` 使 per-agent 上限 = `B(n) × 5%` | §5.3, §6.3 | 单 agent 无法独占 | ✅ S3 — **分层**：`Allocate` + `CapAllocation` |
+| **REQ-SCORE-5** | **epoch 末结算**：`points_i = B(n) × (Σwork_i / Σwork)`，再施 per-agent 上限 `B(n) × 5%` | §6.2, §6.3（**D1**） | 单 agent 无法独占 | 🟡 S3 — `Allocate` + `CapAllocation` **已实现但【未接线】**；D1 已定 B，接线待做 |
 | **REQ-SCORE-6** | `B(n) = B0 × decay^n`，`B0 = 1,000,000`，`decay = 0.99` | §6.2 | 常量 + 衰减断言 | ✅ S3 — `TestEpochBudget_Decays`。**⚠ S3b 修复**：`n` 必须相对 **epoch 起点**计算（`internal/epoch`）；无起点时 `n ≈ 20729` → `B ≈ 3.3e-85`，发行量恒为零。见 [`docs/notes/epoch-anchoring.md`](notes/epoch-anchoring.md) |
 | **REQ-SCORE-7** | `epoch = 1 天` | §6.2 | 常量断言 | ✅ S3 — `EpochLength`。**⚠ S3b**：`EpochOf` / `receipt.NewEpoch` 均已锚定到共享起点，且 `delta < 0` 时钳到 epoch 0（防 `uint64` 下溢）；起点值待定稿（BLK-4） |
 | **REQ-SCORE-8** | 积分**不可转让、不定价、可交易性为零、不承诺回报**（不变式 A5） | §6.1 | **无转账接口** | ✅ S3 — 反射断言方法集（`TestNoTransferCapability`） |

@@ -81,6 +81,37 @@ func BudgetFactor(epoch uint64, alreadyEarned float64) float64 {
 	return 1 - (alreadyEarned / cap)
 }
 
+// Settle turns an epoch's accumulated WORK into the POINTS actually emitted.
+//
+// # This is the settlement step model B requires (D1, 2026-10-07)
+//
+// MVP.md §5.3 defines `work` (a measure of useful output). MVP.md §6.2 defines the
+// single emission model: a fixed per-epoch budget shared by work. Settling is the
+// step between them, and it is deliberately ONE function so a caller cannot apply
+// the share without the cap, or the cap without the share:
+//
+//	points_i = CapAllocation( Allocate(work) )
+//
+// # Why it is a pure function of (epoch, work)
+//
+// The result must be reproducible by anyone from the same inputs, because it feeds a
+// Merkle root (S7) that a client later verifies offline. Reading a clock or a store
+// here would make the number depend on who computed it, which is the fork the whole
+// protocol avoids. So it takes the work totals and nothing else.
+//
+// # What it does not do
+//
+// It does not read receipts or a ledger; the caller supplies the per-agent work
+// totals it accumulated. Keeping it a pure function is what lets a settlement be
+// recomputed and checked rather than trusted.
+func Settle(epoch uint64, work map[string]float64) (map[string]float64, error) {
+	allocation, err := Allocate(epoch, work)
+	if err != nil {
+		return nil, err
+	}
+	return CapAllocation(epoch, allocation), nil
+}
+
 // Allocate distributes an epoch's budget in proportion to work.
 //
 // Per MVP.md §6.2: points_i = B(n) * (work_i / totalWork).
