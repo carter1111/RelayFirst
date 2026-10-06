@@ -62,6 +62,27 @@
 
 ---
 
+### A2. ✅ **已裁决（2026-10-07）：D1 emission 模型 = B（固定预算按份额）**
+
+> 此前**只在 `emission-model-conflict.md` 标记"需人裁决"，却未登记在这里** —— 是个**会被遗忘的开放决策**。现已裁决并登记。
+
+**裁决：模型 B（固定预算按份额）。** 理由（用户 2026-10-07）：
+
+```text
+① "头矿"叙事只在【固定盘子】下成立：早期人少分得多 × 预算 decay = 双重 premium。
+   模型 A（按回执印）总量无纪律，头矿要靠 decay 硬拗。
+② 5% cap 只对着【预算】才有定义 —— "5% of what？" A 回答不了。
+③ Bitcoin 形：固定增发时间表，叙事现成，不用解释。
+④ 实现代价可控：epoch 机制（BLK-4）+ Merkle claim（S11）零件已齐，只差"epoch 末算一次份额"。
+⑤ 不选 C：复杂度×2、解释成本×2；散户听不懂的经济模型等于没有。
+```
+
+**→ 后续影响**：`Allocate`/`CapAllocation`（`internal/scoring/emission.go`，**目前未接线**）**接线才有意义**。
+**顺序：先定模型（已定），再接线 —— 不要反过来。**
+
+**⚠️ 这触及 L0**（`MVP.md` §5.3 / §6.2 / §6.3 的两套模型需统一）→ 按 `AGENTS.md §5.1`，**要先改 `MVP.md`**。
+**接线本身是新的范围**（属 S3 的延伸），需先改 L0。
+
 ## B. 需要【外部环境 / 人工】的（我无法代做）
 
 | 项 | 为什么我做不了 | 入口 |
@@ -126,7 +147,8 @@
 | 项 | 状态 | 文档 | 下一步 |
 |---|---|---|---|
 | **① 去中心化优化** | 已到 Nostr 底线；缺口 G1–G5 | [`decentralization-gap.md`](decentralization-gap.md) | 见 ②|
-| **② 发现层 + Explorer** | 📋 **已出 solid plan** | [`discovery-plan.md`](discovery-plan.md) + [`explorer-indexer-plan.md`](explorer-indexer-plan.md) | **要排工期：先改 `MVP.md`**（`AGENTS.md §5.1`） |
+| **② 发现层 + Explorer** | 📋 **已出 solid plan**；**✅ 用户 2026-10-07 确认"要做" → 排期** | [`discovery-plan.md`](discovery-plan.md) + [`explorer-indexer-plan.md`](explorer-indexer-plan.md) | **要排工期：先改 `MVP.md`**（`AGENTS.md §5.1`） |
+| **P1#2 quorum 接线** | ✅ **默认已定 = 1**（2026-10-07），**待接线** | [`npm-packaging-plan.md`](npm-packaging-plan.md) 无关；见 `internal/publish/policy.go` | 把 `PublishWithPolicy` 接进 `mine`/`sink`/`card_fetch`（默认 quorum=1，**行为不变**） |
 | **③ npm + 节点体验** | npm 打包就绪；节点体验有设计 | [`terminal-experience-plan.md`](terminal-experience-plan.md) | npm：`npm publish`（PKG-3）；体验：UX-1 |
 | **④ 节点激励** | 🗣️ **讨论**（BLK-5，待裁决） | [`node-incentives-discussion.md`](node-incentives-discussion.md) | 回答三问（Q1 无激励 / Q2 声誉榜 / Q3 运维费） |
 | **⑤ 矿工 UX 优化** | 📋 有设计 | [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md) | UX-1 开工时 |

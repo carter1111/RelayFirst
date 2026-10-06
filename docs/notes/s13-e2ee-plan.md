@@ -264,10 +264,10 @@ X25519 公钥必须可被发现（否则别人无法给你加密）。选项：
 
 ---
 
-## 10. 需要你确认的三点
+## 10. 三点已全部拍板（2026-10-05，均按建议）
 
-- [ ] **§3.1 选 A**（加密 payload 后仍逐字签名，保判据 ②）—— 建议
-- [ ] **§6.1 选 A**（加密公钥走 Card extension）—— 建议
-- [ ] **S13-3 的 `scope` 排除 RECEIPT 列为硬门禁**（需测试，非文档）—— 建议
+- [x] **§3.1 选 A**（加密 payload 后仍逐字签名，保判据 ②）—— ✅ **已实现**（`TestPrivateReceipt_ThirdPartyVerifiesWithNoKey`）
+- [x] **§6.1 选 A**（加密公钥走 Card extension）—— ✅ **已实现**
+- [x] **S13-3 的 `scope` 排除 RECEIPT 列为硬门禁**（需测试，非文档）—— ✅ **已实现**（`TestNoScopeCoversReceipts`，变异验证过；决策另立 [`ADR-0007`](../decisions/ADR-0007-receipts-never-delegable.md)）
 
-**确认后我可以按 §8 的顺序直接开工。**
+**S13-1…S13-5 均已交付**（见 [`docs/stages/S13-report.md`](../stages/S13-report.md)）。本文件保留为**论证过程**。

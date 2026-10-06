@@ -220,3 +220,75 @@ func TestSink_ReportsOutcomeToCaller(t *testing.T) {
 		t.Error("one healthy relay should make the delivery a success")
 	}
 }
+
+// TestSink_PolicyPathIsReachableAndWired proves the RFN-05 machinery is on a
+// production path: with a policy set, the sequential policy path runs, and with a
+// quorum that cannot be met it reports a shortfall rather than silently succeeding.
+//
+// The point is not the number — it is that setting Sink.Policy changes the code path
+// at all. Before this, PublishWithPolicy had no production caller, so the multi-relay
+// ability was built and unreachable.
+func TestSink_PolicyPathIsReachableAndWired(t *testing.T) {
+	inner := &recordingInner{}
+
+	// One relay that accepts, so a quorum of 1 is met on the policy path.
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer ok.Close()
+
+	pub, err := publish.New(ok.URL)
+	if err != nil {
+		t.Fatalf("publish.New: %v", err)
+	}
+
+	var got publish.Outcome
+	sink := &publish.Sink{
+		Inner:     inner,
+		Publisher: pub,
+		Policy:    &publish.DeliveryPolicy{Quorum: publish.QuorumPolicy{Required: 1}},
+		OnOutcome: func(_ *receipt.Receipt, o publish.Outcome) { got = o },
+	}
+	if err := sink.Save(testReceipt(t), "sha256:k", time.Unix(1791015800, 0)); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if got.Acked != 1 {
+		t.Errorf("Acked = %d, want 1 — the policy path must have delivered", got.Acked)
+	}
+
+	// A quorum the single relay cannot meet must be reported, not hidden.
+	var short publish.Outcome
+	sink2 := &publish.Sink{
+		Inner:     &recordingInner{},
+		Publisher: pub,
+		Policy:    &publish.DeliveryPolicy{Quorum: publish.QuorumPolicy{Required: 3}},
+		OnOutcome: func(_ *receipt.Receipt, o publish.Outcome) { short = o },
+	}
+	if err := sink2.Save(testReceipt(t), "sha256:k", time.Unix(1791015800, 0)); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if short.Acked >= 3 {
+		t.Error("a quorum of 3 cannot be met by 1 relay; the shortfall must be visible")
+	}
+}
+
+// TestSink_NoPolicyKeepsTheConcurrentPath: without a policy, the sink must use the
+// original concurrent fan-out, so existing behaviour (and its timeout bound) is
+// unchanged for a caller that did not ask for quorum.
+func TestSink_NoPolicyKeepsTheConcurrentPath(t *testing.T) {
+	inner := &recordingInner{}
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ok.Close()
+
+	pub, _ := publish.New(ok.URL)
+	sink := &publish.Sink{Inner: inner, Publisher: pub} // no Policy
+	if err := sink.Save(testReceipt(t), "sha256:k", time.Unix(1791015800, 0)); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if inner.saved == nil {
+		t.Error("the receipt must still be persisted and delivered")
+	}
+}

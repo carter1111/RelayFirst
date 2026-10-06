@@ -54,6 +54,44 @@ type Sink struct {
 
 	// Logger receives delivery warnings. Nil discards.
 	Logger *slog.Logger
+
+	// Policy wires the multi-relay machinery (RFN-05) into this production path.
+	//
+	// # Why this is opt-in rather than always-on, and why that is not a cop-out
+	//
+	// The quorum / health / failover code existed with tests but no production caller,
+	// so the ability was built and unused — that was the gap. But it cannot simply be
+	// swapped in as the default, because the two paths deliver DIFFERENTLY:
+	//
+	//   - the plain fan-out is CONCURRENT, so the worst-case wait is one timeout
+	//     whatever the relay count;
+	//   - the policy path is SEQUENTIAL (it must be, to stop early on quorum and to
+	//     learn health between attempts), so the worst case is one timeout per relay.
+	//
+	// Making the policy path the default would therefore make every publication slower
+	// as the relay set grows — the exact regression a fan-out exists to avoid. So the
+	// default stays the concurrent path, and a caller that wants quorum / health /
+	// failover sets Policy and gets the sequential path deliberately.
+	//
+	// Nil means "the plain concurrent fan-out", which is the behaviour that shipped.
+	Policy *DeliveryPolicy
+}
+
+// DeliveryPolicy selects the multi-relay policy path.
+//
+// It is a struct rather than three loose fields so "is the policy in use?" is one
+// question, answered by one nil check, instead of three that a caller could half-set.
+type DeliveryPolicy struct {
+	// Quorum decides whether a result counts as delivered. Required >= 2 (or a
+	// Fraction) is what makes this different from the default; a Required of 1 is
+	// accepted but pointless, since the concurrent path already means "any one".
+	Quorum QuorumPolicy
+
+	// Health is shared across saves so it learns which relays are reachable. Optional.
+	Health *RelayHealth
+
+	// Failover bounds retries and lets the loop stop once enough relays acked.
+	Failover FailoverPolicy
 }
 
 // Save persists r and then attempts delivery to every configured relay.
@@ -82,7 +120,18 @@ func (s *Sink) Save(r *receipt.Receipt, artifactKey string, at time.Time) error 
 		return nil
 	}
 
-	out, err := s.Publisher.Publish(context.Background(), env)
+	// Two paths, chosen by whether a policy was configured. Without one, the original
+	// concurrent fan-out (one timeout regardless of relay count). With one, the
+	// sequential policy path that can stop early on quorum and learn health, at the
+	// cost of a per-relay worst case.
+	var out Outcome
+	if s.Policy != nil {
+		out, err = s.Publisher.PublishWithPolicy(
+			context.Background(), env, s.Policy.Quorum, s.Policy.Health, s.Policy.Failover, time.Now,
+		)
+	} else {
+		out, err = s.Publisher.Publish(context.Background(), env)
+	}
 	if err != nil {
 		s.logger().Warn("publish call failed", "receipt", r.ReceiptID, "error", err.Error())
 		return nil

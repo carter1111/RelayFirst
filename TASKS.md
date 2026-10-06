@@ -813,6 +813,8 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 > **🔗 与"第三方建 IM"的关系**（2026-10-07）：GAP-G2 正是 **IM-2**（第三方 IM 的硬前置）。
 > 第三方上手的完整缺口清单（TS SDK / conventions / builder 文档 / bootstrap）见
 > [`docs/notes/planning.md` §D3](docs/notes/planning.md)。
+>
+> **✅ D4 已定（2026-10-07）**：用户确认发现层**"要做"** → **待排期**（先改 `MVP.md` L0，再进主表）。
 
 **发布动作（非缺口，登记备查）**：`relayfirst` / `relayfirst-mcp` **打包已就绪、未 `npm publish`**；
 `relayfirst/node` 未发 registry。见 [`docs/notes/planning.md`](docs/notes/planning.md) C 节。
