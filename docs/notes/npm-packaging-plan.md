@@ -92,9 +92,31 @@ npm publish                              ← 再发主包（triggers prepublishO
 |---|---|---|
 | **Q1** | **npm scope 名**（`@relayfirst/*`？`@carter1111/*`？） | 用与包名一致的 scope；**需 npm org** |
 | **Q2** | 平台覆盖：**加 windows-arm64 / linux-riscv？** | 先 5 个主流；有需求再加 |
-| **Q3** | **是否同时做 PKG-2（macOS 签名）** | 签名需 **Apple 证书**（外部）→ 先不做，**但要在子包里标明"未签名"** |
+| **Q3** | **是否做 PKG-2（macOS 签名/公证）** | ✅ **决定：不做**（见 §8）—— `npx` 路径**不需要** Apple 证书 |
 
 ---
+
+## 8. PKG-2（macOS 签名）—— **不做**，以及为什么
+
+**实测（`codesign -dvv`）**：
+
+| 二进制 | 签名状态 |
+|---|---|
+| **darwin-arm64** | ✅ **Go 已自动做 ad-hoc 签名**（`Signature=adhoc`, `flags=0x20002(adhoc,linker-signed)`）—— arm64 **必须有签名才能执行**，Go 内建 |
+| **darwin-x64** | ⚠️ **完全未签名** —— **Intel macOS 允许未签名执行** |
+
+**Gatekeeper 拦的是【被隔离（quarantined）】的未签名二进制**，而**隔离位（`com.apple.quarantine`）是【下载它的应用】打的**（浏览器 / Mail），**不是 node 打的**。
+
+| 分发方式 | 需要 Apple Developer ID 证书吗 |
+|---|---|
+| **`npx` / `npm i`**（node 写文件） | ❌ **不需要**（node 不设隔离位）|
+| 浏览器下载二进制 → 双击 | ✅ 需要 |
+| 公证（notarization） | ✅ 需要（$99/年 Apple Developer Program）|
+
+**旁证**：`@swc` 等包分发**未签名**的原生二进制、`npx` 正常；`esbuild` 签名是因为它**独立下载**二进制。
+
+**结论**：**`npx` 路径不需要证书**。`NOTARIZATION.txt` 只说明"若你是浏览器下的、被拦了，用 `xattr` 清除隔离位"。
+**真需要 PKG-2 的场景**：要把 macOS 二进制**在 npm 之外**分发（网址下载），或**主动公证** —— 目前**不做**。
 
 ## 7. 反模式
 

@@ -98,15 +98,31 @@ for target in "${targets[@]}"; do
     chmod +x "$pkg/$cmd$ext"
   done
 
-  # PKG-2: the macOS binaries are cross-compiled and unsigned, and Gatekeeper can
-  # refuse them. Saying so in the package is honest; silently shipping an unsigned
-  # binary that a user cannot run is not.
+  # PKG-2 note, stated accurately rather than alarmingly.
+  #
+  # Measured: on arm64 Go ALREADY applies an ad-hoc signature (a valid one; arm64
+  # requires a signature to execute at all), and on x64 the binary is unsigned, which
+  # Intel macOS permits. So `npx` works without an Apple certificate: node writes the
+  # files, and the quarantine bit that Gatekeeper acts on is set by a downloading APP
+  # (a browser), not by node.
+  #
+  # A Developer ID certificate plus notarization is only needed to hand macOS binaries
+  # to a user OUTSIDE npm — a browser download they double-click — or to notarize for
+  # its own sake. That is PKG-2, and it is optional for this distribution path.
   if [ "$goos" = "darwin" ]; then
-    cat >"$pkg/UNSIGNED.txt" <<'NOTE'
-These macOS binaries are cross-compiled and NOT code-signed or notarized.
-Gatekeeper may refuse to run them. To run anyway:
+    cat >"$pkg/NOTARIZATION.txt" <<'NOTE'
+These macOS binaries are cross-compiled. Measured state:
+  arm64  ad-hoc signed by Go (valid; arm64 requires a signature to run)
+  x64    unsigned (Intel macOS permits this)
+
+Running them via npx/npm is fine: node writes the files, so the quarantine bit that
+Gatekeeper acts on is not set. If you obtained these by a BROWSER download and macOS
+refuses them, clear the quarantine bit:
   xattr -d com.apple.quarantine ./relayfirst
-Signing requires an Apple Developer certificate (tracked as PKG-2).
+
+Full Developer ID signing and notarization (an Apple Developer certificate) is only
+needed to distribute macOS binaries outside npm, or to notarize deliberately. That is
+tracked as PKG-2 and is optional for the npx path.
 NOTE
   fi
 
@@ -119,7 +135,7 @@ NOTE
   "description": "RelayFirst platform binaries for $os/$cpu",
   "os": ["$os"],
   "cpu": ["$cpu"],
-  "files": ["relayfirst", "relayfirst-mcp", "relayfirst-dashboard", "UNSIGNED.txt"],
+  "files": ["relayfirst", "relayfirst-mcp", "relayfirst-dashboard", "NOTARIZATION.txt"],
   "license": "$license"
 }
 JSON
