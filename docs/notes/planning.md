@@ -18,29 +18,35 @@
 > **⚠️ 分两栏**：**① 未定案**才真属于 Planning（P1）；**② 已裁决/已实现**是**参考** ——
 > 保留在这里只为"一眼看全"，**它们不再是待定规划**。
 
-### 0A. 未定案（真正属于 Planning）
+### 0A. 未开工 / 待定（**真正的 Planning 待办**）
 
 | Feature 文档 | 一句话 | 对应问题 |
 |---|---|---|
-| [`mvp2-launch-readiness.md`](mvp2-launch-readiness.md) | **上线前一览**：十条判据 + 六问 | 总览 |
-| [`discovery-plan.md`](discovery-plan.md) | **发现层 G2→G1→G3** 实施计划（solid） | 去中心化 / Explorer |
+| [`discovery-plan.md`](discovery-plan.md) | **发现层 G2→G1→G3** 实施计划 | 去中心化 / Explorer |
 | [`explorer-indexer-plan.md`](explorer-indexer-plan.md) | Explorer 架构与红线 | Explorer |
-| [`decentralization-gap.md`](decentralization-gap.md) | 去中心化现状 vs 目标（G1–G5 / O1–O4） | 去中心化 |
-| [`terminal-experience-plan.md`](terminal-experience-plan.md) | 节点 logo/banner/report 设计 | 节点体验 |
-| [`node-tui-dashboard-plan.md`](node-tui-dashboard-plan.md) | **节点 Dashboard/TUI 最优方案**：**独立 client-server**（`relayfirst-dashboard`）、HTTP 只读轮询、**节点安全 8 条**、任务 D1–D6 | 交互 + 实时数据 |
-| [`multi-node-plan.md`](multi-node-plan.md) | **多节点测试计划**：①客户端多节点（可做）vs ②③节点复制/联邦（未实现）；**"N 节点为何可行"的封闭性质论证 + 属性化测试**；任务 MN-1..4 | 多节点正确性 |
-| [`npm-packaging-plan.md`](npm-packaging-plan.md) | **npm 跨平台打包计划（PKG-1/2）**：主包 + 每平台 `optionalDependencies` 子包（42MB→~8MB）；平台名映射、发布顺序、任务 PKG1-1..5 | 发布优化 |
-| [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md) | `relayfirst` 定位与品牌层 | 矿工 UX |
-| [`node-incentives-discussion.md`](node-incentives-discussion.md) | 节点动机（BLK-5）选项 | 为何安节点 |
-| [`../gtm/blk-2-first-consumer-plan.md`](../gtm/blk-2-first-consumer-plan.md) | BLK-2 首个消费方行动方案 | 上线硬前置 |
+| [`node-incentives-discussion.md`](node-incentives-discussion.md) | 节点动机（BLK-5） | **已延期**（待"好的完整激励方案"）|
+| [`../gtm/blk-2-first-consumer-plan.md`](../gtm/blk-2-first-consumer-plan.md) | BLK-2 首个消费方行动方案 | **技术侧完成、demo 可跑；接洽未开始（人的动作）** |
 
-### 0B. 已裁决 / 已实现（**参考**，非待定）
+### 0B. 已裁决 / 已实现（**参考**，非待定 —— 不要当成待办）
 
 | 文档 | 状态 | 备注 |
 |---|---|---|
+| [`terminal-experience-plan.md`](terminal-experience-plan.md) | ✅ **已实现** | 节点 logo/banner/`report`/`status`/`inspect`（UX-1 节点部分） |
+| [`node-tui-dashboard-plan.md`](node-tui-dashboard-plan.md) | ✅ **已实现** | `relayfirst-dashboard`（D1–D6 全交付） |
+| [`multi-node-plan.md`](multi-node-plan.md) | ✅ **MN-1..3 已实现** | 去重 + 封闭性 + N=1..8 属性化测试 |
+| [`npm-packaging-plan.md`](npm-packaging-plan.md) | ✅ **PKG-1 已实现**（PKG-2 决定不做） | 主包 8kB + 每平台子包 |
+| [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md) | ✅ **UX1b 已实现** | 首屏 / status / mine 品牌层 |
 | [`blk-3-assignment-policy.md`](blk-3-assignment-policy.md) | **已裁决 A**（确定性种子） | 剩部署配置，机制零改动 |
 | [`blk-4-genesis-decision.md`](blk-4-genesis-decision.md) | **已裁决 A**（=发布日） | 仅缺"具体哪天" |
+| [`blk-1-verification-plan.md`](blk-1-verification-plan.md) | ✅ **已核实**（PARTIAL） | Codex 可行 / Claude Code 不可 |
 | [`mcp-setup.md`](mcp-setup.md) | **已实现**（S12-5/6/7） | 属**how-to 参考**，不是规划 |
+
+### 0C. 参考 / 索引（**非任务**）
+
+| 文档 | 作用 |
+|---|---|
+| [`mvp2-launch-readiness.md`](mvp2-launch-readiness.md) | **上线前一览**：十条判据 + 六问 |
+| [`decentralization-gap.md`](decentralization-gap.md) | 去中心化现状 vs 目标（G1–G5 / O1–O4）—— **分析**，非待办 |
 
 ---
 
@@ -94,20 +100,23 @@
 
 | 项 | 为什么我做不了 | 入口 |
 |---|---|---|
-| **BLK-1** 订阅可程序化驱动？ | 需真实账号/订阅核实 | `TASKS.md` §1 |
-| **BLK-2** 第一个真实消费方 | 需**人去接洽** | [`../gtm/blk-2-first-consumer-plan.md`](../gtm/blk-2-first-consumer-plan.md)（画像/首封信/8 周时间盒） |
+| ~~BLK-1~~ 订阅可程序化驱动？ | ✅ **已核实**（桌面调研完成） | [`blk-1-verification-plan.md`](blk-1-verification-plan.md)。**未做实机探针**（无订阅账号）—— 若你有账号，可选做 |
+| **BLK-2** 第一个真实消费方 | 需**人去接洽** | [`../gtm/blk-2-first-consumer-plan.md`](../gtm/blk-2-first-consumer-plan.md)（画像/首封信/8 周时间盒）。**技术侧已补**：demo 命令 `relayfirst observations` 现已实现 |
 | **判据 ①** 陌生人 10 分钟出分 | 定义就是**真人计时** | `TASKS.md` S6-8 / S8-1 |
 | **判据 ③** 陌生人一条命令起节点 | 代码层已过（Dockerfile 实测）；**镜像未发 + 计时未做** | 见 C |
 | **判据 ⑨** SBT 钱包可见 | 需**链上部署** + 真实钱包 | `contracts/` + `docs/stages/S7-report.md` |
 | **S12-3** 真实 USDC | 需**选链 + 测试币 + 部署** | `TASKS.md` S12-3 |
 | **BLK-3** 候选集"谁在池里" | 需**组织决定**谁当验证者 | 见 A |
-| **BLK-5** 节点动机 | 需**裁决**（Q1 无激励 / Q2 声誉榜 / Q3 运维费） | [`node-incentives-discussion.md`](node-incentives-discussion.md) |
+| **BLK-5** 节点动机 | 🗣️ **已延期** —— 用户裁决"没有很好的完整激励方式，先放 planning"。**技术结论：节点工作量不可验证** | [`node-incentives-discussion.md`](node-incentives-discussion.md) |
 
 ---
 
 ## C. 需要【发布动作】的（一次性命令，但要有凭据）
 
-### C1. npm —— **只发两个用户工具，不发节点**（**打包已修好，只剩 `npm publish`**）
+### C1. npm —— **发三个用户工具（主包 + 每平台子包），不发节点**（**打包已就绪，只剩 `npm publish`**）
+
+> **⚠️ 发布顺序**：**先发 5 个 `@relayfirst/<os>-<arch>` 子包，再发主包** ——
+> 主包的 `optionalDependencies` 指向的版本必须**先存在**，否则 `npx` 解析不到。见 [`npm-packaging-plan.md`](npm-packaging-plan.md) §4。
 
 | 物 | 目的 | 现状 |
 |---|---|---|
@@ -118,20 +127,18 @@
 
 **已修（2026-10-06）**：原 4 个阻塞项 —— `private:true`、`bin/` 被 gitignore、tarball 只有单平台单二进制、版本过期 —— 全部处理：
 
-- `package.json`：去掉 `private`，版本 → `0.5.0`，加 `prepublishOnly` → `scripts/build-npm-binaries.sh`，`files` 含 `bin/npm`。
-- `scripts/build-npm-binaries.sh`：**交叉编译 5 平台 × 2 工具**（linux/darwin × amd64/arm64 + windows/amd64）。
-- 两个 launcher：优先选 **`bin/npm/<name>-<os>-<arch>`**（按 `process.platform`/`arch`），
-  找不到才回退 `go build`，并把**平台名**写进错误信息。
-- **CI 新增门禁**：`private`/`prepublishOnly`/`files` 三查 + 真跑一次交叉编译 + 真跑 launcher。
-- **实测**：`env -i PATH=<only node> node scripts/npx-relayfirst.mjs version` → 输出 `0.5.0-s6`
-  （**PATH 里没有 `go`**，证明用的是预编译二进制，而非回退构建）。
+- `package.json`：去掉 `private`，版本 → `0.5.0`，加 `prepublishOnly` → `scripts/build-npm-binaries.sh`，`files` **移除** `bin/npm`（PKG-1：二进制改走子包）。
+- `scripts/build-npm-binaries.sh`：**交叉编译 5 平台 × 3 工具**（linux/darwin × amd64/arm64 + windows/amd64）。
+- `scripts/pack-platform-packages.sh`：打包 5 个 `@relayfirst/<os>-<arch>` 子包。
+- 三个 launcher：优先选 **`bin/npm/<name>-<os>-<arch>`**，再 **子包**，再本地构建，再 `go build`。
+- **CI 门禁**：`private`/`prepublishOnly`/`files` 三查 + 真跑交叉编译 + **主包无二进制** + **子包平台映射** + **launcher 解析子包**。
+- **实测**：主包 **8.0kB**（原 42MB）、子包 11.3MB；`env -i PATH=<only node> … --version` 跑通。
 
-**⚠️ 诚实的两个未决点（不阻塞发布，但要知情）**：
+**⚠️ 一个未决点（不阻塞发布）**：
 
 | 点 | 说明 |
 |---|---|
-| **tarball 体积** | ✅ **已解决（PKG-1，2026-10-06）** —— 主包 **42MB → 8.0kB**（仅 launcher）；5 个每平台子包（各 ~11MB，`os`/`cpu` 自动筛选）。见 [`npm-packaging-plan.md`](npm-packaging-plan.md) |
-| **macOS 未签名** | 交叉编译出的 macOS 二进制**未签名/未公证** → Gatekeeper 可能拦截。首次发布建议先发 linux/windows，或补签名流程 |
+| **macOS 未签名** | ✅ **决定不做（PKG-2）** —— `npx` 路径**不需要** Apple 证书（arm64 Go 已 ad-hoc 签；Gatekeeper 只拦被浏览器打 quarantine 位的）。见 [`npm-packaging-plan.md`](npm-packaging-plan.md) §8 |
 
 > 相关代码：`scripts/npx-relayfirst.mjs` / `scripts/npx-relayfirst-mcp.mjs`（**启动器，不是重实现** ——
 > 委托给 Go 二进制，避免 EIP-712 双实现漂移，不变量 A4）。
