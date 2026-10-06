@@ -65,4 +65,4 @@ relayfirst settle [--epoch N] [--db ./relayfirst.db]
 | `ScoringSink.Finalize`（题 id 幂等） | ✅ 已实现 |
 | `relayfirst settle` 命令 | ✅ 已实现 |
 | **全链路测试**（work → Settle → points → Merkle root） | ✅ `TestSettlementChain_WorkToPointsToMerkleRoot` |
-| **生产调度**（cron / 定时由谁跑） | ⬜ **未接线** —— 需运营侧定（属部署决策） |
+| **生产调度**（cron / 定时由谁跑） | ✅ **已给示例**（非规范）：[`settlement-scheduling.md`](settlement-scheduling.md)（crontab 一行 + systemd timer）。**部署自定** |
