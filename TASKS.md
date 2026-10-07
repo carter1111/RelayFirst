@@ -403,7 +403,7 @@ race 门禁补覆盖时**找到一个真实 bug**：
 
 ---
 
-## 10. S9–S13 — MVP 2.0（已批准范围，未开工）
+## 10. S9–S13 — MVP 2.0（**已实现**）
 
 > **范围来源：`MVP.md` v2.0（§0 定位、§5.0 验证模式、§6.1 SBT、§6.5 USDC、§7.3 节点）。**
 > **完整论证：`docs/mvp-2.0-proposal.md`（accepted）。**
@@ -866,17 +866,17 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 
 | 风险 | 对应任务 | 状态 |
 |---|---|---|
-| **R1 订阅不可程序化驱动** | BLK-1 | ⬜ 最高优先级 |
-| R4 无真实需求 | BLK-2 / S8-8 | ⬜ |
-| R6 大户 sybil 自验 | S4-6 / S4-7 | ⬜ |
-| R10 任务类型太窄无趣 | S2-1（需在 UX 上做有趣） | ⬜ |
+| **R1 订阅不可程序化驱动** | BLK-1 | ✅ **已核（2026-10-07）** — Codex YES / Claude Code NO；支持列表只写 Codex |
+| R4 无真实需求 | BLK-2 / S8-8 | ⬜ **外部接洽（上线硬前置）** |
+| R6 大户 sybil 自验 | S4-6 / S4-7 | ✅ **机制已交付** — S4-6 拒自验 + 比例上限 + fail-closed；S4-7 验证奖励 ≤ 产出 |
+| R10 任务类型太窄无趣 | S2-1（需在 UX 上做有趣） | ⬜ UX 项，属体验 |
 | R7 监管暴露 | S8-9 | ✅ 已加 CI 门禁（文本层）；**仍非法律意见**，上线前需人工复核 |
 
 完整风险清单见 [`MVP.md` §13](MVP.md)。
 
 ---
 
-## 14. 激励实现（**Planning → Tasks 已排期，未开工**）
+## 14. 激励实现（**主体已实现**；剩余见 §15）
 
 > **来源**：`incentive.md` v0.21（已定参数）+ `impl-assessment.md`（Stage 2）→ `impl-planning.md`（Stage 3）
 > → `impl-tasks.md`（Stage 4）。**本节即 `AGENTS.md §5.0` 的 ② 步**（planning 定案 → 进 TASKS 主表）。
@@ -926,6 +926,33 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 **P1-omission「可发现」半边** ✅ **done**（选项 B，2026-10-08）—— `relayfirst anchor manifest`（发布 epoch 回执集 + root）+ `relayfirst anchor audit --manifest <f> --root <r> [--require <id>…]`（**任何人**可重算 root 校验 + 标出被漏的回执，**非零退出**）。**纯链下、零合约改动**。测试：诚实 manifest 通过；漏 required 报错；集合与 root 不符报错。**注意**：这使遗漏**可发现、可归因**，**不强制**纳入 ——「强制纳入」仍是 P1 未决（须排序树 + 合约，或争议路径，属独立设计）。
 
 **验收判据**：本层**不属十条判据**；判据状态见 §13 / `MVP.md §11`。
+
+---
+
+## 15. 剩余项（**可开工 = 0；其余按【卡什么】分类**）
+
+> **这是"后面还有多少 tasks"的权威答案（2026-10-08）。** 代码队列已空；以下按**卡因**分四类。
+> 规则：只有解卡后 A 类才可派工；B/C/D 不是"写代码"能推进的。
+
+### A. 等外部依赖（解卡后可派）
+
+| id | 项 | 卡什么 |
+|---|---|---|
+| **R-P0SINK** | **Relay ID / 命名空间注册 burn** | **S10-0 已 ✅**，真正缺的是 **namespace 收费机制 + 收费方**（`incentive.md §10.13`）；burn 表已建，接上即可 |
+| **R-D2** | `relayfirst init` / keystore / signer / `bind` | **D2 待批**（推翻 no-init，L0）；且 `ADR-0009` 已裁定 **v2 延后** |
+| **R-RELAY** | **RFN-05 多 relay 接线**（quorum/failover 已实现但**未接线**）| 需先把**默认策略写进 `MVP.md`**（范围变更），再接 `PublishWithPolicy` |
+
+### B. 等平台币设计（经济数值）
+
+**R-R**（r，枢纽）/ **R-X**（乘数上限）/ **R-FARM**（farm ROI 判"够不够低"，模型在 `farmroi.go`）。
+
+### C. 属 Roadmap / 2.1（**刻意非目标，不反转**）
+
+**R-FORCE**（强制纳入 = dispute，`AGENTS.md:61` 非目标）/ **R-SBTREV**（SBT 撤销，2.1）/ **R-DISC**（发现层 G1–G5）。
+
+### D. 需真人 / 外部（**我无法代做**）
+
+**R-TIME**（判据 ①③ 真人计时）/ **R-CHAIN**（判据 ⑨ 上链+真钱包；S7-3 每日提交 root）/ **R-CONSUMER**（**BLK-2 真实消费方**，上线硬前置）。
 
 ---
 
