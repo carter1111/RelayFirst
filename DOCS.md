@@ -119,6 +119,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/stages/S11-report.md`](docs/stages/S11-report.md) | — | **报告** | S11（**SBT 积分徽章**：判据 ⑨；转让 revert + 累计 claim + 自包含 metadata + 真 anchor claim） | 已归档 |
 | [`docs/stages/S12-report.md`](docs/stages/S12-report.md) | — | **报告** | S12（**结算**：非托管抗双领位图；USDC 待外部） | 已归档 |
 | [`docs/stages/S13-report.md`](docs/stages/S13-report.md) | — | **报告** | S13（**E2EE + 密钥层级 + 委托 + MCP**；回执永不可委派） | 已归档 |
+| [`docs/stages/s12-3-usdc-checklist.md`](docs/stages/s12-3-usdc-checklist.md) | — | **清单** | **S12-3 最小 USDC 通道部署清单**：选链/faucet/`forge create`/端到端/判据；**非托管，只记防双领** | 部署时 |
 
 ---
 
