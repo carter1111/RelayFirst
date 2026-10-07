@@ -1,6 +1,6 @@
 # 终端体验规划 —— 节点 banner/report + CLI 定位
 
-> **状态：节点部分【已实现】（2026-10-06）** —— 见 §7。CLI 部分仍规划中。
+> **状态：节点部分【已实现】（2026-10-06）；CLI 品牌层【已实现】（UX1b-1..6，2026-10-07 复核）。** 见 §7 与 [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md) §6.6。
 >
 > 实现：`cmd/relayfirst-node/banner.go`（logo + banner + **子命令 `report`/`status`/`inspect`**）
 > + `banner_test.go` / `subcommands_test.go`。
@@ -201,5 +201,5 @@ banner 仍写 stderr。此修正随子命令化一起落地。
 
 ### 未做
 
-- `relayfirst`（矿工 CLI）侧的品牌层 —— 见 [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md)（仍规划）
+- `relayfirst`（矿工 CLI）侧的品牌层 —— 见 [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md)（✅ **已实现**，UX1b-1..6）
 - 交互菜单（形状 3）：**刻意不做** —— 节点是守护进程，TTY-only 菜单价值低且易误触发

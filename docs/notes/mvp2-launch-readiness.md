@@ -71,15 +71,14 @@
 
 **安装极简**：一条 `docker run`，无注册/许可/密钥。**只有 Docker 分发**（长驻服务，不发 npm）。
 
-**体验现状**：无 UI，slog 逐行日志，前台常驻。
-**体验规划**：[`terminal-experience-plan.md`](terminal-experience-plan.md) —— TTY 下 logo + banner + `relayfirst-node report`（一次性、不占端口）。
-
+**体验现状**：无 UI **但有 TTY 首屏** —— TTY 下 logo + banner；非 TTY slog 逐行（字节不变）。**✅ 已交付**。
+**体验**：[`terminal-experience-plan.md`](terminal-experience-plan.md) —— TTY 下 logo + banner + `relayfirst-node report`（一次性、不占端口）。**均已实现**。
 **承重约束**：**headless-first**（`docker -d`/systemd/CI 无 TTY）→ 输出**按 TTY 分支**，**非 TTY 字节不变**、**无 TTY 不拒启**。
 
 **还能优化**：
-1. **镜像发布到 registry**（判据③ 的关键一步）→ 见 §6
-2. **`report` 命令**（今天要起节点再 curl）
-3. **banner**（TTY）
+1. **镜像发布到 registry**（判据③ 的关键一步）→ 见 §6 —— **唯一剩下的（需凭据）**
+2. ~~`report` 命令~~ ✅ done
+3. ~~`banner`（TTY）~~ ✅ done
 4. （**不建议**）交互 TUI —— 与 headless 冲突
 
 ---
@@ -139,8 +138,11 @@
 ### D. 真人动作
 - 判据①③ **计时**；判据⑨ **链上部署 + 真钱包**
 
-### E. 体验（未开工）
-- **UX-1** 节点 banner/report + CLI 品牌层（设计就绪）
+### E. 体验（✅ 已交付）
+- **UX-1** 节点 banner/report + CLI 品牌层 + Dashboard **均已实现**（2026-10-07 复核）：
+  - 节点：`cmd/relayfirst-node/banner.go`（logo + TTY-gated banner）+ `report`/`status`/`inspect`
+  - CLI：`internal/term` + 首屏 logo/三步 + `status` 仪表盘 + `mine` 单行原地刷新；**非 TTY 冻结**（回归测试锁定）
+  - Dashboard：`cmd/relayfirst-dashboard`（D1..D6 ✅，CI 门禁在 `scripts/ci.sh`）
 
 ---
 

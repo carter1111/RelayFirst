@@ -1,6 +1,7 @@
 # CLI 定位与品牌体验规划 —— `relayfirst` 到底给谁用？
 
-> **状态：计划（未开工）。** §1–§5 是设计与原则；**§6 是任务级实施计划**（2026-10-06：要开工，先计划）。
+> **状态：✅ CLI 品牌层已交付（UX1b-1..6 全 done，2026-10-07 复核）。** §1–§5 是设计与原则；**§6 是任务级实施计划**。
+> `internal/term` 已抽出、首屏/仪表盘/原地刷新均已实现并有冻结回归测试（`go test ./cmd/relayfirst/ -run 'TestFirstScreen|TestStatus_NonTTY|TestLiveProgress'` ok）。
 >
 > 相关：`TASKS.md` §11.2（UX-1）、`MVP.md` §1 原则②、`§1.1`（目标用户）、判据 ①、
 > `terminal-experience-plan.md`（节点侧）。

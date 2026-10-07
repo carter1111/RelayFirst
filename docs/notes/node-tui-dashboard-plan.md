@@ -4,7 +4,9 @@
 > ③ 节点**实时数据 Dashboard**；④ **必须考虑节点安全**；⑤ 节点只跑一个，**GUI 显示它在运作**即可，
 > Human 操作界面是**另一个模块**、**另一个终端**打开。
 >
-> **状态：规划（未开工）。** 属 `UX-1`（`TASKS.md §11.2`）。
+> **状态：✅ 已交付（D1..D6 全 done，2026-10-07 复核）。** 属 `UX-1`（`TASKS.md §11.2`）。
+> `cmd/relayfirst-dashboard` 已构建通过、测试通过（`go test ./cmd/relayfirst-dashboard/` ok），
+> 且 `scripts/ci.sh` 有 D6 门禁（dashboard 不得链接签名代码、node 不得链接 UI/`noderead`）。
 >
 > 相关：[`terminal-experience-plan.md`](terminal-experience-plan.md)（已交付的 CLI）、
 > `internal/node/ws.go`（现有 hub）、`ARCHITECTURE.md §4.4 / §17`。
