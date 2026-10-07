@@ -100,6 +100,9 @@ Mine flags:
   --key <hex>            Agent key (or RELAYFIRST_PRIVATE_KEY)
   --source <url>         Task source URL; repeatable; falls back to config
   --relay <url>          Relay node to publish to; repeatable; falls back to config
+  --quorum <n>           Require n independent relays to ack (default 0 = any one,
+                         concurrent fan-out). n>=2 uses the sequential policy path
+                         (quorum + relay health + failover), at one timeout per relay.
   --interval <duration>  Pause between iterations (default 5s)
   --chain <id>           EVM chain id for the agent id (default 8453)
   --once                 Run a single iteration and exit
@@ -511,6 +514,26 @@ func (f *flags) intArg(name string) (int, error) {
 	return n, nil
 }
 
+// quorumArg parses --quorum, the opt-in multi-relay quorum (RFN-05).
+//
+// Zero (or absent) means the plain concurrent fan-out. A malformed value is an ERROR
+// rather than a silent fall-back to fan-out: a typo that quietly disabled the redundant
+// delivery the caller asked for is exactly the failure they would not notice.
+func (f *flags) quorumArg() (int, error) {
+	raw := f.get("quorum", "")
+	if raw == "" {
+		return 0, nil
+	}
+	var n int
+	if _, err := fmt.Sscanf(raw, "%d", &n); err != nil {
+		return 0, fmt.Errorf("--quorum must be an integer, got %q", raw)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("--quorum must be >= 0, got %d", n)
+	}
+	return n, nil
+}
+
 // resolverFor builds the semantic field resolver, if one is warranted.
 //
 // A nil resolver is not an error: positional extract tasks need none, and every
@@ -682,6 +705,11 @@ func runMine(args []string) error {
 		OnError: reportScoringError,
 	}
 
+	// Relay health for the opt-in policy path (RFN-05). It is created here and shared
+	// across every save in the run, so "this relay keeps timing out" is learned over the
+	// run rather than reset per receipt.
+	health := publish.NewRelayHealth()
+
 	// Whether stdout is a terminal is decided once here and reused by the banner and the
 	// progress line, so the two cannot disagree about which mode the run is in.
 	interactive := term.IsTTY(os.Stdout)
@@ -710,12 +738,31 @@ func runMine(args []string) error {
 		if err != nil {
 			return err
 		}
-		sink = &publish.Sink{
+		delivery := &publish.Sink{
 			Inner:       sink,
 			Publisher:   pub,
 			ArtifactKey: scoring.ArtifactKey,
 			OnOutcome:   reportDelivery,
 		}
+
+		// RFN-05, opt-in (R-RELAY). The multi-relay policy (quorum, health, failover) is
+		// wired ONLY when asked for with --quorum. It is not the default on purpose: the
+		// policy path is SEQUENTIAL (it must be, to stop early on quorum and learn health),
+		// so its worst case is one timeout per relay, whereas the concurrent fan-out's is a
+		// single timeout regardless of relay count. Defaulting to it would slow every
+		// publication as the relay set grows -- the regression the fan-out exists to avoid.
+		// With no --quorum the behaviour is exactly what shipped.
+		if q, err := f.quorumArg(); err != nil {
+			return err
+		} else if q > 0 {
+			delivery.Policy = &publish.DeliveryPolicy{
+				Quorum: publish.QuorumPolicy{Required: q},
+				// Shared across saves for this run, so health is learned over time
+				// rather than reset on every receipt.
+				Health: health,
+			}
+		}
+		sink = delivery
 	}
 
 	loop := &mining.Loop{

@@ -694,6 +694,20 @@ docker run -d \
 **v1.0 已有的四个端点**（`POST /messages`、`GET /messages/{agentId}`、`/healthz`、
 `/.well-known/relayfirst`）**全部保留** —— 新能力是叠加，不是替换。
 
+### 7.3b 客户端多 relay 投递：默认 vs 冗余（RFN-05）
+
+**默认 = 任一 relay 收到即成功（并发 fan-out，最坏 1 个超时）。** 这是上线行为。
+
+**要更强冗余时**，`relayfirst mine --quorum <n>`（n≥2）：要求 **n 个独立 relay** 确认收到，
+走**顺序策略路径**（quorum 计数 + relay 健康 + 有界 failover）。**代价**：顺序执行 →
+最坏 **每 relay 一个超时**（而非并发时的 1 个）。**故它是【opt-in】，不是默认。**
+
+> **为什么不能把策略路径变成默认**（结论，`internal/publish/sink.go` 注释）：
+> 顺序路径为"早停于 quorum + 学习健康"**必须**顺序；设为默认会让**每次投递随 relay 数变慢**
+> —— 正是 fan-out 要避免的回归。且 **quorum=1 无意义**（并发路径本已"任一即可"）。
+
+**"独立"的定义**：`QuorumPolicy.IndependentOf` 把同一运营者的多个前端并为一组 —— **两个前端 ≠ 两个**。缺省时每个 relay 各自独立。
+
 ---
 
 ## 8. 技术选型（定死）

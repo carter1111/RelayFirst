@@ -911,6 +911,8 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 
 **V1 其余（设计已定，待实现）**：SBT 发放/吊销规则、Claim UX（web ticket）、P0 sink（Relay ID burn，待 S10-0）——见 [`incentive-v1-baseline.md`](docs/notes/incentive-v1-baseline.md)。
 
+**RFN-05 opt-in 接线** ✅ **done（2026-10-08）** —— `relayfirst mine --quorum n`（n≥2）走顺序策略路径；默认并发 fan-out 不变。默认值入 `MVP.md §7.3b`（`AGENTS.md §5.1`）。
+
 **Layer 0 接线（Q1=A / F1 / M1 / X=95%，2026-10-08 开工）**：
 
 | id | 任务 | 依赖 | 验收 | 状态 |
@@ -929,16 +931,16 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 
 ---
 
-## 15. 剩余项（**可开工 = 1（R-RELAY）；其余按【卡什么】分类**）
+## 15. 剩余项（**可开工 = 0；其余按【卡什么】分类**）
 
-> **这是"后面还有多少 tasks"的权威答案（2026-10-08）。** 代码队列基本空；**可开工 1（R-RELAY）**；其余按**卡因**分四类。
-> 规则：只有 A0/A 类可派工；B/C/D 不是"写代码"能推进的。
+> **这是"后面还有多少 tasks"的权威答案（2026-10-08）。** 代码队列已空；以下按**卡因**分四类。
+> 规则：只有 A 类解卡后可派工；B/C/D 不是"写代码"能推进的。
 
-### A0. **可开工（当前唯一）**
+### A0. **可开工（当前）** —— ✅ **空**
 
-| id | 项 | 说明 |
+| id | 项 | 状态 |
 |---|---|---|
-| **R-RELAY** | **RFN-05 多 relay 接线** | `publish.Sink` 已有 `Policy` 分支（quorum/health/failover，14 项测试），但 `mine` 构造时**不设 Policy** → 走 plain `Publish`（**能力未上线**）。**默认已定 = quorum 1**（`planning.md §D`，2026-10-07）→ **行为不变**的纯接线。**默认值需先写进 `MVP.md`**（`AGENTS.md §5.1`）|
+| ~~R-RELAY~~ | **RFN-05 多 relay 接线** | ✅ **done（2026-10-08）** —— **opt-in `--quorum n`**（n≥2）；默认仍是**并发 fan-out**（行为不变）。**更正**：原记的"默认 quorum=1 行为不变"**是错的** —— 顺序路径**每 relay 一个超时**（更慢），且 quorum=1 无意义。默认值入 `MVP.md §7.3b` |
 
 ### A. 等外部依赖（解卡后可派）
 

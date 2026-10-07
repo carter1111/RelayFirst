@@ -175,7 +175,7 @@
 |---|---|---|---|
 | **① 去中心化优化** | 已到 Nostr 底线；缺口 G1–G5 | [`decentralization-gap.md`](decentralization-gap.md) | 见 ②|
 | **② 发现层 + Explorer** | 📋 **已出 solid plan**；**✅ 用户 2026-10-07 确认"要做" → 排期** | [`discovery-plan.md`](discovery-plan.md) + [`explorer-indexer-plan.md`](explorer-indexer-plan.md) | **要排工期：先改 `MVP.md`**（`AGENTS.md §5.1`） |
-| **P1#2 quorum 接线** | ✅ **默认已定 = 1**（2026-10-07），**待接线** | [`npm-packaging-plan.md`](npm-packaging-plan.md) 无关；见 `internal/publish/policy.go` | 把 `PublishWithPolicy` 接进 `mine`/`sink`/`card_fetch`（默认 quorum=1，**行为不变**） |
+| **P1#2 quorum 接线** | ✅ **已接线（R-RELAY，2026-10-08）** | `MVP.md §7.3b`（默认）+ `cmd/relayfirst/main.go` | **opt-in `--quorum n`（n≥2）**：默认仍是**并发 fan-out**（任一即可），`--quorum` 才走顺序策略路径。**更正**：旧记的"默认 quorum=1 行为不变"**是错的** —— 顺序路径**更慢**（每 relay 一个超时），且 quorum=1 无意义（`internal/publish/sink.go` 的设计注释）|
 | **③ npm + 节点体验** | npm 打包就绪；节点体验有设计 | [`terminal-experience-plan.md`](terminal-experience-plan.md) | npm：`npm publish`（PKG-3）；体验：UX-1 |
 | **④ 节点激励** | 🗣️ **讨论**（BLK-5，待裁决） | [`node-incentives-discussion.md`](node-incentives-discussion.md) | 回答三问（Q1 无激励 / Q2 声誉榜 / Q3 运维费） |
 | **⑤ 矿工 UX 优化** | 📋 有设计 | [`cli-role-and-ux-plan.md`](cli-role-and-ux-plan.md) | UX-1 开工时 |

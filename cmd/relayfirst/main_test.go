@@ -1018,3 +1018,21 @@ func claimTotal(t *testing.T, dbPath, agent string, epoch int) float64 {
 	}
 	return got.Total
 }
+
+// TestQuorumArg_DefaultOffAndRejectsNonsense pins the R-RELAY switch: no --quorum means
+// the plain concurrent fan-out (the shipped behaviour); a value opts into the sequential
+// policy path; nonsense is an error rather than a silent fall-back.
+func TestQuorumArg_DefaultOffAndRejectsNonsense(t *testing.T) {
+	if q, err := (&flags{values: map[string]string{}}).quorumArg(); err != nil || q != 0 {
+		t.Errorf("absent --quorum = %d, %v; want 0, nil (plain fan-out)", q, err)
+	}
+	if q, err := (&flags{values: map[string]string{"quorum": "2"}}).quorumArg(); err != nil || q != 2 {
+		t.Errorf("--quorum 2 = %d, %v; want 2, nil", q, err)
+	}
+	if _, err := (&flags{values: map[string]string{"quorum": "two"}}).quorumArg(); err == nil {
+		t.Error("a non-numeric --quorum must be an error, not a silent fan-out")
+	}
+	if _, err := (&flags{values: map[string]string{"quorum": "-1"}}).quorumArg(); err == nil {
+		t.Error("a negative --quorum must be rejected")
+	}
+}
