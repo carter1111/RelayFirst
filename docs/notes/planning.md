@@ -48,6 +48,7 @@
 |---|---|---|
 | [`agent-signer-plan.md`](agent-signer-plan.md) + [`ADR-0009`](../decisions/ADR-0009-agent-key-management.md) | **Agent 密钥管理 + out-of-process signer + per-key domain 策略** | **不解决今天存在的威胁** —— LLM 是**远程 API**（读不到本地密钥），无本地 agent 子进程。本规格防的是**未来**"本地 agent 能调 CLI"场景。**Tier 2/3 全非必需**；Tier 1（key 出 env）也还要推翻 no-init |
 | [`user-registration-flow.md`](user-registration-flow.md) + [`incentive.md`](incentive.md) | **用户注册/身份流程（单助记词双 key、keystore、signer、claim）+ 激励框架** | **是 ADR-0009 的下游** —— key 管理延后，注册流程随之延后。`incentive.md` 自述**未到开发标准**（参数待填）|
+| [`impl-planning.md`](impl-planning.md) §6 **Layer 0 设计** | **Layer 0（节点经济）的测量【输入源】选项**（verifier 签心跳 / 邻居观测 / 挑战式）—— Layer 0 卡在**设计**，不卡在代码 | **待决**：谁观测"合格 epoch"（见 §6.5 三问）；**farm ROI 建模 launch-blocking** |
 
 ### 0C. 参考 / 索引（**非任务**）
 

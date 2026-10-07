@@ -14,6 +14,22 @@
 PoSR 绑定、claim CLI/Web）几乎全是**文档已定、代码为零**。已实现的是一台通用记账机；
 缺的是**这台机器缺少的那半张经济设计图**。
 
+### 0.1 ⚠️ 完成度账本（2026-10-08 复核 —— 别把"P0 done"读成"incentive done"）
+
+后续 IMP-1..5 让 Layer 1 的**代码链路**闭环了。**但 `incentive` 整体远未完成：**
+
+| 层 | 内容 | 代码状态 |
+|---|---|---|
+| **Layer 1（工作奖励）** | `mine→work→settle→points→balance root→claim proof` | ✅ **已端到端闭环**（单池）|
+| **Layer 0（节点经济）** | **两池/phase 分配** | ❌ **未实现** —— `settle` 是**单池**（grep `pool|phase` 空）|
+| | **tenure tier 加权份额** | ❌ **未接线** —— `internal/tenure` **只有库、无生产调用方** |
+| | **"合格 epoch" 的【输入源】** | ❌ **不存在** —— 依赖 liveness 协议（未设计，见 §Layer 0 设计）|
+| | **PoSR 绑定 + 1.25× 乘数** | ❌ **无 `bind` 命令、无乘数** |
+| **参数/设计** | X 值、SBT 发放/吊销、sunset、P0 sink、Claim UX、外层 bridge | ❌ 未决（`incentive.md §10`）|
+| **上线门槛** | **VPS farm ROI 建模** | ❌ **未启动**（`incentive.md §10.3` 自标 launch-blocking）|
+
+**一句话**：**Layer 1 记账链路可用；Layer 0 几乎全空 —— 且先于"接线"缺的是【设计】，不是代码。**
+
 ---
 
 ## 1. D1 结算：实现到什么程度？
