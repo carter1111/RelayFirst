@@ -96,7 +96,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/discovery-plan.md`](docs/notes/discovery-plan.md) | — | **规划**（→ planning） | **发现层实施计划（G2→G1→G3）**：relay filter 任务分解、Indexer/Explorer 任务分解、顺序与里程碑、开工前置 | 获批进工期时 |
 | [`docs/notes/node-incentives-discussion.md`](docs/notes/node-incentives-discussion.md) | — | **规划**（→ planning） | **节点经济与动机**：为何安节点、不违反 A7/A5 的选项（V1–V6）、需裁决三问 | 裁决后 |
 | [`docs/notes/incentive.md`](docs/notes/incentive.md) | — | **规划**（→ planning） | **激励机制框架**（v0.1）：Layer 0/1、tenure、1.25× PoSR、claim UX；**未到开发标准**，参数待填 | v2 |
-| [`docs/notes/user-registration-flow.md`](docs/notes/user-registration-flow.md) | — | **规划**（→ planning） | **用户注册/身份流程**（v0.5，ADR-0009 对齐）：单助记词双 key、keystore、signer、换/丢 key、多设备；**依赖 ADR-0009（已延后 v2）** | v2 |
+| [`docs/notes/user-registration-flow.md`](docs/notes/user-registration-flow.md) | — | **规划**（→ planning） | **用户注册/身份流程**（v0.6，ADR-0009 对齐）：单助记词双 key、keystore、signer、换/丢 key、多设备；**身份/keystore 依赖 ADR-0009（D2 未批 + 已裁定 v2）**；**claim UX 与只读 web 视图已实现** | v2 |
 | [`docs/notes/impl-assessment.md`](docs/notes/impl-assessment.md) | — | **规划**（→ planning） | **激励机制落地评估**（Stage 2）：D1 结算现状 + 文档/代码不一致清单（A..J）+ 风险 + P0 工作量 | 实现前 |
 | [`docs/notes/impl-planning.md`](docs/notes/impl-planning.md) | — | **规划**（→ planning） | **激励落地范围切分**（Stage 3）：P0/P1/BLOCKED + 每 P0 的改文件与接口 | 实现前 |
 | [`docs/notes/impl-tasks.md`](docs/notes/impl-tasks.md) | — | **规划**（→ planning） | **激励落地任务清单**（Stage 4）：DOC/L0/PRE/IMP/TEST 可派任务 + 依赖图 + 验收 | 派工时 |

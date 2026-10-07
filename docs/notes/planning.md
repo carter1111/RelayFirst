@@ -49,10 +49,9 @@
 | 文档 | 一句话 | 为何延后 |
 |---|---|---|
 | [`agent-signer-plan.md`](agent-signer-plan.md) + [`ADR-0009`](../decisions/ADR-0009-agent-key-management.md) | **Agent 密钥管理 + out-of-process signer + per-key domain 策略** | **不解决今天存在的威胁** —— LLM 是**远程 API**（读不到本地密钥），无本地 agent 子进程。本规格防的是**未来**"本地 agent 能调 CLI"场景。**Tier 2/3 全非必需**；Tier 1（key 出 env）也还要推翻 no-init |
-| [`user-registration-flow.md`](user-registration-flow.md) + [`incentive.md`](incentive.md) | **用户注册/身份流程（单助记词双 key、keystore、signer、claim）+ 激励框架** | **是 ADR-0009 的下游** —— key 管理延后，注册流程随之延后。`incentive.md` 自述**未到开发标准**（参数待填）|
+| [`user-registration-flow.md`](user-registration-flow.md) | **用户注册/身份流程**：单助记词双 key、keystore、signer、换/丢 key、多设备 | **key 管理依赖 ADR-0009（D2 未批 + 已裁定 v2）** —— 注册流程随之延后。**但其中 claim UX / 展示层已实现**（`relayfirst claim` + `--web` 只读视图）|
 | **r / X / farm ROI 判据** | **经济数值** | 🗣️ **已裁决（2026-10-08）：留给「平台币设计」** —— r（兑换比例）不定，**X 与 farm ROI「够不够低」一并随之** |
 | **强制纳入（omission）** | **争议层（dispute）** | 🗣️ **已裁决（2026-10-08）：归 Roadmap / 2.1** —— 它就是 dispute，而 dispute 是 A2 明文**非目标**（`AGENTS.md:61`）。**不反转 A2。** 「可发现」半边已做 |
-| [`impl-planning.md`](impl-planning.md) §6 **Layer 0 设计** | **Layer 0（节点经济）的测量【输入源】** | ✅ **已裁决并实现（2026-10-08）**：Q1=A / F1 / M1 / X=95%；`internal/heartbeat` + 两池 + `settle` 双池接线全 ✅ |
 
 ### 0C. 参考 / 索引（**非任务**）
 
