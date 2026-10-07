@@ -26,6 +26,7 @@
 | [`explorer-indexer-plan.md`](explorer-indexer-plan.md) | Explorer 架构与红线 | Explorer |
 | [`node-incentives-discussion.md`](node-incentives-discussion.md) | 节点动机（BLK-5） | **已延期**（待"好的完整激励方案"）|
 | [`../gtm/blk-2-first-consumer-plan.md`](../gtm/blk-2-first-consumer-plan.md) | BLK-2 首个消费方行动方案 | **技术侧完成、demo 可跑；接洽未开始（人的动作）** |
+| [`impl-assessment.md`](impl-assessment.md) → [`impl-planning.md`](impl-planning.md) → [`impl-tasks.md`](impl-tasks.md) | **激励机制落地**：D1 现状评估 → P0/P1/BLOCKED 切分 → 可派任务 | 激励实现（DOC/IMP 任务）|
 
 ### 0B. 已裁决 / 已实现（**参考**，非待定 —— 不要当成待办）
 
