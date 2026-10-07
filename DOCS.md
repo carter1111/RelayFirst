@@ -95,6 +95,8 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/mvp2-launch-readiness.md`](docs/notes/mvp2-launch-readiness.md) | — | **规划**（→ planning） | **MVP 2.0 上线前 Readiness 一览**：十条判据状态 + 六问（去中心化/explorer/节点/激励/矿工 UX/缺什么） | 每次推进后 |
 | [`docs/notes/discovery-plan.md`](docs/notes/discovery-plan.md) | — | **规划**（→ planning） | **发现层实施计划（G2→G1→G3）**：relay filter 任务分解、Indexer/Explorer 任务分解、顺序与里程碑、开工前置 | 获批进工期时 |
 | [`docs/notes/node-incentives-discussion.md`](docs/notes/node-incentives-discussion.md) | — | **规划**（→ planning） | **节点经济与动机**：为何安节点、不违反 A7/A5 的选项（V1–V6）、需裁决三问 | 裁决后 |
+| [`docs/notes/incentive.md`](docs/notes/incentive.md) | — | **规划**（→ planning） | **激励机制框架**（v0.1）：Layer 0/1、tenure、1.25× PoSR、claim UX；**未到开发标准**，参数待填 | v2 |
+| [`docs/notes/user-registration-flow.md`](docs/notes/user-registration-flow.md) | — | **规划**（→ planning） | **用户注册/身份流程**（v0.5，ADR-0009 对齐）：单助记词双 key、keystore、signer、换/丢 key、多设备；**依赖 ADR-0009（已延后 v2）** | v2 |
 | [`docs/mvp-2.0-proposal.md`](docs/mvp-2.0-proposal.md) | 611 | **决策依据** | **MVP 2.0 提案（已 accepted）** —— 论证过程；范围权威在 `MVP.md` v2.0 | 已归档（合并完成） |
 | [`docs/archive/mvp-1.0.md`](docs/archive/mvp-1.0.md) | 884 | **归档** | **MVP 1.0 原文逐字副本**（SHA-256 `259469ad…`）—— 仓库无 git 历史，故显式归档 | 不再更新 |
 | [`docs/decisions/ADR-0001-*.md`](docs/decisions/ADR-0001-eip712-in-house-thin-layer.md) | — | **决策** | EIP-712 用自研薄层而非 `apitypes`（S1-4） | 已 accepted |
