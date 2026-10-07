@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/relayfirst/relayfirst/internal/epoch"
+	"github.com/relayfirst/relayfirst/internal/tenure"
 )
 
 // Emission constants from MVP.md §6.2 and §6.3.
@@ -54,6 +55,37 @@ func EpochBudget(epoch uint64) float64 {
 // PerAgentCap returns the most one agent may earn in an epoch.
 func PerAgentCap(epoch uint64) float64 {
 	return EpochBudget(epoch) * PerAgentCapFraction
+}
+
+// NodePoolFraction is the share of an epoch's budget that goes to the NODE pool
+// (Layer 0), by phase (MVP.md §6.2c, incentive.md §2). The rest is the work pool
+// (Layer 1). Phases switch on epoch height, pre-locked, with no vote.
+func NodePoolFraction(epoch uint64) float64 {
+	switch {
+	case epoch <= 25:
+		return 0.50 // Phase 1
+	case epoch <= 51:
+		return 0.25 // Phase 2
+	default:
+		return 0.10 // Phase 3
+	}
+}
+
+// NodePoolShare returns each agent-node's fraction of the Layer 0 pool this epoch.
+//
+// # It is not a points function; it is a split of a pool defined elsewhere
+//
+// The pool's SIZE is handled by the caller (the settle step); this only answers "how is
+// the node pool divided". It defers to tenure.PoolShare, which weights by tier and gives
+// an ineligible node nothing -- so a node below the tenure floor dilutes nobody.
+//
+// # Why it lives here and not in tenure
+//
+// tenure owns the tier rule; emission owns the pool. Keeping the split's SHAPE in one
+// place and its WEIGHTS in another means the tier table can change without touching
+// settlement, and the pool ratio can change without touching tenure.
+func NodePoolShare(nodeTenures map[string]int) map[string]float64 {
+	return tenure.PoolShare(nodeTenures)
 }
 
 // EpochOf returns the epoch index for a timestamp.
