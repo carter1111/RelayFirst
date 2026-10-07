@@ -73,6 +73,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/emission-model-conflict.md`](docs/notes/emission-model-conflict.md) | — | **笔记** | **计分公式（§5.3）与 epoch 发行模型（§6.2）的矛盾** —— ✅ **已裁决（D1）：模型 B**；L0 已统一 | 已裁决 |
 | [`docs/notes/settlement-trigger.md`](docs/notes/settlement-trigger.md) | — | **笔记** | **epoch 结算触发器（D1 条件 2）**：谁/何时调 `Settle`；为何不能每回执结算；`relayfirst settle` 幂等 | 调度方式变化时 |
 | [`docs/notes/settlement-scheduling.md`](docs/notes/settlement-scheduling.md) | — | **示例** | **结算调度（crontab / systemd timer）** —— **示例非规范**；settle **不需密钥**、幂等；回应"我挖了矿分在哪" | 部署时 |
+| [`docs/notes/agent-signer-plan.md`](docs/notes/agent-signer-plan.md) | — | **规划**（→ planning） | **Agent 密钥管理 + out-of-process signer 修正版规格**：两把独立密钥、per-key domain 白名单、MCP 走 HTTP、认证；**任务 AS-1..9** | 待 ADR-0009 批准 |
 | [`docs/notes/blk-1-verification-plan.md`](docs/notes/blk-1-verification-plan.md) | — | **规划**（→ planning） | **BLK-1 核实计划**：订阅能否程序化驱动；一周内给书面 yes/no | 结论出来后 |
 | [`docs/notes/s13-e2ee-plan.md`](docs/notes/s13-e2ee-plan.md) | — | **记录**（S13 已实现） | **S13 完整方案**（E2EE + 密钥层级）：论证过程，已落地 | S13 变更时 |
 | [`docs/notes/wukongim-tech-advantages.md`](docs/notes/wukongim-tech-advantages.md) | — | **笔记** | WuKongIM 技术优势（供借鉴；benchmark 门禁与批量事务已取用） | 不再更新 |
