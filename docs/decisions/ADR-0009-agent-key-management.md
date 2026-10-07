@@ -91,11 +91,17 @@ agent 进程，就会进。
 仓库**无 BIP-39**。助记词与 HD 派生是**密码学** → **用库**（`tyler-smith/go-bip39` 或 `go-ethereum` 的 hd），
 **绝不手写**（A1）。加依赖需记理由。
 
-### D7. PoSR / `relayfirst bind` —— **拆出，不在本 ADR**
+### D7. PoSR / `relayfirst bind` —— **机制已定（2026-10-07，替代"拆出"）**
 
-提案 #4 的 "PoSR binding" **在仓库里不存在，且提案未定义**。
-"两身份共享密钥 → PoSR 无意义"这个因果**说不通**：共享密钥的问题是**角色混淆/归因**，不是某个 binding。
-**`bind` 子句（"bind to NodeID X"，node 签"接受 agent Y"）与"节点无密钥"冲突** → 需**单独一份设计**。
+原"拆出"理由（提案未定义 + "node 签接受"与"节点无密钥"冲突）已被新机制消解：
+**沿用现有 domain，不改 signing policy** ——
+
+- agent 侧以 **delegation-1** 签绑定意向（"我的 work 经由 verifier Y 提交"）；
+- verifier 侧以 **assertion-1** 确认服务关系（"为 agent X 提供中继"）。
+
+verifier 签 assertion-1 在其白名单内（D3）；"节点无密钥"不受影响（签的是 verifier key，不是 node key）。
+delegation 的语义本就是"委托"，比硬塞进 assertion 更顺。
+one-binding-per-identity，不叠加。attestation 具体格式与 bind UX 待设计（incentive.md §10.5）。
 
 ---
 
@@ -121,7 +127,7 @@ agent 进程，就会进。
 3. **MCP** 只加 HTTP 客户端，**零 crypto 不变**（CI 门禁继续钉）。
 4. **`mine` 接线**：agent 产 **content** → signer **验 schema → 签** → 提交。密钥**不进 agent/LLM 进程**。
 5. **新增依赖**：BIP-39（D6）。
-6. **PoSR/bind**：**不在本 ADR**，单独设计。
+6. **PoSR/bind 机制**：已定（D7，2026-10-07）：agent delegation-1 意向 + verifier assertion-1 确认，不改 signing policy。UX/格式待设计。
 
 **不可逆的部分**：`init` 生成的身份密钥**一旦丢失 = 身份丢失**（积分与回执归因绑在地址上）。
 **loss semantics 必须写进 `init` 的输出与入门文档。**

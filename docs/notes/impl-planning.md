@@ -7,25 +7,24 @@
 
 ## 0. 前置（**先于任何实现**）
 
-### 0.1 文档修正（Stage 2 清单 A/A'/H/I）——**最先做，纯文档**
+### 0.1 文档修正（Stage 2 清单 A/A'/H/I）——**裁决与状态（2026-10-08）**
 
-按全局约束"发现文档自相矛盾，先指出，不自行发挥"，这些**不是你们要我选**，而是**既存矛盾需裁决**：
-
-| # | 矛盾 | 需裁决的问题 |
+| # | 矛盾 | 裁决 / 状态 |
 |---|---|---|
-| **A** | `ADR-0009 D7` 说 `bind`**拆出/未定义**；`incentive.md` / `user-registration-flow.md` 却引用 "D7" 说**机制已定** | **绑定机制到底在哪定义？** 三选一：(i) 补一份独立 bind 设计文档，两处改引用；**或**(ii) 把那两处标注为"待定（D7 未定义）"；**或**(iii) 真的把 delegation-1+assertion-1 定为 D7（则 ADR-0009 D7 须改写）|
-| **A'** | `user-registration-flow.md:86`（已定）vs `:145`（待定） | 同 A |
-| **H** | `incentive.md` 头版本 "v0.1" vs changelog "v0.21" | 改成 v0.21 |
-| **I** | `incentive.md` 自称 dev-blocking，`TASKS.md` 无对应任务 | 是否把 P0 登记进 TASKS（本 Stage 4 产出即为此）|
+| **A** | `ADR-0009 D7` 说 `bind`**拆出/未定义**；两处却引用 "D7" 说**机制已定** | ✅ **已裁决 = 选 (iii)**：**D7 已改写**收录（delegation-1 意向 + assertion-1 确认；理由：delegation 语义本就是"委托"，比硬塞 assertion 更顺；verifier 签 assertion-1 在白名单内，不动 policy；"节点无密钥"不受影响）。**无独立文档**。两处引用**现有效** |
+| **A'** | `user-registration-flow.md:86`（已定）vs `:145`（待定）| ✅ **已修**：`:145` 改为"已定" |
+| **H** | `incentive.md` 头版本 "v0.1" vs changelog "v0.21" | ✅ **已修**：头改 **v0.21** |
+| **I** | `incentive.md` 自称 dev-blocking，`TASKS.md` 无对应任务 | ✅ **已做**：`TASKS.md §14`（`f1b878d`）；状态改为**已进 TASKS** |
 
 ### 0.2 L0 缺口（**实现前须先改 `MVP.md`**，§5.1）
 
-| # | 缺口 | 说明 |
+| # | 缺口 | 裁决 / 说明 |
 |---|---|---|
-| **B** | 双池 + phase 比例（50/75/90 ∶ 50/25/10）**不在 MVP §6.2** | MVP 只有单预算 `B(n)`。**Layer 0 的分配**（非记账）须先改 L0 |
-| **E** | Merkle root 输入：MVP/`incentive` 说 **settled map**；代码建在 **receipt 树** | 须在 MVP 明确 root 的定义（settled 数字）后接线 |
+| **B** | 双池 + phase 比例（50/75/90 ∶ 50/25/10）**不在 MVP §6.2** | ✅ **定性 = 纯同步工作**（不重议）：`L0-1` 直接做。**注**：Layer 0 **分配**（非记账）才需 L0-2 |
+| **E** | Merkle root：文档说 **settled map**；代码建在 **receipt 树** | ✅ **已裁决（2026-10-08）：保留两个 root，命名分职**——<br>**balance root**（settled map，叶 `keccak256(agentId‖total‖epoch)`）→ 用户 **claim 验积分**（`RelayPoints.sol` 已用此公式）<br>**receipt root**（回执集，叶 = receipt ID）→ **包含性**（补 §10.10 的"**可发现**"），已在 `MVP.md §S7` 定义<br>**两者不混成一个**。接线：P0-1 建 balance root；receipt root 已有（`anchorRoot`）|
 
 > **注意**：B/E 属**范围/定义**变化 → **先改 `MVP.md`**，不得只在代码里改。
+> **E 的补充（不阻塞，属 P1-4）**：receipt root 只给**包含**证明；**非包含（omission）**需排序树 + 非包含证明，或"重算 root 不符"的争议路径。
 
 ---
 

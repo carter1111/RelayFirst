@@ -142,7 +142,7 @@ Step 5  PoSR 绑定（拿 1.25×）
 ## 7. 未决 / Roadmap
 
 - ❌ ADR-0009 定稿：D2（实现 `init`，推翻 no-init）待用户批准。
-- ❌ PoSR bind 重设计（ADR-0009 D7：verifier/relay 无密钥签名"接受"，机制待定）。
+- ✅ PoSR bind 机制（2026-10-07 定）：agent delegation-1 意向 + verifier assertion-1 确认（ADR-0009 D7 已改写收录）；attestation 具体格式待设计。
 - ❌ OS 钥匙串库选型（go-keyring vs 自研）+ Linux 无头机密码 fallback spec。
 - ❌ `init --index` 多 verifier 派生的 CLI spec（含 `--role` 校验）。
 - ❌ Docker 密码文件 vs Docker secrets 细节。

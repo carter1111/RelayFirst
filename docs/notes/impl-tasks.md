@@ -27,12 +27,11 @@ BLOCKED：D2 批前不派（见末节）
 
 ## A. 前置：文档修正（先做，纯文档，可并行）
 
-### DOC-1 — 修正 ADR-0009 D7 的三方矛盾
+### DOC-1 — 修正 ADR-0009 D7 的三方矛盾 ✅ **已裁决 + 已修（2026-10-08）**
 - **目标**：让 `bind` 的"是否已定义"在仓库里只有一个答案。
-- **文件**：`docs/decisions/ADR-0009-agent-key-management.md`（D7）、`docs/notes/incentive.md:177`、`docs/notes/user-registration-flow.md:86,145`
-- **动作**：**先由人裁决**（三选一，见 `impl-planning.md §0.1 A`），再据裁决改引用。
-- **验收**：三处对 D7 的表述一致；`grep -n D7` 无互斥陈述。
-- **依赖**：无。**需人裁决后才动手。**
+- **裁决**：**选 (iii)** —— D7 已改写收录（delegation-1 意向 + assertion-1 确认）；无独立文档；两处引用现有效。
+- **验收**：✅ D7 改写；`incentive.md:177` / `user-registration-flow.md:86,145` 一致（:145 已改为"已定"）；ADR-0009 后果 #6 已同步。
+- **依赖**：无。
 
 ### DOC-2 — `incentive.md` 版本号
 - **目标**：头版本 "v0.1" → "v0.21"（与 changelog 一致）。
@@ -56,29 +55,30 @@ BLOCKED：D2 批前不派（见末节）
 
 ## B. 前置：L0 修订（**须先改 `MVP.md`**，§5.1）
 
-### L0-1 — MVP 明确 Merkle root 的定义
-- **目标**：`MVP.md` 写清 root 输入是 **settled (agentId,total,epoch)**，非 receipt 树。
-- **文件**：`MVP.md`（§5.3/§6.2 或 S7 段）
-- **动作**：新增/修订文字；**只改文档**，代码接线在 IMP-1。
-- **验收**：MVP 有该定义；IMP-1 据此实现。
-- **依赖**：无（纯文档）。**改 L0 前须你确认**（属范围/定义）。
+### L0-1 — MVP 明确两个 root 的命名与分工（**两 root，各司其职**）
+- **目标**：`MVP.md` 写清 **balance root**（settled map，叶 `keccak256(agentId‖total‖epoch)`）
+  与 **receipt root**（回执集，叶 = receipt ID）**分开、不混**。
+- **文件**：`MVP.md`（§S7 / §5.3 / §6.2）
+- **动作**：给两个 root 命名并写用途：**balance root → claim 验积分**；**receipt root → 包含性（可发现）**。
+- **验收**：MVP 有两个 root 的定义；IMP-1 据此建 balance root（receipt root 已有）。
+- **依赖**：无（纯文档）。**改 L0 前须你确认**（属范围/定义）。—— **已裁决（2026-10-08）：赞成两 root**
 
 ### L0-2 — MVP 明确双池 + phase 比例（**若决定实现 Layer 0 分配**）
 - **目标**：把 `incentive.md` 的 Work/Node pool + 50/75/90 ∶ 50/25/10 落进 L0。
 - **文件**：`MVP.md`（§6.2）
 - **验收**：MVP 表述与 `incentive.md` 一致。
-- **依赖**：无，但**若不做 Layer 0 分配可暂缓**（P0-3 只做记账，不等它）。
-- **备注**：**这是范围变化，必须先改 MVP，不得只在代码里改。**
+- **依赖**：无。**注**：P0-3 只做 tenure **记账**，不等它；**分配**才需 L0-2。
+- **定性**：**纯同步工作**（不重议）。
+- **备注**：**范围变化，必须先改 MVP，不得只在代码里改。**
 
 ---
 
 ## C. P0 实现任务
 
-### PRE-1 — 裁决"qualified 如何喂入 tenure"（**人，非代码**）
-- **目标**：定 P0-3 的输入契约。
-- **选项**：(a) 只吃外部 Qualified 布尔（**建议**）；(b) P0 定义 slot 门槛。
-- **验收**：结论写入 `impl-planning.md §P0-3`。
-- **依赖**：无。**阻塞 IMP-3。**
+### PRE-1 — 裁决"qualified 如何喂入 tenure" ✅ **已裁决（2026-10-08）：选 (a)**
+- **结论**：tenure **只吃外部"合格 epoch"布尔值**；**slot 门槛逻辑放 P1**（与 liveness 协议一起）。P0 的 tenure 模块保持**干净接口**。
+- **影响**：IMP-3 据此实现 `Advance(prev, qualified bool)`，**不**内建 slot 测量。
+- **依赖**：无。**已解除 IMP-3 阻塞。**
 
 ### IMP-1 — settled map → Merkle root 接线
 - **目标**：`settle` 后据 settled 数字产出 root，供离线验证。

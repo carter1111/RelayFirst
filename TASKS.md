@@ -881,13 +881,12 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 > **来源**：`incentive.md` v0.21（已定参数）+ `impl-assessment.md`（Stage 2）→ `impl-planning.md`（Stage 3）
 > → `impl-tasks.md`（Stage 4）。**本节即 `AGENTS.md §5.0` 的 ② 步**（planning 定案 → 进 TASKS 主表）。
 >
-> **前置（必须先做，纯文档/裁决，非代码）**：
-> - **DOC-1**（清单 A）：**绑定机制定义在哪？**（`ADR-0009 D7` 说拆出/未定义 vs 两处引用说已定）。
->   **三选一待裁决**：(i) 补独立 bind 设计文档 / (ii) 两处改标"待定" / (iii) 真定为 D7（则改写 D7）。
-> - **DOC-2**：`incentive.md` 头版本 v0.1 → v0.21。
-> - **L0-1**：`MVP.md` 明确 Merkle root 输入 = settled map（**先改 L0**）。
-> - **L0-2**：`MVP.md` 明确双池 + phase 比例（若决定实现 Layer 0 分配）。
-> - **PRE-1**：**裁决**"合格 epoch"如何喂入 tenure（建议：只吃外部布尔）。
+> **前置（裁决已定，2026-10-08）**：
+> - ✅ **DOC-1**（清单 A）**已裁决 = (iii)**：`ADR-0009 D7` 已改写收录（delegation-1 意向 + assertion-1 确认，不改 policy）；两处引用现有效；无独立文档。
+> - ✅ **DOC-2**：`incentive.md` 头版本已改 v0.21。
+> - ✅ **PRE-1** **已裁决 = (a)**：tenure 只吃外部"合格 epoch"布尔；slot 门槛放 P1。**IMP-3 已解除阻塞。**
+> - ⬜ **L0-1**：`MVP.md` 明确**两个 root 命名分职**（balance root → claim；receipt root → 包含性）。
+> - ⬜ **L0-2**：`MVP.md` 明确双池 + phase 比例（若实现 Layer 0 **分配**；纯同步）。
 >
 > **BLOCKED（D2 未批不得开工）**：`relayfirst init` / keystore / signer daemon / `relayfirst bind`
 > —— **推翻 no-init 是 L0 决策**，`ADR-0009` 状态 = proposed。

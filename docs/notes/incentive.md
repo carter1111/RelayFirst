@@ -1,6 +1,6 @@
 # SBTRelayFirst 激励机制（incentive.md）
 
-> 版本：v0.1 — 框架版
+> 版本：v0.21
 > 日期：2026-10-07
 > 状态：**未达到开发标准**。本文只定框架，参数逐步填满到可开发版本。
 > 关联：`MVP.md`（§5.3/§6.2 Model B）、`ARCHITECTURE.md`、`planning.md`、`docs/decisions/`（ADR-0007）
