@@ -141,7 +141,7 @@
 | **代币效用** | **待定** | 故意不定。纯叙事驱动。 |
 | **技术栈** | **定死**（见 §6） | 不在 MVP 期间更换 |
 | **不做 token 挖矿** | **non-goal** | 不做质押奖励网络、不做节点排放 |
-| **Emission 模型** | **B：固定预算按份额**（D1，`planning.md §A2`） | epoch 末结算 `points_i = B(n)×(Σwork_i/Σwork)`，再施 5% cap。**回执记 work，不记 points**；`Allocate`/`CapAllocation`/`Settle` 已接线。**不选 C**（复杂度×2、散户听不懂） |
+| **Emission 模型** | **B：固定预算按份额**（D1，`planning.md §A2`） | epoch 末结算 `points_i = B(n)×(Σwork_i/Σwork)`，再施 5% cap。**回执记 work，不记 points**；`Allocate`/`CapAllocation`/`Settle` 已接线。**不选 C**（复杂度×2、散户听不懂）。**参数（2026-10-08）**：`epoch = 7 天`、`B0 = 7,000,000`、`decay = 0.85^⌊n/4⌋`（每 4 epoch 阶跃 −15%）—— `MVP.md §6.2` 与 `internal/scoring/emission.go` 已同步 |
 | **结算触发** | **显式命令 `relayfirst settle`**（`docs/notes/settlement-trigger.md`） | **不自动**（自动 = 结算动分母 = 不可复核）。**幂等**（`settle:<epoch>:<agent>`）。**不需密钥** |
 | **npm 分发** | **主包 + 每平台子包**（PKG-1，`docs/notes/npm-packaging-plan.md`） | 主包 8kB（仅 launcher）、`@relayfirst/<os>-<arch>` 子包。平台名映射只在一处。**节点刻意不发 npm**（长驻服务 → Docker） |
 | **MCP 实现** | **手写 stdlib，不迁官方 SDK**（ADR-0008） | 零依赖 vs 攻击面；**重估条件**：工具数↑ / 需 sampling / spec 超 2025-06-18 / 外部贡献者 |

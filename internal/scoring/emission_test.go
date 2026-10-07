@@ -10,10 +10,10 @@ func TestEpochBudget_Decays(t *testing.T) {
 		t.Errorf("EpochBudget(0) = %v, want %v", got, BaseBudget)
 	}
 
-	// B(n) = B0 * decay^n
-	for _, n := range []uint64{1, 10, 100} {
+	// B(n) = B0 * decay^floor(n / DecayPeriod)
+	for _, n := range []uint64{0, 1, DecayPeriod, 10, 100} {
 		want := BaseBudget
-		for i := uint64(0); i < n; i++ {
+		for i := uint64(0); i < n/DecayPeriod; i++ {
 			want *= Decay
 		}
 		if got := EpochBudget(n); !almostEqual(got, want, 1e-6) {
@@ -21,12 +21,21 @@ func TestEpochBudget_Decays(t *testing.T) {
 		}
 	}
 
-	// Strictly decreasing, which is what makes early participation worth more.
+	// The curve is a step, not a smooth decline: the budget holds within a decay
+	// period and drops only at each multiple of DecayPeriod. That shape is what
+	// lets early participation pay more without the pool shrinking every week.
 	prev := EpochBudget(0)
-	for n := uint64(1); n < 50; n++ {
+	for n := uint64(1); n < 60; n++ {
 		cur := EpochBudget(n)
-		if cur >= prev {
-			t.Fatalf("budget did not decrease at epoch %d: %v >= %v", n, cur, prev)
+		if cur > prev {
+			t.Fatalf("budget increased at epoch %d: %v > %v", n, cur, prev)
+		}
+		if n%DecayPeriod == 0 {
+			if !(cur < prev) {
+				t.Fatalf("budget must step down at epoch %d, but %v is not below %v", n, cur, prev)
+			}
+		} else if cur != prev {
+			t.Fatalf("budget must hold within a decay period, but epoch %d changed %v -> %v", n, prev, cur)
 		}
 		prev = cur
 	}
@@ -92,20 +101,25 @@ func TestEpochOf_IsAnchoredAtGenesis(t *testing.T) {
 			cap, n)
 	}
 
-	// And the head-start curve must still be visible at the current epoch.
-	if !(EpochBudget(0) > EpochBudget(n)) {
-		t.Error("epoch 0 must pay more than the current epoch")
+	// And the head-start curve must still be visible. The budget is a step now,
+	// so within one decay period it holds flat; the decline shows across a full
+	// period rather than between consecutive epochs.
+	if !(EpochBudget(0) >= EpochBudget(n)) {
+		t.Errorf("epoch 0 must pay at least as much as the current epoch %d", n)
+	}
+	if !(EpochBudget(0) > EpochBudget(DecayPeriod)) {
+		t.Error("the head-start curve must be visible across a decay period")
 	}
 }
 
-func TestEpochBounds_LengthIsOneDay(t *testing.T) {
+func TestEpochBounds_LengthIsOneWeek(t *testing.T) {
 	start, end := EpochBounds(1000)
 
 	if d := end.Sub(start); d != EpochLength {
 		t.Errorf("epoch length = %v, want %v", d, EpochLength)
 	}
-	if EpochLength != 24*time.Hour {
-		t.Errorf("EpochLength = %v, want 24h (MVP.md §6.2)", EpochLength)
+	if EpochLength != 7*24*time.Hour {
+		t.Errorf("EpochLength = %v, want 168h (MVP.md §6.2, 2026-10-08)", EpochLength)
 	}
 }
 

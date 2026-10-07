@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"sort"
 	"testing"
 
 	"github.com/relayfirst/relayfirst/internal/eip712"
@@ -89,13 +90,25 @@ func TestSettlementChain_WorkToPointsToMerkleRoot(t *testing.T) {
 }
 
 // rootFromSettled builds a Merkle root over the settled (agent, points, epoch) triples.
+//
+// Leaves are built in SORTED agent order. merkle.Root does not sort, and a map's
+// iteration order is randomised in Go, so building leaves by ranging the map made the
+// root differ between two calls — which broke this test's own reproducibility check and
+// would break any real root a client verifies offline. A root over settled points must
+// have one canonical leaf order; this is that order.
 func rootFromSettled(t *testing.T, settled map[string]float64) merkle.Hash {
 	t.Helper()
-	leaves := make([]merkle.Hash, 0, len(settled))
-	for agent, points := range settled {
+	agents := make([]string, 0, len(settled))
+	for agent := range settled {
+		agents = append(agents, agent)
+	}
+	sort.Strings(agents)
+
+	leaves := make([]merkle.Hash, 0, len(agents))
+	for _, agent := range agents {
 		// The leaf preimage is agentId || points-as-micro-uint || epoch, hashed with
 		// keccak256 to mirror RelayPoints._leaf's keccak256(abi.encodePacked(...)).
-		pre := fmt.Sprintf("%s|%d|%d", agent, int64(points*1_000_000+0.5), uint64(testEpoch))
+		pre := fmt.Sprintf("%s|%d|%d", agent, int64(settled[agent]*1_000_000+0.5), uint64(testEpoch))
 		h := eip712.Keccak256([]byte(pre))
 		leaf, err := merkle.IDFromHex("0x" + hex.EncodeToString(h))
 		if err != nil {

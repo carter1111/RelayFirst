@@ -8,11 +8,11 @@
 //
 //	go run internal/devtools/epochprobe.go
 //
-// Background: EpochOf is a pure function of the unix timestamp, so the epoch
-// index is ~20,410 today. EpochBudget applies Decay^n to that index, which
-// drives the budget to effectively zero and, through BudgetFactor =
-// 1 - earned/cap, stops any agent being credited more than once per epoch. See
-// docs/notes/epoch-anchoring.md.
+// Background: EpochOf is a pure function of the unix timestamp, so without the
+// genesis anchor the epoch index is ~20,410 today. EpochBudget applies
+// Decay^floor(n/DecayPeriod) to that index, which drives the budget to
+// effectively zero and, through BudgetFactor = 1 - earned/cap, stops any agent
+// being credited more than once per epoch. See docs/notes/epoch-anchoring.md.
 //
 // This is a diagnostic, not part of the build.
 package main

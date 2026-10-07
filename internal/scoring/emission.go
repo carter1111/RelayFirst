@@ -11,13 +11,25 @@ import (
 // Emission constants from MVP.md §6.2 and §6.3.
 const (
 	// EpochLength groups work into settleable windows.
-	EpochLength = 24 * time.Hour
+	//
+	// MVP.md §6.2 (2026-10-08): one week. The earlier 24-hour value was a
+	// placeholder.
+	EpochLength = 7 * 24 * time.Hour
 
 	// BaseBudget is B0: the points available across all agents in epoch 0.
-	BaseBudget = 1_000_000.0
+	BaseBudget = 7_000_000.0
 
-	// Decay is the per-epoch budget multiplier. B(n) = B0 * Decay^n.
-	Decay = 0.99
+	// Decay is the budget step applied every DecayPeriod epochs:
+	// B(n) = B0 * Decay^floor(n / DecayPeriod).
+	//
+	// MVP.md §6.2 (2026-10-08): 0.85, i.e. -15% roughly every four weeks. This
+	// replaced a per-epoch 0.99 decay; the shape is now a stepwise decline, so
+	// EpochBudget steps down every fourth epoch rather than every epoch.
+	Decay = 0.85
+
+	// DecayPeriod is how many epochs share one decay step. With a 7-day epoch
+	// this is about a month.
+	DecayPeriod = 4
 
 	// PerAgentCapFraction caps one agent's share of an epoch's budget.
 	// MVP.md §6.3: a single agent may earn at most B(n) * 5%.
@@ -31,10 +43,12 @@ const (
 // EpochBudget returns B(n) for an epoch index.
 //
 // Later epochs pay less, which is what makes early participation worth more and
-// gives the "head start" narrative its teeth. The budget is a fixed pool rather
-// than a per-receipt rate: agents share it in proportion to their work.
+// gives the "head start" narrative its teeth. The decline is a step, not a
+// smooth curve: the budget holds for DecayPeriod epochs and then drops, so it
+// only changes about monthly. The budget is a fixed pool rather than a
+// per-receipt rate: agents share it in proportion to their work.
 func EpochBudget(epoch uint64) float64 {
-	return BaseBudget * math.Pow(Decay, float64(epoch))
+	return BaseBudget * math.Pow(Decay, float64(epoch/DecayPeriod))
 }
 
 // PerAgentCap returns the most one agent may earn in an epoch.

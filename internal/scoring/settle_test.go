@@ -98,9 +98,10 @@ func TestSettle_DecayMakesEarlyEpochsWorthMore(t *testing.T) {
 			early["a"], late["a"])
 	}
 	// And the ratio is the decay the doc names, so the curve cannot silently change.
-	want := math.Pow(Decay, 365)
+	// The budget steps every DecayPeriod epochs, so 365 epochs is that many steps.
+	want := math.Pow(Decay, float64(365/DecayPeriod))
 	if ratio := late["a"] / early["a"]; math.Abs(ratio-want) > 1e-9 {
-		t.Errorf("late/early = %v, want decay^365 = %v", ratio, want)
+		t.Errorf("late/early = %v, want decay^(365/%d) = %v", ratio, DecayPeriod, want)
 	}
 }
 

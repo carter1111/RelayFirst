@@ -34,7 +34,8 @@ import "time"
 // # PROVISIONAL — pin this before mainnet
 //
 // This is a placeholder chosen to be in the recent past, so that pre-launch
-// development exercises a normal, non-degenerate budget (epoch ~2, B ~980,000)
+// enough to exercise a normal, non-degenerate budget (a live epoch of a few weeks
+// against a B0 of 7,000,000 says the curve is not already decayed to nothing)
 // rather than the astronomically decayed one an unanchored clock produces.
 //
 // Before mainnet, set it to the actual launch date. The consequences of getting

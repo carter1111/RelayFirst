@@ -11,6 +11,7 @@ import (
 	"github.com/relayfirst/relayfirst/internal/anchor"
 	"github.com/relayfirst/relayfirst/internal/eip712"
 	"github.com/relayfirst/relayfirst/internal/receipt"
+	"github.com/relayfirst/relayfirst/internal/scoring"
 )
 
 // Loop ties generation, execution and signing together: it is the "mine"
@@ -77,7 +78,7 @@ func (l *Loop) epochLength() time.Duration {
 	if l.EpochLength > 0 {
 		return l.EpochLength
 	}
-	return 24 * time.Hour
+	return scoring.EpochLength
 }
 
 func (l *Loop) maxAttempts() int {

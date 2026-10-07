@@ -40,14 +40,14 @@ type EpochWindow struct {
 	Length time.Duration
 }
 
-// DefaultEpochLength is the 24-hour epoch from MVP.md §6.2.
+// DefaultEpochLength is the 7-day epoch from MVP.md §6.2 (2026-10-08).
 //
 // It matches scoring's epoch length by value rather than by import: verification does
 // not otherwise depend on the scoring package, and importing it purely for a constant
 // would couple two layers that have no other reason to know about each other. If the
 // two ever diverge, the mismatch shows up as a window that closes at the wrong time,
 // which a test pins.
-const DefaultEpochLength = 24 * time.Hour
+const DefaultEpochLength = 7 * 24 * time.Hour
 
 // NewEpochWindow returns a window over epochs of the given length.
 func NewEpochWindow(length time.Duration) EpochWindow {

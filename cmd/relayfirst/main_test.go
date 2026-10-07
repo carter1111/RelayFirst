@@ -228,8 +228,11 @@ func TestEpochArg(t *testing.T) {
 		if err != nil {
 			t.Fatalf("epochArg: %v", err)
 		}
-		if got == 0 {
-			t.Error("the default epoch should be the current one, not 0")
+		// It must agree with the shared epoch function rather than hard-coding a
+		// count. Epoch 0 is a legitimate answer pre-launch (the placeholder genesis
+		// is recent), so "not zero" would be a brittle assertion.
+		if want := scoring.EpochOf(time.Now()); got != want {
+			t.Errorf("epochArg = %d, want the current epoch %d", got, want)
 		}
 	})
 
