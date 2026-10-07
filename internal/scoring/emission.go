@@ -60,6 +60,14 @@ func PerAgentCap(epoch uint64) float64 {
 // NodePoolFraction is the share of an epoch's budget that goes to the NODE pool
 // (Layer 0), by phase (MVP.md §6.2c, incentive.md §2). The rest is the work pool
 // (Layer 1). Phases switch on epoch height, pre-locked, with no vote.
+//
+// # Phase 3 is a SUNSET, not a smaller subsidy
+//
+// At Phase 3 the node pool goes to ZERO, not 10%. Layer 0 is a coldstart subsidy for
+// bringing a node network up, and it is meant to end: after ~12 months (epoch 52) nodes
+// are paid nothing here, and the intent is to replace the subsidy with token mining. An
+// earlier draft kept paying 10% indefinitely, which contradicted incentive.md §3's
+// sunset; the sustained-10% version was the wrong one.
 func NodePoolFraction(epoch uint64) float64 {
 	switch {
 	case epoch <= 25:
@@ -67,7 +75,7 @@ func NodePoolFraction(epoch uint64) float64 {
 	case epoch <= 51:
 		return 0.25 // Phase 2
 	default:
-		return 0.10 // Phase 3
+		return 0.00 // Phase 3: sunset -- the node pool stops
 	}
 }
 

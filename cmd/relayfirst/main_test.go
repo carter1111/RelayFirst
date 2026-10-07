@@ -968,3 +968,53 @@ func TestBind_IsOneBindingPerIdentity(t *testing.T) {
 		t.Error("a second binding for the same identity must be refused")
 	}
 }
+
+// TestSpend_BurnReducesClaimable is the sink end to end: a burn lowers the amount a claim
+// proves, because a burned point is gone from the TGE payout (decided 2026-10-08).
+func TestSpend_BurnReducesClaimable(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "s.db")
+	seedSettledWork(t, dbPath, 7)
+	const agent = "agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+
+	// Claimable before the burn.
+	before := claimTotal(t, dbPath, agent, 7)
+
+	// Burn a quarter of it.
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	earned := store.NewPointsLedger(db).Balance(agent)
+	burn := earned / 4
+	if err := store.NewPointsSpend(db).Burn("burn:test", agent, 7, store.MicroFromPoints(burn), "discount", time.Now()); err != nil {
+		t.Fatalf("burn: %v", err)
+	}
+	_ = db.Close()
+
+	after := claimTotal(t, dbPath, agent, 7)
+
+	if !(after < before) {
+		t.Errorf("claim total after burn (%v) must be below before (%v): a burned point is gone "+
+			"from the payout, not just frozen", after, before)
+	}
+	if diff := (before - after) - burn; diff > 1e-6 || diff < -1e-6 {
+		t.Errorf("claim dropped by %v, want the burned %v", before-after, burn)
+	}
+}
+
+// claimTotal runs `claim` for an agent and returns the total it proves.
+func claimTotal(t *testing.T, dbPath, agent string, epoch int) float64 {
+	t.Helper()
+	out := captureStdout(t, func() {
+		if err := runClaim([]string{"--db", dbPath, "--epoch", fmt.Sprintf("%d", epoch), "--agent", agent}); err != nil {
+			t.Fatalf("claim: %v", err)
+		}
+	})
+	var got struct {
+		Total float64 `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("claim JSON: %v\n%s", err, out)
+	}
+	return got.Total
+}

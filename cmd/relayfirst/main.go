@@ -71,6 +71,10 @@ Usage:
   relayfirst bind --node <nodeId>        Bind this agent to a node (once), enabling the
                                          1.25x multiplier when the node is reliable
   relayfirst heartbeat <record|show>     Record/read Layer 0 liveness attestations
+  relayfirst spend --amount <n> --reason <namespace|discount|priority>
+                                         Burn points on a sink (points are not transferable;
+                                         spending is burning). Needs a key.
+  relayfirst balance [--agent 0x…]       Show earned, burned and claimable points
   relayfirst session <open|close|show|grant>
                                          Emit signed A2A session events, or sign a
                                          delegation grant authorizing a session key
@@ -232,6 +236,12 @@ func run(args []string) error {
 
 	case "heartbeat":
 		return runHeartbeat(args[1:])
+
+	case "spend":
+		return runSpend(args[1:])
+
+	case "balance":
+		return runBalance(args[1:])
 
 	case "observations":
 		return runObservations(args[1:])
@@ -969,13 +979,12 @@ func runSettle(args []string) error {
 		return err
 	}
 
-	// Build the epoch's BALANCE root from each agent's CUMULATIVE total through this
-	// epoch (MVP.md §6.2b). Not this epoch's award: a claim proves "earned N by epoch
-	// N" and SETS the on-chain total to N (contracts/RelayPoints.sol), so N must be
+	// Build the epoch's BALANCE root from each agent's CUMULATIVE USABLE total through this
+	// epoch (MVP.md §6.2b). Usable = credited - burned, so a burn reduces the claimable
+	// amount too (decided 2026-10-08). Not this epoch's award: a claim proves "earned N by
+	// epoch N" and SETS the on-chain total to N (contracts/RelayPoints.sol), so N must be
 	// cumulative or a claim would erase every earlier epoch the agent did not claim.
-	// Reading from the points ledger (which now holds this epoch too) makes the root
-	// and the credited points the same numbers.
-	cumulative, err := store.NewPointsLedger(db).CumulativeMicro(epoch)
+	cumulative, err := store.NewPointsSpend(db).CumulativeUsableMicro(epoch)
 	if err != nil {
 		return err
 	}
@@ -1116,8 +1125,8 @@ func runClaim(args []string) error {
 		}
 	}
 
-	ledger := store.NewPointsLedger(db)
-	cumulative, err := ledger.CumulativeMicro(epoch)
+	ledger := store.NewPointsSpend(db)
+	cumulative, err := ledger.CumulativeUsableMicro(epoch)
 	if err != nil {
 		return err
 	}
@@ -1129,7 +1138,7 @@ func runClaim(args []string) error {
 
 	micro, ok := cumulative[agent]
 	if !ok || micro <= 0 {
-		return fmt.Errorf("agent %s has no settled points through epoch %d; run `relayfirst settle --epoch %d` first (or it did not mine)", agent, epoch, epoch)
+		return fmt.Errorf("agent %s has no claimable points through epoch %d; run `relayfirst settle --epoch %d` first (or it did not mine, or it burned them)", agent, epoch, epoch)
 	}
 
 	agentHash, err := merkle.AgentID(agent)
@@ -1448,6 +1457,148 @@ func slotsArg(f *flags, spec heartbeat.Spec) ([]uint32, error) {
 		slots = append(slots, n)
 	}
 	return slots, nil
+}
+
+// runSpend burns points on a sink (incentive.md "积分怎么花").
+//
+// # Why it needs a key
+//
+// The agent id is derived from the key, so an agent can only spend its OWN points. Points
+// cannot be transferred, so there is no "send points to X" and no way to spend someone
+// else's; signing the identity is the whole authorization.
+//
+// # Why a reason is required
+//
+// The reason is a closed set (store.burnReasons). An open reason field would let a caller
+// invent a sink the design never agreed to, which is a way to move points without a
+// decision. Adding one is a deliberate change, not a new string.
+func runSpend(args []string) error {
+	f, err := parseFlags(args)
+	if err != nil {
+		return err
+	}
+
+	key := keyFromFlags(f)
+	if key == "" {
+		return errors.New("spend requires a key (--key or RELAYFIRST_PRIVATE_KEY): points are spent by the identity that earned them")
+	}
+	agentID, err := agentIDFromKey(key, 8453)
+	if err != nil {
+		return err
+	}
+
+	reason := f.get("reason", "")
+	if reason == "" {
+		return errors.New("spend requires --reason <namespace|discount|priority>")
+	}
+	var amount float64
+	if _, err := fmt.Sscanf(f.get("amount", ""), "%g", &amount); err != nil || amount <= 0 {
+		return fmt.Errorf("spend requires --amount <points>, got %q", f.get("amount", ""))
+	}
+
+	db, err := store.Open(f.get("db", "./relayfirst.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	spend := store.NewPointsSpend(db)
+	micro := store.MicroFromPoints(amount)
+	epoch := scoring.EpochOf(time.Now())
+	// A burn id derived from the identity, epoch, reason and amount makes a retry a no-op
+	// while still letting the same agent burn the same amount again next epoch.
+	burnID := fmt.Sprintf("burn:%s:%d:%s:%d", agentID, epoch, reason, micro)
+
+	if err := spend.Burn(burnID, agentID, epoch, micro, reason, time.Now()); err != nil {
+		return err
+	}
+
+	usable, err := spend.UsableMicro(agentID)
+	if err != nil {
+		return err
+	}
+	return printJSON(map[string]any{
+		"agentId": agentID,
+		"burned":  amount,
+		"reason":  reason,
+		"usable":  float64(usable) / scoring.MicroPerPoint,
+		"note": "points are non-transferable; spending burns them. A burn also reduces " +
+			"the claimable amount (TGE payout = earned - burned, MVP.md §6.1).",
+	})
+}
+
+// runBalance reports earned, burned and claimable points for an agent.
+func runBalance(args []string) error {
+	f, err := parseFlags(args)
+	if err != nil {
+		return err
+	}
+
+	db, err := store.Open(f.get("db", "./relayfirst.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	epoch := scoring.EpochOf(time.Now())
+	if raw := f.get("epoch", ""); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &epoch); err != nil {
+			return fmt.Errorf("--epoch must be a number, got %q", raw)
+		}
+	}
+
+	// Which agent: --agent, --key, or the sole agent in the points ledger.
+	agent, err := resolveBalanceAgent(f, db)
+	if err != nil {
+		return err
+	}
+
+	earned := store.NewPointsLedger(db).Balance(agent)
+	usableMicro, err := store.NewPointsSpend(db).UsableMicro(agent)
+	if err != nil {
+		return err
+	}
+	usable := float64(usableMicro) / scoring.MicroPerPoint
+
+	return printJSON(map[string]any{
+		"agentId":   agent,
+		"earned":    earned,
+		"burned":    earned - usable,
+		"claimable": usable,
+		"note":      "claimable = earned - burned. Points are non-transferable and unpriced (MVP.md §6.1).",
+	})
+}
+
+// resolveBalanceAgent picks which agent a balance is for: --agent, --key, or the sole agent.
+func resolveBalanceAgent(f *flags, db *store.DB) (string, error) {
+	if raw := f.get("agent", ""); raw != "" {
+		if _, err := agentid.Parse(raw); err != nil {
+			return "", fmt.Errorf("--agent %q: %w", raw, err)
+		}
+		return raw, nil
+	}
+	if key := keyFromFlags(f); key != "" {
+		return agentIDFromKey(key, 8453)
+	}
+	agents := make([]string, 0)
+	for _, e := range store.NewPointsLedger(db).Entries() {
+		agents = append(agents, e.AgentID)
+	}
+	sort.Strings(agents)
+	uniq := agents[:0]
+	for i, a := range agents {
+		if i == 0 || a != agents[i-1] {
+			uniq = append(uniq, a)
+		}
+	}
+	switch len(uniq) {
+	case 0:
+		return "", errors.New("no credited agents in this store")
+	case 1:
+		return uniq[0], nil
+	default:
+		return "", fmt.Errorf("this store has %d agents; pass --agent or --key", len(uniq))
+	}
 }
 
 // reportVerdict prints the outcome of scoring one receipt.

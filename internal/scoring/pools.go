@@ -124,6 +124,11 @@ func SettleEpoch(epoch uint64, in Inputs) (EpochSettlement, error) {
 	var nodePaid float64
 	for node, frac := range nodeShares {
 		v := nodePool * frac
+		if v <= 0 {
+			// A zero entry (a sunset epoch pays nothing regardless of tenure) is noise;
+			// the recipient set should only name nodes that were actually paid.
+			continue
+		}
 		nodeOut[node] = v
 		nodePaid += v
 	}

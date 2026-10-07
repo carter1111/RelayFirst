@@ -70,7 +70,7 @@ func defaultAssumptions() assumptions {
 }
 
 // nodePoolFraction is the share of the epoch budget that goes to the node pool, by
-// phase (incentive.md §2). Phases switch on epoch number.
+// phase (incentive.md §2, MVP.md §6.2c). Phase 3 is a SUNSET: the node pool stops.
 func nodePoolFraction(epoch uint64) float64 {
 	switch {
 	case epoch <= 25:
@@ -78,7 +78,7 @@ func nodePoolFraction(epoch uint64) float64 {
 	case epoch <= 51:
 		return 0.25 // Phase 2
 	default:
-		return 0.10 // Phase 3
+		return 0.00 // Phase 3: sunset -- the node pool stops (2026-10-08)
 	}
 }
 

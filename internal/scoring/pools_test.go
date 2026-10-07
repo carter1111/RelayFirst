@@ -189,3 +189,26 @@ func TestSettleEpoch_IsDeterministic(t *testing.T) {
 		t.Error("node totals are not deterministic")
 	}
 }
+
+// TestNodePoolFraction_SunsetAt52: Phase 3 is a sunset, not a smaller subsidy. From epoch
+// 52 the node pool is ZERO -- Layer 0 stops, and the whole budget is the work pool.
+func TestNodePoolFraction_SunsetAt52(t *testing.T) {
+	if got := NodePoolFraction(51); got != 0.25 {
+		t.Errorf("epoch 51 node pool = %v, want 0.25 (Phase 2)", got)
+	}
+	if got := NodePoolFraction(52); got != 0 {
+		t.Errorf("epoch 52 node pool = %v, want 0 (sunset) -- Layer 0 must stop", got)
+	}
+	if got := NodePoolFraction(200); got != 0 {
+		t.Errorf("epoch 200 node pool = %v, want 0 (sunset persists)", got)
+	}
+
+	// And a sunset epoch pays the node pool nothing, even to an eligible node.
+	got, err := SettleEpoch(52, inputs(map[string]float64{"a": 1}, map[string]int{"n": 12}, nil, nil))
+	if err != nil {
+		t.Fatalf("SettleEpoch: %v", err)
+	}
+	if len(got.Node) != 0 {
+		t.Errorf("a sunset epoch must pay no node points, got %v", got.Node)
+	}
+}

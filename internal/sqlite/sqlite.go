@@ -181,6 +181,27 @@ CREATE TABLE IF NOT EXISTS point_entries (
 CREATE INDEX IF NOT EXISTS point_entries_agent_idx ON point_entries (agent_id);
 CREATE INDEX IF NOT EXISTS point_entries_epoch_idx ON point_entries (agent_id, epoch);
 
+-- Spent points (incentive.md "积分怎么花": points cannot be transferred, so spending is
+-- BURNING -- decrementing usable balance).
+--
+-- A SEPARATE table, not negative point_entries, for two reasons: the burn is auditable on
+-- its own (a credit and a spend are different events with different reasons), and
+-- Credit's points > 0 guard stays intact rather than being loosened to allow negatives,
+-- which would let a refund and a penalty be the same shape.
+--
+-- Payout = earned - burned (decided 2026-10-08): a burned point is gone, including from
+-- the TGE claim. That is the plain meaning of "spend".
+CREATE TABLE IF NOT EXISTS point_burns (
+    burn_id     TEXT    PRIMARY KEY,
+    agent_id    TEXT    NOT NULL,
+    epoch       INTEGER NOT NULL,
+    micro_points INTEGER NOT NULL,
+    reason      TEXT    NOT NULL,
+    burned_at   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS point_burns_agent_idx ON point_burns (agent_id);
+
 -- ACCUMULATED WORK, before settlement (MVP.md §5.3 -> §6.2; D1).
 --
 -- This is the settlement INPUT and the audit trail: an epoch's points are the budget

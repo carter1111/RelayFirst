@@ -902,6 +902,15 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 
 **P1（待设计，不进本批工时）**：liveness challenge 协议 + slot 参数；**VPS farm ROI 建模（launch-blocking）**；SBT 发放/吊销规则；**omission —— 「可发现」半边 ✅ done（2026-10-08）**，见下。
 
+**incentive v1 基线的可落地部分（2026-10-08）**：
+
+| id | 任务 | 验收 | 状态 |
+|---|---|---|---|
+| **V1-SUNSET** | **sunset 接线**：Phase 3（epoch 52+）节点池归 0 | `NodePoolFraction(52)=0`；sunset epoch 不发节点 points | ✅ **done** |
+| **V1-BURN** | **burn 路径**（sink 前提）：`point_burns` 表 + `SQLPointsSpend` + `spend`/`balance` 命令 | 超额拒绝；幂等；原因闭集；**burn 减 payout**（claim E2E）| ✅ **done** |
+
+**V1 其余（设计已定，待实现）**：SBT 发放/吊销规则、Claim UX（web ticket）、P0 sink（Relay ID burn，待 S10-0）——见 [`incentive-v1-baseline.md`](docs/notes/incentive-v1-baseline.md)。
+
 **Layer 0 接线（Q1=A / F1 / M1 / X=95%，2026-10-08 开工）**：
 
 | id | 任务 | 依赖 | 验收 | 状态 |

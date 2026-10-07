@@ -135,6 +135,7 @@
 **积分怎么花** 🔶
 
 - 核心约束：积分不可转让 → "花" = **烧（burn）**，不是转账。想付钱给**人**，用 USDC（S12）或未来的 token。
+- **实现（2026-10-08）**：**独立 `point_burns` 表**（`store.SQLPointsSpend`）+ `relayfirst spend --amount N --reason <namespace|discount|priority>` + `relayfirst balance`。`可领 = 赚的 − 烧的`（**burn 减 payout**，已定）。**sink 原因闭集**（防止发明 sink）。前提是账本原本不能记 burn —— 现补上。
 - **原则：积分管"赚和烧"，钱管"付和收"。** 积分负责激励对齐（earn/burn loop），不承载人与人之间的价值转移——那是钱的事。
 - 用途：
 
