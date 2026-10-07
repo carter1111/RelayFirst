@@ -876,6 +876,37 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 
 ---
 
+## 14. 激励实现（**Planning → Tasks 已排期，未开工**）
+
+> **来源**：`incentive.md` v0.21（已定参数）+ `impl-assessment.md`（Stage 2）→ `impl-planning.md`（Stage 3）
+> → `impl-tasks.md`（Stage 4）。**本节即 `AGENTS.md §5.0` 的 ② 步**（planning 定案 → 进 TASKS 主表）。
+>
+> **前置（必须先做，纯文档/裁决，非代码）**：
+> - **DOC-1**（清单 A）：**绑定机制定义在哪？**（`ADR-0009 D7` 说拆出/未定义 vs 两处引用说已定）。
+>   **三选一待裁决**：(i) 补独立 bind 设计文档 / (ii) 两处改标"待定" / (iii) 真定为 D7（则改写 D7）。
+> - **DOC-2**：`incentive.md` 头版本 v0.1 → v0.21。
+> - **L0-1**：`MVP.md` 明确 Merkle root 输入 = settled map（**先改 L0**）。
+> - **L0-2**：`MVP.md` 明确双池 + phase 比例（若决定实现 Layer 0 分配）。
+> - **PRE-1**：**裁决**"合格 epoch"如何喂入 tenure（建议：只吃外部布尔）。
+>
+> **BLOCKED（D2 未批不得开工）**：`relayfirst init` / keystore / signer daemon / `relayfirst bind`
+> —— **推翻 no-init 是 L0 决策**，`ADR-0009` 状态 = proposed。
+
+| id | 任务 | 依赖 | 验收 | 状态 |
+|---|---|---|---|---|
+| **IMP-1** | **settled map → Merkle root 接线**（`RootFromSettled`） | L0-1 | 确定性可复算；叶 `keccak256(agentId‖total_micro‖epoch)` 对齐合约；agent 排序；跨 epoch 同 leaf 不同 root | ⬜ todo |
+| **IMP-2** | **5% cap + 销毁 显式断言** | — | cap 触发时 `TotalAllocated < EpochBudget`；重跑不重复写 | ⬜ todo |
+| **IMP-3** | **tenure 状态机 + tier 权重**（记账，非分配） | PRE-1 | +1/降档/连续两次清零；边界 3/6/12；持久化幂等；包无 crypto | ⬜ todo |
+| **IMP-4** | **`relayfirst claim`**（证明生成 + 展示，不碰 key） | IMP-1 | proof 过 `merkle.Verify`；非 TTY JSON 稳定；不经 signer | ⬜ todo |
+| **IMP-5** | **`status` 待结算预估**（显示层） | — | 非 TTY 保持今天 JSON；TTY 标"未结算"；读路径无写 | ⬜ todo |
+| **TEST-1** | **全量门禁** | IMP-1..5 | `go test`/`-race`/`ci.sh` 全绿；导入图门禁仍成立 | ⬜ todo |
+
+**P1（待设计，不进本批工时）**：liveness challenge 协议 + slot 参数；**VPS farm ROI 建模（launch-blocking）**；SBT 发放/吊销规则；omission 机制。
+
+**验收判据**：本层**不属十条判据**；判据状态见 §13 / `MVP.md §11`。
+
+---
+
 ## 附：维护约定
 
 - **本表是唯一任务源。** 不在别处跟踪任务。
