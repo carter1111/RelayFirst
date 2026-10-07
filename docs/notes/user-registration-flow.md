@@ -1,8 +1,18 @@
 # User Registration Flow
 
-> 版本：v0.6 — 绑定机制已定（2026-10-07）
-> 日期：2026-10-07
-> 状态：设计完成，待 ADR-0009 定稿（D2 批准）+ Cursor 实现
+> 版本：v0.7 — 阻塞如实标注（2026-10-08）
+> 日期：2026-10-08
+> **状态：设计完成；【身份/keystore 半边】双重阻塞，已裁定 v2 延后。【claim/展示半边】已实现。**
+>
+> **⚠️ 双重阻塞（缺一不可解）** —— 本流程的 `init`/keystore/signer/bind 需要**落盘密钥**，因此卡两层：
+> 1. **`POL-SECRETS-1`**：**agent 不得落盘密钥**（`CODING_RULES.md §8`，`userCanOverride:false`）。**这一层不是"批准一下"能解** —— 它禁止的**正是 `init` 要做的事**。
+> 2. **D2 待批**：推翻 `relayfirst init` 的 no-init 决策（L0）。
+>
+> **→ 即使 D2 批准也【不够】**：先要处理**凭据落盘边界**，`init` 才可动。登记于 `TASKS.md` **S6-1** + **§15 R-D2**。
+> **当前可用路径**：用户自备 key 经 `RELAYFIRST_PRIVATE_KEY` 注入。
+>
+> **✅ 已实现（本流程的非阻塞部分）**：`relayfirst claim`（证明生成，无 key）+ `claim --web`（只读本地视图）+ `relayfirst balance`/`spend`（burn 表）。
+>
 > 关联：`incentive.md`（激励机制）、ADR-0004（split-binary）、ADR-0007（回执不可委派）、ADR-0009（agent key 管理，proposed）
 >
 > 术语（ADR-0009）：**没有 "node key"**——两把 key 是 **agent key**（干活者）与 **verifier key**（验证者角色）；relay 本身永远无密钥（ADR-0004，CI 强制）。绑定机制：agent 以 delegation-1 签意向，verifier 以 assertion-1 确认，不改 signing policy。
