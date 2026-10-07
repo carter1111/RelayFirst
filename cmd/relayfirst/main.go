@@ -65,9 +65,10 @@ Usage:
                                          source, grouped by claimed content hash
   relayfirst settle [--epoch <n>]         Settle an epoch's work into points (run once
                                          per epoch; idempotent)
-  relayfirst claim [--agent 0x…] [--epoch <n>] [--to 0x…]
+  relayfirst claim [--agent 0x…] [--epoch <n>] [--to 0x…] [--web]
                                          Build a points-claim proof for an agent
                                          (read-only; no key, no chain). Settle first.
+                                         --web opens a local, read-only claim view.
   relayfirst bind --node <nodeId>        Bind this agent to a node (once), enabling the
                                          1.25x multiplier when the node is reliable
   relayfirst heartbeat <record|show>     Record/read Layer 0 liveness attestations
@@ -1141,9 +1142,38 @@ func runClaim(args []string) error {
 		return fmt.Errorf("agent %s has no claimable points through epoch %d; run `relayfirst settle --epoch %d` first (or it did not mine, or it burned them)", agent, epoch, epoch)
 	}
 
-	agentHash, err := merkle.AgentID(agent)
+	out, err := claimProof(db, agent, epoch)
 	if err != nil {
 		return err
+	}
+	if f.get("web", "") != "" {
+		// Read-only local view. It reads the ledger; it never signs or spends.
+		return runClaimWeb(db, 5*time.Minute)
+	}
+	if to := f.get("to", ""); to != "" {
+		out["to"] = to
+	}
+	return printJSON(out)
+}
+
+// claimProof builds the claim proof for (agent, epoch) from the local ledgers.
+//
+// It is the whole of `claim` minus argument handling, so the web view (which serves the
+// same object) and the CLI produce identical data rather than two approximations of it.
+// It needs no key: producing a proof is not signing.
+func claimProof(db *store.DB, agent string, epoch uint64) (map[string]any, error) {
+	cumulative, err := store.NewPointsSpend(db).CumulativeUsableMicro(epoch)
+	if err != nil {
+		return nil, err
+	}
+	micro, ok := cumulative[agent]
+	if !ok || micro <= 0 {
+		return nil, fmt.Errorf("agent %s has no claimable points through epoch %d", agent, epoch)
+	}
+
+	agentHash, err := merkle.AgentID(agent)
+	if err != nil {
+		return nil, err
 	}
 
 	// Rebuild the whole tree so the proof is against the same leaves the root was built
@@ -1156,16 +1186,16 @@ func runClaim(args []string) error {
 		}
 		h, err := merkle.AgentID(a)
 		if err != nil {
-			return fmt.Errorf("agent id %q: %w", a, err)
+			return nil, fmt.Errorf("agent id %q: %w", a, err)
 		}
 		totals[h] = m
 	}
 	proof, err := merkle.BalanceProof(epoch, totals, agentHash)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	out := map[string]any{
+	return map[string]any{
 		"agentId":    agent,
 		"agentHash":  agentHash.Hex(),
 		"epoch":      epoch,
@@ -1178,11 +1208,7 @@ func runClaim(args []string) error {
 		"note": "this is a claim PROOF over the cumulative total through this epoch; it is " +
 			"not a claim. Producing it needs no key. Submitting it on-chain is a later, " +
 			"signed step (TGE).",
-	}
-	if to := f.get("to", ""); to != "" {
-		out["to"] = to
-	}
-	return printJSON(out)
+	}, nil
 }
 
 // resolveClaimAgent picks which agent a claim is for, from --agent, --key, or the sole
