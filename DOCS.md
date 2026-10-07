@@ -104,6 +104,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/decisions/ADR-0006-*.md`](docs/decisions/ADR-0006-vendor-openzeppelin.md) | — | **决策** | 引入 OpenZeppelin v5.7.0（vendored）作为第一个 Solidity 依赖 | 已 accepted |
 | [`docs/decisions/ADR-0007-*.md`](docs/decisions/ADR-0007-receipts-never-delegable.md) | — | **决策** | **回执永不可委派**（Scope 闭集，无 receipt 值）；含重新评估触发条件 | 已 accepted |
 | [`docs/decisions/ADR-0008-*.md`](docs/decisions/ADR-0008-mcp-handwritten.md) | — | **决策** | MCP server **手写**（偏离"用 SDK"）；零依赖 vs 攻击面；含重估触发条件 | 已 accepted |
+| [`docs/decisions/ADR-0009-*.md`](docs/decisions/ADR-0009-agent-key-management.md) | — | **决策** | **Agent 密钥管理 + out-of-process signer + per-key domain 策略**；**推翻 no-init（待批准）** | **proposed** |
 | [`docs/stages/S1-report.md`](docs/stages/S1-report.md) | — | **报告** | S1（回执 + 签名 + KAT + verifier）验收证据 | 已归档 |
 | [`docs/stages/S2-report.md`](docs/stages/S2-report.md) | — | **报告** | S2（executor + 生成器 + 主循环）验收证据 | 已归档 |
 | [`docs/stages/S2b-report.md`](docs/stages/S2b-report.md) | 172 | **报告** | S2 补完（S2-6/7/8/9）验收证据 | 已归档 |

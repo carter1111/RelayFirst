@@ -41,6 +41,12 @@
 | [`blk-1-verification-plan.md`](blk-1-verification-plan.md) | ✅ **已核实**（PARTIAL） | Codex 可行 / Claude Code 不可 |
 | [`mcp-setup.md`](mcp-setup.md) | **已实现**（S12-5/6/7） | 属**how-to 参考**，不是规划 |
 
+### 0A2. **待 ADR 批准**（proposed，未开工）
+
+| 文档 | 一句话 | 卡在哪 |
+|---|---|---|
+| [`agent-signer-plan.md`](agent-signer-plan.md) + [`ADR-0009`](../decisions/ADR-0009-agent-key-management.md) | **Agent 密钥管理 + out-of-process signer + per-key domain 策略** | **待你批准 D2（推翻 `relayfirst init` 的 no-init 决策）** |
+
 ### 0C. 参考 / 索引（**非任务**）
 
 | 文档 | 作用 |
