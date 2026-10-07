@@ -9,6 +9,7 @@
 > 2. **D2 待批**：推翻 `relayfirst init` 的 no-init 决策（L0）。
 >
 > **→ 即使 D2 批准也【不够】**：先要处理**凭据落盘边界**，`init` 才可动。登记于 `TASKS.md` **S6-1** + **§15 R-D2**。
+> **→ ✅ 不卡上线**：一键身份是**体验优化**，不是 UAT 阻塞 —— **BYO key 已走通**。它属"上线之后"。
 > **当前可用路径**：用户自备 key 经 `RELAYFIRST_PRIVATE_KEY` 注入。
 >
 > **✅ 已实现（本流程的非阻塞部分）**：`relayfirst claim`（证明生成，无 key）+ `claim --web`（只读本地视图）+ `relayfirst balance`/`spend`（burn 表）。
