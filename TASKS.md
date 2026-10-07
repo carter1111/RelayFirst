@@ -929,10 +929,16 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 
 ---
 
-## 15. 剩余项（**可开工 = 0；其余按【卡什么】分类**）
+## 15. 剩余项（**可开工 = 1（R-RELAY）；其余按【卡什么】分类**）
 
-> **这是"后面还有多少 tasks"的权威答案（2026-10-08）。** 代码队列已空；以下按**卡因**分四类。
-> 规则：只有解卡后 A 类才可派工；B/C/D 不是"写代码"能推进的。
+> **这是"后面还有多少 tasks"的权威答案（2026-10-08）。** 代码队列基本空；**可开工 1（R-RELAY）**；其余按**卡因**分四类。
+> 规则：只有 A0/A 类可派工；B/C/D 不是"写代码"能推进的。
+
+### A0. **可开工（当前唯一）**
+
+| id | 项 | 说明 |
+|---|---|---|
+| **R-RELAY** | **RFN-05 多 relay 接线** | `publish.Sink` 已有 `Policy` 分支（quorum/health/failover，14 项测试），但 `mine` 构造时**不设 Policy** → 走 plain `Publish`（**能力未上线**）。**默认已定 = quorum 1**（`planning.md §D`，2026-10-07）→ **行为不变**的纯接线。**默认值需先写进 `MVP.md`**（`AGENTS.md §5.1`）|
 
 ### A. 等外部依赖（解卡后可派）
 
@@ -940,7 +946,7 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 |---|---|---|
 | **R-P0SINK** | **Relay ID / 命名空间注册 burn** | **S10-0 已 ✅**，真正缺的是 **namespace 收费机制 + 收费方**（`incentive.md §10.13`）；burn 表已建，接上即可 |
 | **R-D2** | `relayfirst init` / keystore / signer / `bind` | **D2 待批**（推翻 no-init，L0）；且 `ADR-0009` 已裁定 **v2 延后** |
-| **R-RELAY** | **RFN-05 多 relay 接线**（quorum/failover 已实现但**未接线**）| 需先把**默认策略写进 `MVP.md`**（范围变更），再接 `PublishWithPolicy` |
+| **R-DISC** | **发现层 G1–G5 / Explorer** | **用户 2026-10-07 已批准"要做"**（`planning.md §D`）；**未排期** —— 需先改 `MVP.md` 定范围（大工程：独立 indexer/explorer 二进制）|
 
 ### B. 等平台币设计（经济数值）
 
@@ -948,7 +954,7 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 
 ### C. 属 Roadmap / 2.1（**刻意非目标，不反转**）
 
-**R-FORCE**（强制纳入 = dispute，`AGENTS.md:61` 非目标）/ **R-SBTREV**（SBT 撤销，2.1）/ **R-DISC**（发现层 G1–G5）。
+**R-FORCE**（强制纳入 = dispute，`AGENTS.md:61` 非目标）/ **R-SBTREV**（SBT 撤销，2.1）。
 
 ### D. 需真人 / 外部（**我无法代做**）
 

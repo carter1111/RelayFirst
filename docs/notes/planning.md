@@ -13,6 +13,8 @@
 
 ## 0. feature 文档（本文是入口，它们是详情）
 
+> **⚠️ "还剩什么"的权威清单在 [`TASKS.md §15`](../TASKS.md)（2026-10-08）** —— 本文是**入口索引**，不再逐项重列卡因。
+
 > **每个 feature = 一份文档**，挂在这里。定案后按 `AGENTS.md §5.0` 进 `TASKS.md`。
 >
 > **⚠️ 分两栏**：**① 未定案**才真属于 Planning（P1）；**② 已裁决/已实现**是**参考** ——
@@ -26,7 +28,7 @@
 | [`explorer-indexer-plan.md`](explorer-indexer-plan.md) | Explorer 架构与红线 | Explorer |
 | [`node-incentives-discussion.md`](node-incentives-discussion.md) | 节点动机（BLK-5） | **已延期**（待"好的完整激励方案"）|
 | [`../gtm/blk-2-first-consumer-plan.md`](../gtm/blk-2-first-consumer-plan.md) | BLK-2 首个消费方行动方案 | **技术侧完成、demo 可跑；接洽未开始（人的动作）** |
-| [`impl-assessment.md`](impl-assessment.md) → [`impl-planning.md`](impl-planning.md) → [`impl-tasks.md`](impl-tasks.md) | **激励机制落地**：D1 现状评估 → P0/P1/BLOCKED 切分 → 可派任务 | ✅ **已进 `TASKS.md §14`**（IMP-1..5/TEST-1）；**DOC-1(iii)+PRE-1(a) 已裁决**；**E 已裁决（两 root）**；剩 L0-1/L0-2 文档同步 |
+| [`impl-assessment.md`](impl-assessment.md) → [`impl-planning.md`](impl-planning.md) → [`impl-tasks.md`](impl-tasks.md) | **激励机制落地**：D1 现状评估 → P0/P1/BLOCKED 切分 → 可派任务 | ✅ **已实现并进 `TASKS.md §14`**（IMP-1..5、L0-HB/SPLIT/FEED/WIRE/M1、V1-SUNSET/BURN 全 ✅）；**剩余见 `TASKS.md §15`** |
 
 ### 0B. 已裁决 / 已实现（**参考**，非待定 —— 不要当成待办）
 
@@ -50,7 +52,7 @@
 | [`user-registration-flow.md`](user-registration-flow.md) + [`incentive.md`](incentive.md) | **用户注册/身份流程（单助记词双 key、keystore、signer、claim）+ 激励框架** | **是 ADR-0009 的下游** —— key 管理延后，注册流程随之延后。`incentive.md` 自述**未到开发标准**（参数待填）|
 | **r / X / farm ROI 判据** | **经济数值** | 🗣️ **已裁决（2026-10-08）：留给「平台币设计」** —— r（兑换比例）不定，**X 与 farm ROI「够不够低」一并随之** |
 | **强制纳入（omission）** | **争议层（dispute）** | 🗣️ **已裁决（2026-10-08）：归 Roadmap / 2.1** —— 它就是 dispute，而 dispute 是 A2 明文**非目标**（`AGENTS.md:61`）。**不反转 A2。** 「可发现」半边已做 |
-| [`impl-planning.md`](impl-planning.md) §6 **Layer 0 设计** | **Layer 0（节点经济）的测量【输入源】选项**（verifier 签心跳 / 邻居观测 / 挑战式）—— Layer 0 卡在**设计**，不卡在代码 | **待决**：谁观测"合格 epoch"（见 §6.5 三问）；**farm ROI 建模 launch-blocking** |
+| [`impl-planning.md`](impl-planning.md) §6 **Layer 0 设计** | **Layer 0（节点经济）的测量【输入源】** | ✅ **已裁决并实现（2026-10-08）**：Q1=A / F1 / M1 / X=95%；`internal/heartbeat` + 两池 + `settle` 双池接线全 ✅ |
 
 ### 0C. 参考 / 索引（**非任务**）
 
