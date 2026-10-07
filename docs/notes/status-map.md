@@ -97,6 +97,21 @@
 
 ---
 
+## 5b. 执行索引（每项 → 对应 runbook）
+
+> **代码已无待办；下面每一项都由人执行，材料已备。**
+
+| 要做的 | runbook | 你需要先给什么 |
+|---|---|---|
+| **BLK-2 首个真实消费方**（关键路径）| [`../gtm/blk-2-outreach-kit.md`](../gtm/blk-2-outreach-kit.md) | 圈层（中/英）+ 买家名单 |
+| **判据 ①③ 真人计时** | [`../ops/timing-script.md`](../ops/timing-script.md) | 一个陌生人 |
+| **发布**（npm + 节点镜像）| [`../ops/release-checklist.md`](../ops/release-checklist.md) | npm 凭据 + registry |
+| **判据 ⑨ 链上部署** | [`../ops/chain-deploy.md`](../ops/chain-deploy.md) | 选链 + 部署钱包 |
+| **判据 ⑤ 生产策略待配**（BLK-3）| `blk-3-assignment-policy.md` | 候选集 + seed 来源 |
+| **BLK-4 发布日** | — | 拍一天 |
+
+---
+
 ## 6. 一句话
 
 > **到 UAT：三层基础线里，激励线【代码闭合】、身份线【入口可用（BYO key）】、判据线【5 绿 / 3 部分 / 2 真人】。**
