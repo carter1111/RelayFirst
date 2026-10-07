@@ -902,6 +902,18 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 
 **P1（待设计，不进本批工时）**：liveness challenge 协议 + slot 参数；**VPS farm ROI 建模（launch-blocking）**；SBT 发放/吊销规则；**omission —— 「可发现」半边 ✅ done（2026-10-08）**，见下。
 
+**Layer 0 接线（Q1=A / F1 / M1 / X=95%，2026-10-08 开工）**：
+
+| id | 任务 | 依赖 | 验收 | 状态 |
+|---|---|---|---|---|
+| **L0-HB** | **心跳规则**：`internal/heartbeat`（attestation + sign/verify + **A≠B** `Qualified` + gap 规则）| F1 | 自证被拒；独立 verifier 通过；95%/gap 阈值；**变异验证** | ✅ **done** |
+| **L0-SPLIT** | **两池拆分**：`internal/scoring/pools.go`（`SettleEpoch` + `NodePoolFraction`）| M1 | 50/25/10 phase；无合格节点**烧掉**节点池；确定性 | ✅ **done** |
+| **L0-FEED** | **喂入路径**：把 attestation → `heartbeat.Qualified` → 写 `node_tenure`（verifier 签心跳 + 节点侧落 flag）| L0-HB | 端到端：签→验→达标→写库 | ⬜ todo |
+| **L0-WIRE** | **`settle` 双池接线**：`Finalize` 用 `SettleEpoch`，credit Layer 1 + Layer 0，报告两池 | L0-SPLIT, L0-FEED | 结算含节点 points；balance root 含之；幂等 | ⬜ todo |
+| **L0-M1** | **1.25× 条件化**：`m_i = 1.25` 当且仅当 绑定 ∧ tenure≥3 ∧ **receipts>0** | L0-FEED | 零 receipts 只 1.0× | ⬜ todo |
+
+**注**：`L0-FEED` 需**两个命令**（verifier 签心跳、节点/运营者落 flag）；`L0-WIRE` 会改 `ScoringSink.Finalize`（保留 `Settle` 路径给未接 Layer 0 的调用方）。
+
 **P1-omission「可发现」半边** ✅ **done**（选项 B，2026-10-08）—— `relayfirst anchor manifest`（发布 epoch 回执集 + root）+ `relayfirst anchor audit --manifest <f> --root <r> [--require <id>…]`（**任何人**可重算 root 校验 + 标出被漏的回执，**非零退出**）。**纯链下、零合约改动**。测试：诚实 manifest 通过；漏 required 报错；集合与 root 不符报错。**注意**：这使遗漏**可发现、可归因**，**不强制**纳入 ——「强制纳入」仍是 P1 未决（须排序树 + 合约，或争议路径，属独立设计）。
 
 **验收判据**：本层**不属十条判据**；判据状态见 §13 / `MVP.md §11`。
