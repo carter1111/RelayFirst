@@ -50,6 +50,11 @@ Usage:
   relayfirst receipts [flags]            List receipts, or --export them
   relayfirst anchor <root|proof|verify>  Compute an epoch's Merkle root, or prove
                                          a receipt is in it (read-only; no chain)
+  relayfirst anchor manifest [--epoch]   Publish an epoch's receipt set + root, so an
+                                         omission is discoverable
+  relayfirst anchor audit --manifest <f> --root <r> [--require <receiptId>]
+                                         Check a published set against a root, and flag
+                                         receipts the caller names that are missing
   relayfirst verify <receipt.json>       Verify a receipt offline (no network);
                                          add --refetch to also re-check anchors
   relayfirst id <private-key-hex>        Print the agentId for a key
@@ -418,6 +423,7 @@ var repeatableFlags = map[string]bool{
 	"semantic": true,
 	"relay":    true,
 	"sibling":  true,
+	"require":  true,
 }
 
 func parseFlags(args []string) (*flags, error) {
@@ -1789,8 +1795,12 @@ func runAnchor(args []string) error {
 		return anchorVerify(f, receipts, all)
 	case "check":
 		return anchorCheck(f)
+	case "manifest":
+		return anchorManifest(f, receipts)
+	case "audit":
+		return anchorAudit(f)
 	default:
-		return fmt.Errorf("unknown anchor action %q (want root, proof, verify or check)", args[0])
+		return fmt.Errorf("unknown anchor action %q (want root, proof, verify, check, manifest or audit)", args[0])
 	}
 }
 
@@ -1894,8 +1904,149 @@ func anchorCheck(f *flags) error {
 	return printJSON(out)
 }
 
-// anchorVerify checks a proof against the root the store would compute.
+// anchorManifest publishes an epoch's receipt set and its root.
 //
+// # This is the "discoverable" half of omission (incentive.md §10.10)
+//
+// A receipt root alone proves that a receipt IS in an epoch, not that one is missing.
+// But if the operator publishes the SET the root was built from -- every receipt id, in
+// order -- then anyone can (a) recompute the root from the set and check it equals the
+// anchored one, and (b) see whether their own receipt is in the set at all. A receipt
+// that is absent from a set whose root matches is that much harder to hide: it cannot be
+// dropped without changing the root, and a changed root does not match the anchor.
+//
+// # What it does NOT do
+//
+// It does not FORCE an operator to include anyone. Enforcing inclusion is a separate,
+// harder problem (a challenge or dispute path), and it is not solved here. This only
+// makes an omission findable and attributable -- the honest direction, stated plainly
+// rather than dressed up as enforcement.
+//
+// The ids are sorted, because that is the order the tree is built in; publishing them in
+// another order would make the recomputation fail for an honest operator.
+func anchorManifest(f *flags, rs *store.ReceiptStore) error {
+	epoch, err := f.epochArg()
+	if err != nil {
+		return err
+	}
+
+	leaves, ids, err := epochReceipts(rs, epoch)
+	if err != nil {
+		return err
+	}
+	root := merkle.Root(leaves)
+
+	return printJSON(map[string]any{
+		"epoch":    epoch,
+		"root":     root.Hex(),
+		"width":    nextPow2For(len(ids)),
+		"count":    len(ids),
+		"receipts": ids,
+		"note": "publish this alongside the root. Anyone can recompute the root from " +
+			"`receipts` in this order and confirm the anchor matches; a missing receipt " +
+			"changes the root. This makes an omission DISCOVERABLE, not impossible.",
+	})
+}
+
+// anchorAudit checks a published manifest, and any receipts the caller names, against a
+// root they supply.
+//
+// # Why the root comes from the caller
+//
+// It takes --root rather than reading it from the manifest, for the same reason `anchor
+// check` does: otherwise a forged manifest could carry the root it happens to fold to.
+// The root is what the caller trusts -- from the chain, from a published document.
+//
+// # What it reports
+//
+//   - whether the manifest's receipt set recomputes to the supplied root (the operator
+//     is lying if it does not);
+//   - for each --require <receiptId>, whether that receipt is in the published set. A
+//     receipt the caller KNOWS they earned but which is absent, while the root still
+//     matches, is the evidence of an omission. The command reports it as "missing" and
+//     exits non-zero, and it does not pretend that is a proof of anything beyond the
+//     set differing from expectation.
+func anchorAudit(f *flags) error {
+	rootHex := f.get("root", "")
+	if rootHex == "" {
+		return errors.New("anchor audit requires --root <merkleRoot>, the root to check the manifest against")
+	}
+	wantRoot, err := merkle.IDFromHex(rootHex)
+	if err != nil {
+		return fmt.Errorf("--root: %w", err)
+	}
+
+	manifestPath := f.get("manifest", "")
+	if manifestPath == "" {
+		return errors.New("anchor audit requires --manifest <path> (the JSON `anchor manifest` published)")
+	}
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("read manifest: %w", err)
+	}
+	var man struct {
+		Epoch    uint64   `json:"epoch"`
+		Root     string   `json:"root"`
+		Receipts []string `json:"receipts"`
+	}
+	if err := json.Unmarshal(raw, &man); err != nil {
+		return fmt.Errorf("parse manifest: %w", err)
+	}
+	if len(man.Receipts) == 0 {
+		return errors.New("the manifest lists no receipts")
+	}
+
+	// Recompute the root from the published set, in the order published.
+	leaves := make([]merkle.Hash, 0, len(man.Receipts))
+	for _, id := range man.Receipts {
+		h, err := merkle.IDFromHex(id)
+		if err != nil {
+			return fmt.Errorf("manifest receipt id %q: %w", id, err)
+		}
+		leaves = append(leaves, h)
+	}
+	computed := merkle.Root(leaves)
+	rootMatches := computed == wantRoot
+
+	present := make(map[string]bool, len(man.Receipts))
+	for _, id := range man.Receipts {
+		present[strings.ToLower(strings.TrimPrefix(id, "0x"))] = true
+	}
+
+	var missing []string
+	for _, req := range f.repeated["require"] {
+		key := strings.ToLower(strings.TrimPrefix(req, "0x"))
+		if !present[key] {
+			missing = append(missing, req)
+		}
+	}
+	sort.Strings(missing)
+
+	out := map[string]any{
+		"epoch":          man.Epoch,
+		"rootSupplied":   wantRoot.Hex(),
+		"rootRecomputed": computed.Hex(),
+		"rootMatches":    rootMatches,
+		"manifestCount":  len(man.Receipts),
+		"note": "rootMatches=false means the published set does not produce the anchored root. " +
+			"A receipt listed in --require but absent from an otherwise-matching manifest is " +
+			"evidence of an omission, but not a proof of intent.",
+	}
+	if len(missing) > 0 {
+		out["missing"] = missing
+	}
+
+	if err := printJSON(out); err != nil {
+		return err
+	}
+	if !rootMatches || len(missing) > 0 {
+		// A non-zero exit so a script can gate on it: the manifest is either inconsistent
+		// with the root, or it leaves out a receipt the caller says they earned.
+		return fmt.Errorf("audit failed: rootMatches=%v, missing=%d", rootMatches, len(missing))
+	}
+	return nil
+}
+
 // It exists so a user can check a proof without a chain and without trusting
 // anyone: the root is recomputed locally from stored receipts, and then the proof
 // is folded against it. That is the same check the Solidity contract performs, done

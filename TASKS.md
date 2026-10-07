@@ -900,7 +900,9 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 | **IMP-5** | **`status` 待结算预估**（显示层） | — | 非 TTY 保持今天 JSON；TTY 标"未结算"；读路径无写 | ✅ **done** — `runStatus` TTY 分支加 pending（`Allocate`+`CapAllocation`，**不写账本**）；渲染 `pending … (unsettled estimate)`。**非 TTY JSON 未加字段**：`TestStatus_NonTTYHasNoPendingEstimate` + `TestStatusDashboard_ShowsPendingAsUnsettled` |
 | **TEST-1** | **全量门禁** | IMP-1..5 | `go test`/`-race`/`ci.sh` 全绿；导入图门禁仍成立 | ✅ **done** — `go test ./...` / `-race` 全绿；`scripts/ci.sh` all gates pass（含 forge 47、viem A4 三向）|
 
-**P1（待设计，不进本批工时）**：liveness challenge 协议 + slot 参数；**VPS farm ROI 建模（launch-blocking）**；SBT 发放/吊销规则；omission 机制。
+**P1（待设计，不进本批工时）**：liveness challenge 协议 + slot 参数；**VPS farm ROI 建模（launch-blocking）**；SBT 发放/吊销规则；**omission —— 「可发现」半边 ✅ done（2026-10-08）**，见下。
+
+**P1-omission「可发现」半边** ✅ **done**（选项 B，2026-10-08）—— `relayfirst anchor manifest`（发布 epoch 回执集 + root）+ `relayfirst anchor audit --manifest <f> --root <r> [--require <id>…]`（**任何人**可重算 root 校验 + 标出被漏的回执，**非零退出**）。**纯链下、零合约改动**。测试：诚实 manifest 通过；漏 required 报错；集合与 root 不符报错。**注意**：这使遗漏**可发现、可归因**，**不强制**纳入 ——「强制纳入」仍是 P1 未决（须排序树 + 合约，或争议路径，属独立设计）。
 
 **验收判据**：本层**不属十条判据**；判据状态见 §13 / `MVP.md §11`。
 

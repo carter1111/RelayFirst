@@ -772,3 +772,76 @@ func TestClaim_ProvesCumulativeAcrossEpochs(t *testing.T) {
 		t.Errorf("epoch 5's points (%v) must be included in the total (%v)", want5, got.Total)
 	}
 }
+
+// TestAnchorManifestAndAudit_AuditIsNonVacuous is the omission "discoverable" path
+// (incentive.md §10.10, option B): a manifest lets anyone recompute the root from the
+// published set, and flag a receipt they believe they earned that is missing.
+func TestAnchorManifestAndAudit_AuditIsNonVacuous(t *testing.T) {
+	// One store with epoch 5 holding ids 1 and 2, and a second store with id 3 too.
+	rs := seededStore(t, [2]int{1, 5}, [2]int{2, 5})
+
+	// A manifest for epoch 5 (ids 1,2), and a root computed from exactly those.
+	manOut := captureStdout(t, func() {
+		if err := anchorManifest(&flags{values: map[string]string{"epoch": "5"}, repeated: map[string][]string{}}, rs); err != nil {
+			t.Fatalf("manifest: %v", err)
+		}
+	})
+	rootDir := t.TempDir()
+	manPath := filepath.Join(rootDir, "manifest.json")
+	if err := os.WriteFile(manPath, []byte(manOut), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	var man map[string]any
+	if err := json.Unmarshal([]byte(manOut), &man); err != nil {
+		t.Fatalf("manifest JSON: %v", err)
+	}
+	root := man["root"].(string)
+
+	// 1. An honest audit: the manifest recomputes to the root, nothing missing.
+	err := anchorAudit(&flags{
+		values:   map[string]string{"manifest": manPath, "root": root},
+		repeated: map[string][]string{"require": {id(1)}},
+	})
+	if err != nil {
+		t.Errorf("an honest manifest with the required receipt present must pass, got: %v", err)
+	}
+
+	// 2. A receipt the caller earned but the manifest omits must be flagged, non-zero.
+	forgedDir := t.TempDir()
+	tamperedPath := filepath.Join(forgedDir, "manifest.json")
+	tampered := map[string]any{"epoch": 5, "root": root, "receipts": []string{id(1)}} // id(2) dropped
+	raw, _ := json.Marshal(tampered)
+	_ = os.WriteFile(tamperedPath, raw, 0o644)
+
+	err = anchorAudit(&flags{
+		values:   map[string]string{"manifest": tamperedPath, "root": root},
+		repeated: map[string][]string{"require": {id(2)}},
+	})
+	if err == nil {
+		t.Error("a manifest that omits a required receipt must fail the audit")
+	}
+
+	// 3. A manifest whose set does not recompute to the root must be caught.
+	stale := map[string]any{"epoch": 5, "root": root, "receipts": []string{id(1), id(2), id(3)}}
+	raw2, _ := json.Marshal(stale)
+	stalePath := filepath.Join(forgedDir, "stale.json")
+	_ = os.WriteFile(stalePath, raw2, 0o644)
+
+	err = anchorAudit(&flags{
+		values:   map[string]string{"manifest": stalePath, "root": root},
+		repeated: map[string][]string{},
+	})
+	if err == nil {
+		t.Error("a set that does not recompute to the root must fail the audit")
+	}
+}
+
+// TestAnchorAudit_RequiresBothInputs: audit must not run without a root and a manifest.
+func TestAnchorAudit_RequiresBothInputs(t *testing.T) {
+	if err := anchorAudit(&flags{values: map[string]string{}, repeated: map[string][]string{}}); err == nil {
+		t.Error("audit without --root must error")
+	}
+	if err := anchorAudit(&flags{values: map[string]string{"root": id(9)}, repeated: map[string][]string{}}); err == nil {
+		t.Error("audit without --manifest must error")
+	}
+}
