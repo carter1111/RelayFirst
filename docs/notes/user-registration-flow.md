@@ -1,11 +1,11 @@
 # User Registration Flow
 
-> 版本：v0.5 — ADR-0009 对齐版
+> 版本：v0.6 — 绑定机制已定（2026-10-07）
 > 日期：2026-10-07
 > 状态：设计完成，待 ADR-0009 定稿（D2 批准）+ Cursor 实现
 > 关联：`incentive.md`（激励机制）、ADR-0004（split-binary）、ADR-0007（回执不可委派）、ADR-0009（agent key 管理，proposed）
 >
-> v0.5 术语统一（ADR-0009）：**没有 "node key"**——两把 key 是 **agent key**（干活者）与 **verifier key**（验证者角色，只签 assertion-1）；relay 本身永远无密钥（ADR-0004，CI 强制）。
+> 术语（ADR-0009）：**没有 "node key"**——两把 key 是 **agent key**（干活者）与 **verifier key**（验证者角色）；relay 本身永远无密钥（ADR-0004，CI 强制）。绑定机制：agent 以 delegation-1 签意向，verifier 以 assertion-1 确认，不改 signing policy。
 
 ## 0. 原则
 
@@ -83,8 +83,8 @@ Step 4  运行挖矿
         → 有 key：收据签名提交 → Layer 1 积分 + SBT 工作徽章
 
 Step 5  PoSR 绑定（拿 1.25×）
-        ⚠️ 待重设计（ADR-0009 D7）："verifier 签接受"与"节点无密钥"冲突，bind 机制需单独设计。
-        目标语义不变：$ relayfirst bind → agent 身份声明 work 经由某 relay 提交 → one-binding-per-identity，不叠加（incentive.md §4）
+        ✅ 机制（2026-10-07 定，ADR-0009 D7）：$ relayfirst bind → agent 以 delegation-1 签绑定意向（"我的 work 经由 verifier Y 提交"）→ verifier 以 assertion-1 确认服务关系。不改 signing policy。
+        → one-binding-per-identity，不叠加（incentive.md §4）。attestation 具体格式待设计。
 ```
 
 ## 4. Flow C：换 key / 恢复 / 迁移

@@ -36,7 +36,7 @@
 | Phase 2 生长 | 26–51（约6个月） | 75% | 25% | 网络稳定，重心转回工作 |
 | Phase 3 成熟 | 52 起 | 90% | 10% | 补贴最小化，手续费接棒 |
 
-（假设 epoch = 1 周 ❌（§10.9：epoch 时长未定——直接影响 phase 实际长度、tenure 门槛的时间意义、decay 节奏、farm 回本周期）；Phase 切换写死在结算逻辑里。12 个月 sunset 评审时决定 Layer 0 去留，见 §3。）
+（epoch = 7 天 ✅（2026-10-07 定）；Phase 切换写死在结算逻辑里（P1 epochs 0–25 ≈ 6 个月，P2 26–51 ≈ 6 个月）。12 个月 sunset 评审时决定 Layer 0 去留，见 §3。）
 
 **资金流向图**（每 epoch）：
 
@@ -70,10 +70,10 @@
 - 资金：独立小池，比例按阶段预设（P1 50% / P2 25% / P3 10%），不随节点数增发 🔶
 - 资格：tenure ≥ 3 epochs（连续在线）+ 通过 liveness 抽查 🔶
 - **"连续在线"定义** 🔶（2026-10-07 proposed）：
-  - 每 epoch 划分 N 个 slot（假设 epoch=1 周、slot=10 分钟 → 1008 slots；slot 时长待定）。
+  - 每 epoch 划分 N 个 slot（epoch=7 天 ✅，slot=10 分钟 → 1008 slots；slot 时长待定）。
   - Verifier 每 slot 签一次轻量 attestation（心跳）；liveness 随机 challenge 抽查（协议待设计）。
   - 单 epoch 达标：在线 slot ≥ 95%，且单次连续掉线 ≤ X slots（X 待定，如 18 slots ≈ 3 小时；防"每天定时掉线"的游戏）。
-  - Tenure 计数：连续达标的 epoch 数。单 epoch 不达标 → tenure 降一档（不清零，减少运维误伤）；连续两 epoch 不达标 → 清零 ❌（重置策略待定）。
+  - Tenure 计数：连续达标的 epoch 数。单 epoch 不达标 → tenure 降一档（不清零，减少运维误伤）；连续两 epoch 不达标 → 清零 ✅（2026-10-07 定）。
 - 分配：**tenure-tier 加权**（50% 池子下纯均分对矿场太友好；2026-10-07 压缩至最大 25% 差距——tier 是忠诚奖励，不是护城河）🔶
 - 3–5 epochs：权重 1×
 - 6–11 epochs：权重 1.1×
@@ -81,24 +81,25 @@
 - `share_i = weight_i / Σ(weights) × pool`
 - 不按流量分配——按流量即回到 BLK-5 的不可验证陷阱 ✅
 - Liveness：周期性轻量 challenge ❌（协议待设计）
+- **Gas 归属** ✅（原则，2026-10-07）：心跳 attestation 不上链（off-chain 聚合，relay/settler 收集；1008 slots × ~200B ≈ 200KB/周/verifier，SQLite 无压力）；链上只有每周一次的 Merkle root 发布 → 谁记账谁付（P1 即团队，L2 上 52 笔/年，可忽略）；里程碑徽章走 EAS off-chain attestation，无 gas（真上链的 trophy 才需 mint，低频，届时定 payer）。
 - Sunset：12 个月后由治理决议延续/取消；到期无决议则自动停止 ✅（原则）🔶（流程）
 - 反女巫：固定池（单 epoch 损失有界 = 当期池比例）+ tenure 时间成本 + tier 加权（新女巫权重最低）+ phase-down 预设（奖金按已知时间表缩水，长期矿场 ROI 被压缩）+ sunset 安全阀 + 同机多节点自收敛（稀释+liveness+边际成本）✅（框架）
 - 不用 IP 反女巫：IP 是弱信号（NAT/VPN），误伤正常用户。靠经济设计，不靠 IP 指纹 ✅（原则）
 
 **为什么 tenure 是核心**：熬过 3 个 epoch 的节点 = demonstrated reliable。tenure 在这里不只是反女巫，更是可靠性证明——这正是要补贴的东西（笔记本节点会休眠，VPS 节点才是可靠中继）。
 
-❌ 待定：阶段比例起步值、3 epochs 门槛、tier 权重、challenge 协议、VPS farm ROI 建模验证（§10.3，**launch-blocking**）
+❌ 待定：阶段比例起步值、3 epochs 门槛、challenge 协议、slot 参数、VPS farm ROI 建模验证（§10.3，**launch-blocking**）
 
 ## 4. Layer 1：工作奖励 ✅/🔶
 
 **Model B**（已定，`MVP.md` §5.3/§6.2）：
 
-- 每 epoch 固定预算 `B_n = B_0 × 0.99^n` ✅
-  > ❌ `B_0` 绝对值未定（§10.1）：不定的话 §6 算例、farm ROI 建模（§10.3）全是相对值，算不出矿场的真实收益。
+- 每 epoch 固定预算 `B_n = 7,000,000 × 0.85^⌊n/4⌋`（n 为 epoch 序号；即每 4 周衰减 15%）✅（2026-10-07 定）
+  > 首年发行约 1.64 亿（28M × (1−0.85¹³)/0.15）。farm ROI 建模（§10.3）的前置参数已齐。
 - 每回执计算 `work`（work 函数见 MVP §5.3）✅
 - 份额公式：`share_i = work_i × m_i / Σ(work_j × m_j)` ✅
 - 单 agent 上限：合计 **5%** ✅
-  > ❌ cap 余量未定（§10.4）：cap 导致 Σ份额 < 预算时，未分配预算销毁 / 滚存下期 / 按比例重分配——三选一。settle 实现前必须定，否则代码写不下去。
+  > ✅ cap 余量（2026-10-07 定）：销毁——未分配预算不增发。
 - 结算：每回执 `RecordWork`（保留原始明细 + artifactKey，可审计）→ epoch 末显式 `relayfirst settle`（幂等，`settle:<epoch>:<agent>`）→ 写 points → Merkle root（settled map 即 root 输入，确定性）✅
 - **显示层**（2026-10-07 需求）：积分显示至少每分钟刷新。实现为"待结算预估"（读 `work_records` 聚合，**不是**提前结算）：用户自查是本地索引查询，成本可忽略；全局榜单由记账侧每分钟聚合一次 + 缓存分发（10k 节点规模单次聚合百毫秒级）。UI 必须区分"已结算（Merkle 可验）"与"本 epoch 待结算预估"。写负载不增加（写仍是每回执 RecordWork + epoch 末 settle）。
 
@@ -123,8 +124,9 @@
 
 **Claim UX** 🔶
 - **两种 key，两笔 claim**：agent key 领 Layer 1 的 points，node verifier key 领 Layer 0 的 points。`relayfirst claim` 一次处理本地所有身份，token 打到 `--to` 指定的 payout 地址（可与 earning 地址不同——赚的身份固定，收钱地址自由）。
-- **CLI 优先，不先做网站**：用户群是终端开发者，key 在本地 signer 里。网站要做 bridge 又笨又危险——key 进浏览器 = split-trust 设计白做。
+- **签名 CLI 优先，展示 Web 优先**（2026-10-07 调整）：签名永远在 CLI（key 不出本机）；web 做展示 + claim 发起。key 进浏览器 = split-trust 设计白做，此红线不变。
 - 网站 Phase 2：只读 dashboard（查积分/SBT/tenure）+ claim 发起页，签名动作仍在 CLI 完成。
+- **Web claim 设计**（2026-10-07 proposed）：不用"连接钱包"按钮——key 在本地 CLI signer 里，不在浏览器钱包里，connect 是误导。用 **ticket 配对**：① CLI `relayfirst claim --web` → 一次性 ticket/二维码（5 分钟过期）；② Web 输入 ticket 拉取该地址待领数据（只读，不碰 key）→ 展示每 epoch 明细、可领总量、tenure bonus 试算、token/gas 预估；③ 用户回 CLI `relayfirst claim --ticket X` → 本地 signer 签名 → 提交；④ Web 显示 claim 历史。红线：web 永不接触私钥/助记词；ticket 一次性+短过期；金额二次确认。约束：claim 那一刻 CLI 必须可达（手机-only 用户需回电脑操作；deferred claim 待议）。❌ 待定：gas 代付（relayer）、多身份聚合 UI。
 - Gas：claim 合约放低成本 L2；gas 策略（用户自付 / relayer 代付）待定 ❌。
 - SBT 不用 claim（已在链上/EAS）；只有 points→token 走 claim 流程。
 - 为什么不上链 ERC-20：① gas——每 epoch 给几千个 agent mint，谁付？② 灵活性——上线前 work 函数/cap/比例都要调，链上即固化；③ 过早可转让 = 过早投机 + 证券监管风险 ✅（原则）
@@ -155,7 +157,7 @@
 **Points 安全吗？** ✅（性质）/ 🔶（发布机制待定）
 
 - **被盗**：积分不可转让——无转账功能即无可盗之物。比 token 更安全 ✅
-- **伪造 proof**：用户伪造不了 Merkle proof（有效性由哈希原像/碰撞抗性保证），也改不了余额（无转账功能，无写入口）✅。真风险在别处：① settler 发假 root 可被任何人用自持回执重算发现，但强制纳入机制未定（§10.10）；② root 发布锚点未定——锚点落地前"独立验证"是无根之木；③ 钓鱼前端给你看假 root（缓解：root 以链上/多签发布为准，客户端硬编码校验源）。
+- **伪造 proof**：用户伪造不了 Merkle proof（有效性由哈希原像/碰撞抗性保证），也改不了余额（无转账功能，无写入口）✅。真风险在别处：① settler 发假 root 可被任何人用自持回执重算发现，但强制纳入机制未定（§10.10）；② root 发布锚点未定——锚点落地前"独立验证"是无根之木；③ 钓鱼前端给你看假 root（缓解：root 以链上/多签发布为准，客户端硬编码校验源）。**注意**：Merkle 保证的是完整性（结算结果没被改），不是真实性（输入的回执是真的）——用户能往输入塞垃圾回执（自签刷 work，靠 work 函数 + verifier 防），但改不了出口数字。Garbage in, garbage out。
 - **被篡改**：Merkle root 确定性可复算，假 root 当场被发现 ✅
 - **平台跑路**：root 上链（每 epoch，低成本 L2）+ 回执自持 + 多 relay 备份 → 记录不死。且结算是确定性的——**settler 是可替换的**，任何人可拿回执 + work 函数接管结算 ✅（性质）🔶（root 发布链/机制待定，见 §10）
 - **被稀释**：反女巫设计（cap、tenure、绑定）+ §10.3 farm ROI 建模 ✅（框架）
@@ -171,14 +173,23 @@
 **PoSR 乘数**（与 Layer 1 同池，非独立池）🔶：
 
 - `m_i = 1.25`（work 经自己节点提交 + 双签绑定）或 `1.0` ✅（框架）
-- 绑定注册：agent 身份 + verifier 身份双签，一次性。出租 relay 的 verifier key = 交出身份 + tenure（裸奔，经济上非理性）✅（原则）❌（机制+UX 待设计）
-  > ⚠️ 机制待重设计（2026-10-07，ADR-0009 D7）：节点无密钥（ADR-0004），verifier key 的 domain 白名单只有 assertion-1，签不了"接受绑定"这类自定义声明。三选一：① bind 做成 assertion-1 的一种；② 给 verifier key 加新 domain（改 signing policy）；③ 换机制（agent 单签声明 + relay 侧链下确认）。定了机制才能定 UX。
+- 绑定注册：agent 身份 + verifier 身份双签，一次性。出租 relay 的 verifier key = 交出身份 + tenure（裸奔，经济上非理性）✅（原则）🔶（UX 待设计）
+  > ✅ 机制（2026-10-07 定，ADR-0009 D7）：沿用现有 domain，不改 signing policy——agent 侧以 delegation-1 签绑定意向（"我的 work 经由 verifier Y 提交"），verifier 侧以 assertion-1 确认服务关系（"为 agent X 提供中继"）。
 - 不叠加：一个身份最多一份加成 ✅
 - 零 work = 零加成（乘数，不是工资）✅
 - 相对恒成立：同等 work 量，绑定者永远比未绑定者多 25% ✅（数学）
 - 绝对值稀释：全网绑定率 Q 上升，绝对加成变薄；Q=100% 时人人 1.25 = 没人 1.25 ✅（数学，见 §6 算例）
 
 内部名：Proof of Self-Relay（PoSR）；对外只说"节点加成 / 跑节点多赚 25%"。
+
+**任务供给：P1 的工作从哪来** 🔶（2026-10-07 proposed）
+> 缺口：文档此前未定义 bootstrap 期"工作"的来源。可验证 ≠ 有价值——需求侧缺失则 Layer 1 为可验证的忙碌付费。
+- **P1（补贴期）**：官方任务池 + 接受自派任务。
+  - 官方池：团队/协议发布的 dogfooding 任务（开发、测试、文档、审计复查）。任务入库可查，有明确验收标准。
+  - 自派任务：矿工自己找活干（如用 Codex 做开源贡献）。诚实标注为补贴期获客成本。
+  - 自派防刷（待 Cursor 论证）：任务去重（artifactKey/内容哈希）、复杂度下限（work 函数最小阈值）、同一模板限领。
+- **P2**：开放任务市场（S12 USDC bounty）+ A2H（人发布需求）——真正的需求侧。
+- ❌ 待 Cursor 论证：官方池发布/验收流程、自派防刷参数、work 函数是否按任务来源加权。
 
 **绑定与身份规则** ✅（原则）/ 🔶（实现待定）
 - **地址 = 身份**：v1 无 key rotation 机制。丢 key = 丢身份（积分/SBT/tenure stranded，链上徽章还在但与你无关）。重新开始 = 新身份，历史不迁移（tenure 从零——这本身是反女巫特性）。Claim 时 payout 地址可自由指定（赚的身份固定，收钱的地址自由）。
@@ -187,17 +198,17 @@
   - 一人多 node：每个 node 独立赚 Layer 0（tenure-tier 加权）；1.25× 只绑其中之一。
   - 一 agent 绑多 node：❌ 禁止。
   - 多 agent 绑同一 node：✅ 允许，各自独立 1.25×（女巫由 work 验证 + 5% cap 防，不由排他性防）。
-  - 同一把 key 兼 node + agent：不禁止，不推荐（`init` 默认生成两把独立 key；混用则丢 key 两边一起丢）。
+  - 同一把 key 兼 verifier + agent：不禁止，不推荐（`init` 默认生成两把独立 key；混用则丢 key 两边一起丢）。
 - **Key 分离安全**：verifier key 被盗 ≠ agent key 被盗（偷 verifier 签不出 agent 收据）；绑定声明单方不可伪造（机制待定，见上）；出租 relay = 交出 verifier key = 交出身份 + tenure（裸奔，经济上非理性）。
 - **共 key 自我惩罚**：协议按地址记账——多 node 同 key 只算一份 Layer 0（不翻倍），多 agent 同 key 共用 5% cap（更快触顶）。激励天然指向分 key，无需协议禁止 ✅（原则）。
 - **残余风险**：丢 key 无恢复（v1 最大 UX 安全债）；farm ROI 建模 pending（§10.3，多 node 是主攻向量）；未来 claim/SBT 合约需审计。
 
-❌ 待定：`B_0` 绝对值、X 最终值（25% 起步）、cap 余量处理（§10.4）、绑定注册 UX
+❌ 待定：X 最终值（25% 起步）、绑定注册 UX（§10.5）
 
 ## 5. Layer 2：声誉（SBT）✅/🔶
 
 - **Agent 工作史徽章**：S11（ERC-721 + ERC-5192，不可转让）✅ 已实现
-- **Node operator 徽章**：tenure / reliability 等级（铜/银/金）🔶
+- **Node operator 徽章**：tenure / reliability 等级（铜/银/金）🔶（2026-10-07 定 tier 映射：铜 = tenure ≥3 epochs，银 = ≥6，金 = ≥12；与 Layer 0 tier 对齐）
 - 先发后 gate：Phase 1 只记录、不 gate 任何奖励（不跟 bootstrap 打架）✅（原则）
 - 发放挂钩可验证存活信号，**不接受自证** ✅（原则）
 - 未来用途：手续费折扣、relay 目录（RFN-12）排序、治理权重、tenure-weighted 未来分配（§8）
@@ -224,21 +235,21 @@
 - Flow vs Stock：积分是**流量**（赚→花/转 token），SBT 是**存量**（永久累积）。硬捏成一个，得到四不像。
 - 实际只有两种工具，不是三种：积分和 token 是同一东西的不同时期（积分 = TGE 前的 token）。简化空间在叙事，不在合并：**"挖矿赚积分，积分变 token；干得久拿徽章，徽章是身份。"**
 
-❌ 待定：tier 阈值、发放/吊销规则、与 Layer 0 资格的联动
+❌ 待定：发放/吊销规则、与 Layer 0 资格的联动（tier 阈值已定：铜/银/金 = 3+/6+/12+ epochs）
 
-## 6. 算例（假设 epoch 预算 = 1,000,000 points，仅示例）
+## 6. 算例（epoch 预算 = 7,000,000 points，B₀ 已定）
 
 Agent 干了全网 2% work：
 
 | 情形 | points | 说明 |
 | --- | --- | --- |
-| 无节点 | 20,000 | 基准 |
-| 绑定节点，全网绑定率 Q=0 | 25,000 | +25% 满额 |
-| 绑定节点，Q=0.5 | 22,222 | 部分稀释 |
-| 绑定节点，Q=1.0 | 20,000 | 稀释归零 |
+| 无节点 | 140,000 | 基准 |
+| 绑定节点，全网绑定率 Q=0 | 175,000 | +25% 满额 |
+| 绑定节点，Q=0.5 | 155,556 | 部分稀释 |
+| 绑定节点，Q=1.0 | 140,000 | 稀释归零 |
 
-- 上限：50,000（5%）；绑定者 4% work 即触顶（乘数顶不破 cap）✅
-- ⚠️ points 目前无美元价，预算绝对值未定——此阶段任何美元预测都是编造。
+- 上限：350,000（5%）；绑定者 4% work 即触顶（乘数顶不破 cap）✅
+- ⚠️ points 目前无美元价——此阶段任何美元预测都是编造。
 
 ## 7. 谁拿什么（四象限）✅
 
@@ -253,7 +264,7 @@ VPS 纯撸节点（无 work、无 tenure）：零。这是设计，不是缺失�
 
 - 节点 tenure 记入 SBT；未来 TGE 分配时作为权重因子。
 - 现在：只记账，不承诺、不花预算 ✅（原则）
-- 上线前：法务/合规评估后再定细则 ❌
+- 姿态（2026-10-07 定）：去中心化项目，无传统法务流程，不以"等法务"为门槛；机制如实公开记录，r（兑换比例）待定，不做具体经济承诺。
 
 ## 9. 协议明确不奖励的 ✅
 
@@ -281,17 +292,17 @@ VPS 纯撸节点（无 work、无 tenure）：零。这是设计，不是缺失�
 
 ## 10. 未决清单（dev-blocking，按优先级）
 
-1. ❌ **B\_0 绝对值 + 衰减确认**——需经济建模。owner：待定
+1. ✅ **B\_0 + 衰减**（2026-10-07 定）：7M/周，每 4 周 −15%（`B_n = 7M × 0.85^⌊n/4⌋`）。首年约 1.64 亿。
 2. ❌ **X 最终值**（25% 起步，节点数建模后定）。owner：待定
 3. ❌ **Layer 0 参数包**：阶段比例起步值（50/25/10）/ 3 epochs 门槛 / tier 权重（2026-10-07 已压缩为 1×/1.1×/1.25×）/ challenge 协议 / "连续在线"slot 参数与重置策略 / **VPS farm ROI 建模——launch-blocking**（50% 池下必须先证明矿场无利可图才能上线）。owner：待定
-4. ❌ **cap 余量处理**：cap 导致总和 < 预算时，未分配预算销毁 / 滚存 / 重分配三选一。owner：待定
-5. ❌ **绑定注册 UX + attestation 格式**（复用 S10-0 Node ID + verifier 二进制签名方案）。owner：待定
-6. ❌ **SBT tier 阈值 + 发放/吊销规则**。owner：待定
+4. ✅ **cap 余量处理**（2026-10-07 定）：销毁。cap 导致 Σ份额 < 预算时，未分配预算直接不增发（settle 时不写），发行量可预测。
+5. 🔶 **绑定注册 UX + attestation 格式**：机制已定（2026-10-07：agent delegation-1 意向 + verifier assertion-1 确认，不改 signing policy）；UX 与 attestation 具体格式待设计。owner：待定
+6. 🔶 **SBT tier**：阈值已定（2026-10-07）：铜/银/金 = 3+/6+/12+ epochs（与 Layer 0 对齐）；发放/吊销规则待定。owner：待定
 7. ❌ **Layer 0 sunset 治理流程**（谁决议、默认动作、提前终止条件）。owner：待定
-8. ❌ **Tenure-weighted TGE 框架的合规评估**。owner：待定
-9. ❌ **Epoch 时长**（全篇假设 1 周；影响 phase 实际长度、tenure 门槛的时间意义、decay 节奏）。owner：待定
+8. ✅ **Tenure-weighted TGE 姿态**（2026-10-07 定）：去中心化，无传统法务流程；机制公开记录，r 待定，不做具体经济承诺。
+9. ✅ **Epoch 时长**（2026-10-07 定）：7 天。
 10. ❌ **Settler 审查（omission）的 challenge / 强制纳入机制**（agent 可自证被遗漏，但如何强制记账方纳入）。owner：待定
-11. ❌ **TGE 转换公式框架公布**（公式结构先行，比例待法务评估）。owner：待定
+11. 🔶 **TGE 转换公式框架公布**：公式结构 `tokens = X × r × (1+tenure_bonus)` 已定；r（兑换比例）待定——是经济参数未定，不是等谁审批。owner：待定
 12. ❌ **Milestone SBT 类型设计**（S11 扩展："首个 10,000 分""连续 N epoch"等）。owner：待定
 13. ❌ **P0 sink 落地**：Relay ID 注册 burn 的实现依赖（S10-0 namespace + 收费机制）。owner：待定
 14. ❌ **Claim UX 详细设计**：CLI 命令 spec、gas 策略（自付/代付）、网站 Phase 2 范围（只读 dashboard + 发起页）。owner：待定
@@ -330,6 +341,9 @@ VPS 纯撸节点（无 work、无 tenure）：零。这是设计，不是缺失�
 
 ## 11. Changelog
 
+- **v0.21**（2026-10-07）：4 项拍板落字——cap 余量定销毁；绑定机制定（agent delegation-1 意向 + verifier assertion-1 确认，不改 signing policy）；§8 姿态定（去中心化无传统法务流程，不以等法务为门槛，r 待定）；SBT tier 映射定（铜/银/金 = 3+/6+/12+ epochs，与 Layer 0 对齐）。
+- **v0.20**（2026-10-07）：epoch 定 7 天 ✅；B₀ 定 7M/周、每 4 周 −15%（`B_n = 7M × 0.85^⌊n/4⌋`，首年约 1.64 亿），§6 算例同步；新增 P1 任务供给 proposed（官方池 + 自派任务，P2 转开放市场，待 Cursor 论证防刷）；Gas 归属落字（心跳不上链，每周 root 由记账方付，徽章走 EAS 无 gas）。
+- **v0.19**（2026-10-07）：tenure 重置策略定（单 epoch 不达标降一档，连续两 epoch 不达标清零）；Claim UX 增加 Web 版设计（ticket 配对代替连接钱包；"签名 CLI 优先，展示 Web 优先"；CLI 必须可达的约束落字；gas 代付/多身份 UI/deferred claim 待定）；Points 安全补充 Merkle 完整性 vs 真实性说明。
 - **v0.18**（2026-10-07）：tenure-tier 权重压缩至 1×/1.1×/1.25×（最大差距 25%）；新增"连续在线"定义（slot 心跳 + 95% 达标 + 降档/清零重置策略待定）；新增显示层需求（每分钟刷新待结算预估，读写分离）；Points 安全新增"伪造 proof"条（密码学不可伪造，真风险在 settler 与锚点）。
 - **v0.17**（2026-10-07）：5 处机制批注落字——PoSR 绑定机制待重设计（ADR-0009 D7，给三选一）；"node key"残余术语修正为 verifier key；cap 余量 / B₀ / epoch 时长三处 ❌ 就位标注（标出它们是 settle 实现与 farm ROI 建模的前置依赖）。
 - **v0.16**（2026-10-07）：反女巫补充（同机多节点自收敛；不用 IP 反女巫）；共 key 自我惩罚落字（协议按地址记账，无需禁止）。
