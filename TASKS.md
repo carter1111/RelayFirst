@@ -908,9 +908,9 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 |---|---|---|---|---|
 | **L0-HB** | **心跳规则**：`internal/heartbeat`（attestation + sign/verify + **A≠B** `Qualified` + gap 规则）| F1 | 自证被拒；独立 verifier 通过；95%/gap 阈值；**变异验证** | ✅ **done** |
 | **L0-SPLIT** | **两池拆分**：`internal/scoring/pools.go`（`SettleEpoch` + `NodePoolFraction`）| M1 | 50/25/10 phase；无合格节点**烧掉**节点池；确定性 | ✅ **done** |
-| **L0-FEED** | **喂入路径**：把 attestation → `heartbeat.Qualified` → 写 `node_tenure`（verifier 签心跳 + 节点侧落 flag）| L0-HB | 端到端：签→验→达标→写库 | ⬜ todo |
-| **L0-WIRE** | **`settle` 双池接线**：`Finalize` 用 `SettleEpoch`，credit Layer 1 + Layer 0，报告两池 | L0-SPLIT, L0-FEED | 结算含节点 points；balance root 含之；幂等 | ⬜ todo |
-| **L0-M1** | **1.25× 条件化**：`m_i = 1.25` 当且仅当 绑定 ∧ tenure≥3 ∧ **receipts>0** | L0-FEED | 零 receipts 只 1.0× | ⬜ todo |
+| **L0-FEED** | **喂入路径**：把 attestation → `heartbeat.Qualified` → 写 `node_tenure`（verifier 签心跳 + 节点侧落 flag）| L0-HB | 端到端：签→验→达标→写库 | ✅ **done** — `relayfirst heartbeat record/show` + `relayfirst bind`；store `node_bindings` + `NodePool` 源 |
+| **L0-WIRE** | **`settle` 双池接线**：`Finalize` 用 `SettleEpoch`，credit Layer 1 + Layer 0，报告两池 | L0-SPLIT, L0-FEED | 结算含节点 points；平衡 | ✅ **done** — `Finalize` 经 `NodePoolSource` 拆池；entry id 加 scope（`settle:<epoch>:work\|node:<r>`）；`settle` 报 `nodePoints`/`nodePoolPct`。**端到端测试**：节点池真的发出 |
+| **L0-M1** | **1.25× 条件化**：`m_i = 1.25` 当且仅当 绑定 ∧ tenure≥3 ∧ **receipts>0** | L0-FEED | 零 receipts 只 1.0× | ✅ **done** — `scoring.WorkMultiplier`；**证伪测试**：绑+活+**零 receipts** 得 1.0×，有 receipts 得 1.25×；**变异验证** |
 
 **注**：`L0-FEED` 需**两个命令**（verifier 签心跳、节点/运营者落 flag）；`L0-WIRE` 会改 `ScoringSink.Finalize`（保留 `Settle` 路径给未接 Layer 0 的调用方）。
 
