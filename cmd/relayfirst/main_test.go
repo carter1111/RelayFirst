@@ -410,52 +410,44 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
-// TestBalanceRootFromSettled_BindsPointsAndAgent: the settle command's balance root
-// must be a pure function of the settled numbers and the agents, matching the leaf a
-// claim verifies against (MVP.md §6.2b).
-func TestBalanceRootFromSettled_BindsPointsAndAgent(t *testing.T) {
-	settled := map[string]float64{
-		"agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8": 140,
-		"agent:eip155:8453:0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc": 42,
-	}
+// TestBalanceRootFromCumulative_BindsPointsAndAgent: the balance root must be a pure
+// function of the CUMULATIVE totals and the agents, matching the leaf a claim verifies
+// against (MVP.md §6.2b).
+func TestBalanceRootFromCumulative_BindsPointsAndAgent(t *testing.T) {
+	a := "agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+	b := "agent:eip155:8453:0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc"
+	cumulative := map[string]int64{a: 140_000_000_000, b: 42_000_000_000}
 
-	r1, err := balanceRootFromSettled(7, settled)
+	r1, err := balanceRootFromCumulative(7, cumulative)
 	if err != nil {
-		t.Fatalf("balanceRootFromSettled: %v", err)
+		t.Fatalf("balanceRootFromCumulative: %v", err)
 	}
-	r2, err := balanceRootFromSettled(7, settled)
+	r2, err := balanceRootFromCumulative(7, cumulative)
 	if err != nil {
-		t.Fatalf("balanceRootFromSettled (2): %v", err)
+		t.Fatalf("balanceRootFromCumulative (2): %v", err)
 	}
 	if r1 != r2 {
-		t.Error("the balance root must be deterministic for the same settlement")
+		t.Error("the balance root must be deterministic for the same totals")
 	}
 
-	// Changing one agent's points must change the root.
-	moved := map[string]float64{}
-	for k, v := range settled {
-		moved[k] = v
-	}
-	moved["agent:eip155:8453:0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc"] = 43
-	r3, err := balanceRootFromSettled(7, moved)
+	moved := map[string]int64{a: 140_000_000_000, b: 43_000_000_000}
+	r3, err := balanceRootFromCumulative(7, moved)
 	if err != nil {
-		t.Fatalf("balanceRootFromSettled (moved): %v", err)
+		t.Fatalf("balanceRootFromCumulative (moved): %v", err)
 	}
 	if r1 == r3 {
-		t.Error("a different settled total must change the balance root")
+		t.Error("a different cumulative total must change the balance root")
 	}
 
-	// A different epoch must change it too (the epoch is inside the leaf).
-	r4, err := balanceRootFromSettled(8, settled)
+	r4, err := balanceRootFromCumulative(8, cumulative)
 	if err != nil {
-		t.Fatalf("balanceRootFromSettled (epoch): %v", err)
+		t.Fatalf("balanceRootFromCumulative (epoch): %v", err)
 	}
 	if r1 == r4 {
 		t.Error("a different epoch must change the balance root")
 	}
 
-	// And a real claim proof must verify against it.
-	agent, err := merkle.AgentID("agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8")
+	agent, err := merkle.AgentID(a)
 	if err != nil {
 		t.Fatalf("agent id: %v", err)
 	}
@@ -465,13 +457,33 @@ func TestBalanceRootFromSettled_BindsPointsAndAgent(t *testing.T) {
 		t.Fatalf("BalanceProof: %v", err)
 	}
 	if !merkle.Verify(proof) {
-		t.Error("a proof built from the settled totals must verify against a balance root")
+		t.Error("a proof built from the totals must verify against a balance root")
 	}
 }
 
-// TestSettle_EmitsBalanceRoot is the end-to-end for IMP-1: after work is recorded and
-// settled, `relayfirst settle` must emit the balance root a claim is verified against.
-func TestSettle_EmitsBalanceRoot(t *testing.T) {
+// TestBalanceRootFromCumulative_OmitsZeroTotals: an agent with no points has no claim,
+// so it must not appear as an unclaimable leaf.
+func TestBalanceRootFromCumulative_OmitsZeroTotals(t *testing.T) {
+	a := "agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+	b := "agent:eip155:8453:0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc"
+
+	with, err := balanceRootFromCumulative(7, map[string]int64{a: 140_000_000_000, b: 0})
+	if err != nil {
+		t.Fatalf("with zero: %v", err)
+	}
+	without, err := balanceRootFromCumulative(7, map[string]int64{a: 140_000_000_000})
+	if err != nil {
+		t.Fatalf("without zero: %v", err)
+	}
+	if with != without {
+		t.Error("a zero-total agent must not change the balance root")
+	}
+}
+
+// TestSettle_EmitsCumulativeBalanceRoot is the end-to-end for IMP-1: after work is
+// recorded and settled, `relayfirst settle` must emit the balance root a claim is
+// verified against, over CUMULATIVE totals.
+func TestSettle_EmitsCumulativeBalanceRoot(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "s.db")
 
 	db, err := store.Open(dbPath)
@@ -512,8 +524,8 @@ func TestSettle_EmitsBalanceRoot(t *testing.T) {
 		t.Fatalf("settle must emit a balanceRoot, got:\n%s", out)
 	}
 
-	// The emitted root must equal the one recomputed from the settled points, so a
-	// claimant can reproduce what the command printed.
+	// The emitted root must equal the one recomputed from the settled points (which,
+	// after one epoch, are the cumulative totals). A claimant can reproduce it.
 	settled := map[string]float64{}
 	if rows, ok := decoded["points"].([]any); ok {
 		for _, r := range rows {
@@ -521,30 +533,16 @@ func TestSettle_EmitsBalanceRoot(t *testing.T) {
 			settled[m["agentId"].(string)] = m["points"].(float64)
 		}
 	}
-	want, err := balanceRootFromSettled(7, settled)
+	cumulative := map[string]int64{}
+	for a, p := range settled {
+		cumulative[a] = int64(p*scoring.MicroPerPoint + 0.5)
+	}
+	want, err := balanceRootFromCumulative(7, cumulative)
 	if err != nil {
 		t.Fatalf("recompute: %v", err)
 	}
 	if root != want.Hex() {
 		t.Errorf("emitted balanceRoot %s != recomputed %s", root, want.Hex())
-	}
-}
-func TestBalanceRootFromSettled_OmitsZeroTotals(t *testing.T) {
-	with, err := balanceRootFromSettled(7, map[string]float64{
-		"agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8": 140,
-		"agent:eip155:8453:0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc": 0,
-	})
-	if err != nil {
-		t.Fatalf("with zero: %v", err)
-	}
-	without, err := balanceRootFromSettled(7, map[string]float64{
-		"agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8": 140,
-	})
-	if err != nil {
-		t.Fatalf("without zero: %v", err)
-	}
-	if with != without {
-		t.Error("a zero-total agent must not change the balance root")
 	}
 }
 
@@ -596,5 +594,181 @@ func TestStatus_NonTTYHasNoPendingEstimate(t *testing.T) {
 	})
 	if strings.Contains(out, "pending") {
 		t.Errorf("the piped status JSON must not carry a pending estimate, got:\n%s", out)
+	}
+}
+
+// TestClaim_ProducesAVerifyingProof is the IMP-4 core: claim must produce a proof that
+// verifies against the balance root of the requested epoch, over the cumulative total.
+func TestClaim_ProducesAVerifyingProof(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "s.db")
+	seedSettledWork(t, dbPath, 7)
+
+	out := captureStdout(t, func() {
+		if err := runClaim([]string{"--db", dbPath, "--epoch", "7",
+			"--agent", "agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8"}); err != nil {
+			t.Fatalf("claim: %v", err)
+		}
+	})
+
+	var got struct {
+		AgentHash  string   `json:"agentHash"`
+		Epoch      uint64   `json:"epoch"`
+		TotalMicro int64    `json:"totalMicro"`
+		Root       string   `json:"root"`
+		Leaf       string   `json:"leaf"`
+		Index      int      `json:"index"`
+		Proof      []string `json:"proof"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("claim output must be JSON, got:\n%s\nerr: %v", out, err)
+	}
+	if strings.Contains(out, "privateKey") || strings.Contains(out, "mnemonic") {
+		t.Errorf("a claim proof must never carry key material, got:\n%s", out)
+	}
+
+	agentHash, err := merkle.IDFromHex(got.AgentHash)
+	if err != nil {
+		t.Fatalf("agentHash: %v", err)
+	}
+	leaf, _ := merkle.IDFromHex(got.Leaf)
+	root, _ := merkle.IDFromHex(got.Root)
+	siblings := make([]merkle.Hash, 0, len(got.Proof))
+	for _, s := range got.Proof {
+		h, err := merkle.IDFromHex(s)
+		if err != nil {
+			t.Fatalf("proof sibling %q: %v", s, err)
+		}
+		siblings = append(siblings, h)
+	}
+	_ = agentHash
+
+	proof := merkle.Proof{Leaf: leaf, Index: got.Index, Siblings: siblings, Root: root, Width: nextPow2For(len(siblings) + 1)}
+	if !merkle.Verify(proof) {
+		t.Error("the claim proof must verify against the root it carries")
+	}
+
+	// And the leaf must be the balance leaf for that cumulative total.
+	wantLeaf, err := merkle.BalanceLeaf(agentHash, got.TotalMicro, got.Epoch)
+	if err != nil {
+		t.Fatalf("BalanceLeaf: %v", err)
+	}
+	if wantLeaf != leaf {
+		t.Errorf("claim leaf %s is not BalanceLeaf(agent, total, epoch) %s", leaf, wantLeaf)
+	}
+}
+
+// TestClaim_NoKey_RefusesToGuessAmongSeveralAgents: with more than one settled agent
+// and no --agent/--key, claim must refuse rather than pick one.
+func TestClaim_NoKey_RefusesToGuessAmongSeveralAgents(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "s.db")
+	seedSettledWork(t, dbPath, 7) // two agents
+
+	err := runClaim([]string{"--db", dbPath, "--epoch", "7"})
+	if err == nil {
+		t.Fatal("claim must refuse to guess which of several agents to claim for")
+	}
+	if !strings.Contains(err.Error(), "--agent") {
+		t.Errorf("the error should tell the user to pass --agent or --key, got: %v", err)
+	}
+}
+
+// TestClaim_UnsettledEpochIsAnError: claiming an epoch with no settled points says so,
+// rather than emitting a proof over nothing.
+func TestClaim_UnsettledEpochIsAnError(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "s.db")
+	seedSettledWork(t, dbPath, 7)
+
+	if err := runClaim([]string{"--db", dbPath, "--epoch", "999"}); err == nil {
+		t.Fatal("claiming an epoch with no settled points must be an error")
+	}
+}
+
+// seedSettledWork records work for two agents and settles the epoch, so claim has
+// points to prove.
+func seedSettledWork(t *testing.T, dbPath string, epoch uint64) {
+	t.Helper()
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	ledgers := store.NewScoringLedgers(db)
+	agents := []string{
+		"agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+		"agent:eip155:8453:0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+	}
+	for i, a := range agents {
+		if _, err := ledgers.Work.Record(scoring.WorkRecord{
+			ReceiptID:   fmt.Sprintf("0x%064x", i+1),
+			AgentID:     a,
+			Epoch:       epoch,
+			Work:        float64(10 * (i + 1)),
+			ArtifactKey: fmt.Sprintf("sha256:%02x", i+1),
+			RecordedAt:  time.Now(),
+		}); err != nil {
+			t.Fatalf("Record work: %v", err)
+		}
+	}
+	if _, err := (&mining.ScoringSink{
+		Work:   ledgers.Work,
+		Points: ledgers.Points,
+		Clock:  func() time.Time { return time.Unix(1791090000, 0) },
+	}).Finalize(epoch, time.Now()); err != nil {
+		t.Fatalf("settle: %v", err)
+	}
+	_ = db.Close()
+}
+
+// TestClaim_ProvesCumulativeAcrossEpochs guards the semantic that RelayPoints.sol
+// depends on: a claim proves the total earned BY an epoch, not one epoch's award. If a
+// claim for epoch 7 showed only epoch 7's points, an on-chain claim would SET the total
+// to that and erase epoch 5 -- the exact bug a per-epoch total would cause.
+func TestClaim_ProvesCumulativeAcrossEpochs(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "s.db")
+	const agent = "agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	ledgers := store.NewScoringLedgers(db)
+	for _, e := range []uint64{5, 7} {
+		if _, err := ledgers.Work.Record(scoring.WorkRecord{
+			ReceiptID:   fmt.Sprintf("0x%064x", e),
+			AgentID:     agent,
+			Epoch:       e,
+			Work:        10,
+			ArtifactKey: fmt.Sprintf("sha256:%02x", e),
+			RecordedAt:  time.Now(),
+		}); err != nil {
+			t.Fatalf("Record work: %v", err)
+		}
+	}
+	sink := &mining.ScoringSink{Work: ledgers.Work, Points: ledgers.Points, Clock: func() time.Time { return time.Unix(1791090000, 0) }}
+	for _, e := range []uint64{5, 7} {
+		if _, err := sink.Finalize(e, time.Now()); err != nil {
+			t.Fatalf("settle %d: %v", e, err)
+		}
+	}
+	want5 := ledgers.Points.EpochBalance(agent, 5)
+	want7 := ledgers.Points.EpochBalance(agent, 7)
+	_ = db.Close()
+
+	out := captureStdout(t, func() {
+		if err := runClaim([]string{"--db", dbPath, "--epoch", "7", "--agent", agent}); err != nil {
+			t.Fatalf("claim: %v", err)
+		}
+	})
+	var got struct {
+		Total float64 `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("claim JSON: %v", err)
+	}
+	// The total must be epoch 5 + epoch 7, not epoch 7 alone.
+	if diff := got.Total - (want5 + want7); diff > 1e-6 || diff < -1e-6 {
+		t.Errorf("claim total = %v, want cumulative %v (epoch5 %v + epoch7 %v)", got.Total, want5+want7, want5, want7)
+	}
+	if want5 <= 0 || got.Total <= want7 {
+		t.Errorf("epoch 5's points (%v) must be included in the total (%v)", want5, got.Total)
 	}
 }

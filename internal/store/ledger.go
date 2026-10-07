@@ -242,6 +242,48 @@ func (l *SQLPointsLedger) AgentCount() int {
 	return n
 }
 
+// CumulativeMicro returns each agent's points summed over every epoch up to and
+// including maxEpoch, in micro-points.
+//
+// # Why the balance root uses cumulative totals, not this epoch's
+//
+// A claim proves "this agent earned N by this epoch" and SETS the on-chain total to N
+// (contracts/RelayPoints.sol). N must therefore be cumulative through maxEpoch, not one
+// epoch's award: a per-epoch N would set the total to just that epoch's share and erase
+// every earlier epoch the agent did not happen to claim. The contract's own comment
+// makes this the reason a missed claim costs nothing.
+//
+// The result is keyed by agent_id and carries integers, because the leaf's total is a
+// uint256 and a float would round differently here and on-chain.
+func (l *SQLPointsLedger) CumulativeMicro(maxEpoch uint64) (map[string]int64, error) {
+	rows, err := l.db.Handle().Query(
+		`SELECT agent_id, SUM(micro_points) FROM point_entries WHERE epoch <= ? GROUP BY agent_id`,
+		maxEpoch,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: cumulative points: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]int64{}
+	for rows.Next() {
+		var (
+			agent string
+			micro sql.NullInt64
+		)
+		if err := rows.Scan(&agent, &micro); err != nil {
+			return nil, fmt.Errorf("store: scan cumulative points: %w", err)
+		}
+		if micro.Valid && micro.Int64 > 0 {
+			out[agent] = micro.Int64
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterate cumulative points: %w", err)
+	}
+	return out, nil
+}
+
 // SQLWorkLedger is a durable scoring.WorkLedger.
 //
 // It is the settlement input and the audit trail (D1): an epoch's points are derived

@@ -567,8 +567,10 @@ epoch n 结束时（结算步骤）：
 
 | 名称 | 叶 | 输入 | 用途 |
 |---|---|---|---|
-| **balance root** | `keccak256(agentId ‖ total_micro ‖ epoch)` | 某 epoch 的 **settled 数字**（§6.2 结算的输出）| 用户凭 proof **claim 积分**（`RelayPoints.sol` 即用此公式）|
+| **balance root** | `keccak256(agentId ‖ total_micro ‖ epoch)` | 某 epoch 的 **累计** settled 数字（**截至当期的 lifetime 和**）| 用户凭 proof **claim 积分**（`RelayPoints.sol` 即用此公式）|
 | **receipt root** | `receiptId` | 某 epoch 的**回执集** | 证明"我的回执**在** epoch N 里"（**包含性**）|
+
+- **balance root** 的 `total` 是**累计**（"earned N **by** epoch N"），**不是当期增量**。原因：claim **设定**链上累计 total（SET 非累加），若传当期增量会把 total 抹成当期权额、**丢掉之前未 claim 的 epoch**。累计 → **漏 claim 不丢分**（`RelayPoints.sol` 的设计）。
 
 - **balance root** 在 `relayfirst settle` 后由 settled map 确定性计算（agent 排序；含 epoch → 防跨期重放）。
 - **receipt root** 是 §S7 已定义的 `mapping(epoch => receiptsRoot)`，用于**发现**遗漏。

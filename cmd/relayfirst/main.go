@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/relayfirst/relayfirst/internal/agentid"
 	"github.com/relayfirst/relayfirst/internal/anchor"
 	"github.com/relayfirst/relayfirst/internal/config"
 	"github.com/relayfirst/relayfirst/internal/llm"
@@ -57,6 +58,9 @@ Usage:
                                          source, grouped by claimed content hash
   relayfirst settle [--epoch <n>]         Settle an epoch's work into points (run once
                                          per epoch; idempotent)
+  relayfirst claim [--agent 0x…] [--epoch <n>] [--to 0x…]
+                                         Build a points-claim proof for an agent
+                                         (read-only; no key, no chain). Settle first.
   relayfirst session <open|close|show|grant>
                                          Emit signed A2A session events, or sign a
                                          delegation grant authorizing a session key
@@ -209,6 +213,9 @@ func run(args []string) error {
 
 	case "settle":
 		return runSettle(args[1:])
+
+	case "claim":
+		return runClaim(args[1:])
 
 	case "observations":
 		return runObservations(args[1:])
@@ -941,11 +948,17 @@ func runSettle(args []string) error {
 		return err
 	}
 
-	// Build the epoch's BALANCE root from the settled numbers (MVP.md §6.2b). This is a
-	// different root from the receipt root `anchor root` produces: a claim is verified
-	// against this one. It is built here, from the same `settled` map that was just
-	// credited, so the root and the credited points cannot disagree.
-	balanceRoot, err := balanceRootFromSettled(epoch, settled)
+	// Build the epoch's BALANCE root from each agent's CUMULATIVE total through this
+	// epoch (MVP.md §6.2b). Not this epoch's award: a claim proves "earned N by epoch
+	// N" and SETS the on-chain total to N (contracts/RelayPoints.sol), so N must be
+	// cumulative or a claim would erase every earlier epoch the agent did not claim.
+	// Reading from the points ledger (which now holds this epoch too) makes the root
+	// and the credited points the same numbers.
+	cumulative, err := store.NewPointsLedger(db).CumulativeMicro(epoch)
+	if err != nil {
+		return err
+	}
+	balanceRoot, err := balanceRootFromCumulative(epoch, cumulative)
 	if err != nil {
 		return err
 	}
@@ -981,6 +994,145 @@ func runSettle(args []string) error {
 			"budget, the per-agent cap withheld the surplus (that direction is safe). " +
 			"balanceRoot is the Merkle root a points claim is verified against (MVP.md §6.2b).",
 	})
+}
+
+// runClaim produces a points-claim proof for an agent (IMP-4, MVP.md §6.2b).
+//
+// # Why this needs no key
+//
+// It reads the local ledger and builds a Merkle proof. Producing a proof is not signing,
+// so no private key is involved and nothing here can spend an identity. The on-chain
+// claim is a separate, later step (TGE) that DOES need a wallet signature; this command
+// only produces the proof that step will consume.
+//
+// # It proves the CUMULATIVE total, not one epoch's
+//
+// contracts/RelayPoints.sol SETS the total from the proof, and a claim that skipped an
+// epoch must not lose that epoch's points, so the leaf's total is cumulative through the
+// requested epoch. A per-epoch total would erase everything earned earlier.
+//
+// # The agent defaults to the local key, if there is one
+//
+// With --key (or RELAYFIRST_PRIVATE_KEY) the agent is derived from it, matching by
+// address rather than by a name the ledger would have to trust. With no key and no
+// --agent, it defaults to the single agent the ledger knows, and refuses if there are
+// several, because guessing which identity to prove would be a way to claim the wrong
+// one.
+func runClaim(args []string) error {
+	f, err := parseFlags(args)
+	if err != nil {
+		return err
+	}
+
+	db, err := store.Open(f.get("db", "./relayfirst.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	epoch := scoring.EpochOf(time.Now())
+	if raw := f.get("epoch", ""); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &epoch); err != nil {
+			return fmt.Errorf("--epoch must be a number, got %q", raw)
+		}
+	}
+
+	ledger := store.NewPointsLedger(db)
+	cumulative, err := ledger.CumulativeMicro(epoch)
+	if err != nil {
+		return err
+	}
+
+	agent, err := resolveClaimAgent(f, cumulative)
+	if err != nil {
+		return err
+	}
+
+	micro, ok := cumulative[agent]
+	if !ok || micro <= 0 {
+		return fmt.Errorf("agent %s has no settled points through epoch %d; run `relayfirst settle --epoch %d` first (or it did not mine)", agent, epoch, epoch)
+	}
+
+	agentHash, err := merkle.AgentID(agent)
+	if err != nil {
+		return err
+	}
+
+	// Rebuild the whole tree so the proof is against the same leaves the root was built
+	// from. Merkle.BalanceProof orders the leaves canonically, which is what makes the
+	// proof verify against the root `settle` printed.
+	totals := make(map[merkle.Hash]int64, len(cumulative))
+	for a, m := range cumulative {
+		if m <= 0 {
+			continue
+		}
+		h, err := merkle.AgentID(a)
+		if err != nil {
+			return fmt.Errorf("agent id %q: %w", a, err)
+		}
+		totals[h] = m
+	}
+	proof, err := merkle.BalanceProof(epoch, totals, agentHash)
+	if err != nil {
+		return err
+	}
+
+	out := map[string]any{
+		"agentId":    agent,
+		"agentHash":  agentHash.Hex(),
+		"epoch":      epoch,
+		"totalMicro": micro,
+		"total":      float64(micro) / scoring.MicroPerPoint,
+		"root":       proof.Root.Hex(),
+		"leaf":       proof.Leaf.Hex(),
+		"index":      proof.Index,
+		"proof":      hashStrings(proof.Siblings),
+		"note": "this is a claim PROOF over the cumulative total through this epoch; it is " +
+			"not a claim. Producing it needs no key. Submitting it on-chain is a later, " +
+			"signed step (TGE).",
+	}
+	if to := f.get("to", ""); to != "" {
+		out["to"] = to
+	}
+	return printJSON(out)
+}
+
+// resolveClaimAgent picks which agent a claim is for, from --agent, --key, or the sole
+// agent in the ledger. It refuses to guess when there are several.
+func resolveClaimAgent(f *flags, cumulative map[string]int64) (string, error) {
+	if raw := f.get("agent", ""); raw != "" {
+		if _, err := agentid.Parse(raw); err != nil {
+			return "", fmt.Errorf("--agent %q: %w", raw, err)
+		}
+		return raw, nil
+	}
+
+	if key := keyFromFlags(f); key != "" {
+		return agentIDFromKey(key, 8453)
+	}
+
+	agents := make([]string, 0, len(cumulative))
+	for a := range cumulative {
+		agents = append(agents, a)
+	}
+	sort.Strings(agents)
+	switch len(agents) {
+	case 0:
+		return "", errors.New("no settled agents in this store; nothing to claim (run `relayfirst settle` first)")
+	case 1:
+		return agents[0], nil
+	default:
+		return "", fmt.Errorf("this store has %d agents; pass --agent or --key to say which one to claim", len(agents))
+	}
+}
+
+// hashStrings renders hashes as lowercase 0x-hex strings for JSON output.
+func hashStrings(hs []merkle.Hash) []string {
+	out := make([]string, 0, len(hs))
+	for _, h := range hs {
+		out = append(out, h.Hex())
+	}
+	return out
 }
 
 // reportVerdict prints the outcome of scoring one receipt.
@@ -1495,20 +1647,19 @@ func ledgerTotal(entries []scoring.Entry) float64 {
 	return total
 }
 
-// balanceRootFromSettled builds an epoch's balance Merkle root from the settled points
-// (MVP.md §6.2b): the root a points claim is verified against.
+// balanceRootFromCumulative builds an epoch's balance Merkle root from agents'
+// CUMULATIVE points through that epoch (MVP.md §6.2b): the root a points claim is
+// verified against.
 //
-// It converts each agent's float total to an integer micro-count, because the leaf
-// carries `uint256 total` and a float would round differently here and on-chain. The
-// conversion is the same one the points ledger uses (`MicroPerPoint`), so a claimed
-// total is exactly the credited total.
+// The totals are already integers in micro-points (the points ledger stores
+// micro_points), so no float rounding happens here -- which is the point, because the
+// leaf carries a uint256 total that must match on-chain exactly.
 //
-// An agent whose settled total rounds to zero is omitted: it has no claim to make, and
-// including a zero leaf would put an unclaimable entry in the tree.
-func balanceRootFromSettled(epoch uint64, settled map[string]float64) (merkle.Hash, error) {
-	totals := make(map[merkle.Hash]int64, len(settled))
-	for agent, points := range settled {
-		micro := int64(points*scoring.MicroPerPoint + 0.5)
+// An agent with no points through this epoch is absent from the input and has no leaf:
+// it has no claim to make, and a zero leaf would be an unclaimable entry.
+func balanceRootFromCumulative(epoch uint64, cumulativeMicro map[string]int64) (merkle.Hash, error) {
+	totals := make(map[merkle.Hash]int64, len(cumulativeMicro))
+	for agent, micro := range cumulativeMicro {
 		if micro <= 0 {
 			continue
 		}
