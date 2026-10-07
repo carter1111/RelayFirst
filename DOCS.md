@@ -103,6 +103,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/layer0-liveness-decision.md`](docs/notes/layer0-liveness-decision.md) | — | **规划**（→ planning） | **Layer 0 存活测量决策简报（Q1）**：A/B/C 三选项代价 + farm ROI 首算 + Q1/X/r 耦合 | **待裁决** |
 | [`docs/notes/layer0-heartbeat-proposal.md`](docs/notes/layer0-heartbeat-proposal.md) | — | **规划**（→ planning） | **Layer 0 心跳协议提案（Q1=A）**：不新增 domain（已核实）、存储/阈值/settle 接线可做；**❌ 伪造/自证隐患（F1/F2/F3）+ 1.25× 重审（M1/M2）待定** | **待批** |
 | [`docs/notes/incentive-v1-baseline.md`](docs/notes/incentive-v1-baseline.md) | — | **规划**（→ planning） | **incentive v1 基线**：SBT 规则 / sunset / sink / claim UX 的**可上线最小版 + 升级路径**；⚠️ sink 前提 = 账本支持 burn | 设计（待批）|
+| [`docs/notes/status-map.md`](docs/notes/status-map.md) | — | **规划**（→ planning） | **状态地图**：到 **UAT/上线**还差什么 —— **三条基础线**（判据 / 激励 / 身份）+ 今天能跑到哪 | 每次推进后 |
 | [`docs/notes/l0-mvp-wording-draft.md`](docs/notes/l0-mvp-wording-draft.md) | — | **规划**（→ planning） | **L0-1/L0-2 `MVP.md` 措辞稿**（两 root 命名 + 双池/phase）：**待批准，未应用** | 待批 |
 | [`docs/mvp-2.0-proposal.md`](docs/mvp-2.0-proposal.md) | 611 | **决策依据** | **MVP 2.0 提案（已 accepted）** —— 论证过程；范围权威在 `MVP.md` v2.0 | 已归档（合并完成） |
 | [`docs/archive/mvp-1.0.md`](docs/archive/mvp-1.0.md) | 884 | **归档** | **MVP 1.0 原文逐字副本**（SHA-256 `259469ad…`）—— 仓库无 git 历史，故显式归档 | 不再更新 |
