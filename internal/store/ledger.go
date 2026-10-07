@@ -357,6 +357,31 @@ func (l *SQLWorkLedger) Totals(epoch uint64) (map[string]float64, error) {
 	return out, nil
 }
 
+// Counts returns the number of work records per agent in an epoch (the M1 gate input).
+func (l *SQLWorkLedger) Counts(epoch uint64) (map[string]int, error) {
+	rows, err := l.db.Handle().Query(
+		`SELECT agent_id, COUNT(*) FROM work_records WHERE epoch = ? GROUP BY agent_id`, epoch,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: work counts: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]int{}
+	for rows.Next() {
+		var agent string
+		var n int
+		if err := rows.Scan(&agent, &n); err != nil {
+			return nil, fmt.Errorf("store: scan work count: %w", err)
+		}
+		out[agent] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterate work counts: %w", err)
+	}
+	return out, nil
+}
+
 // ForAgent returns one agent's records for an epoch, in the order recorded.
 func (l *SQLWorkLedger) ForAgent(agentID string, epoch uint64) ([]scoring.WorkRecord, error) {
 	rows, err := l.db.Handle().Query(`

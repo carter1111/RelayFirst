@@ -110,7 +110,6 @@ func (l *SQLTenureLedger) AllTenures(maxEpoch uint64) (map[string]int, error) {
 }
 
 // flags reads a node's qualified flags in ascending epoch order.
-//
 // It selects the whole history rather than a window: the reset rule makes the count
 // depend on consecutive misses, and a window that began mid-streak would compute a
 // different tenure than the node actually has.

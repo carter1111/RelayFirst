@@ -28,6 +28,7 @@ import (
 	"github.com/relayfirst/relayfirst/internal/agentid"
 	"github.com/relayfirst/relayfirst/internal/anchor"
 	"github.com/relayfirst/relayfirst/internal/config"
+	"github.com/relayfirst/relayfirst/internal/heartbeat"
 	"github.com/relayfirst/relayfirst/internal/llm"
 	"github.com/relayfirst/relayfirst/internal/merkle"
 	"github.com/relayfirst/relayfirst/internal/mining"
@@ -37,6 +38,7 @@ import (
 	"github.com/relayfirst/relayfirst/internal/scoring"
 	"github.com/relayfirst/relayfirst/internal/sqlite"
 	"github.com/relayfirst/relayfirst/internal/store"
+	"github.com/relayfirst/relayfirst/internal/tenure"
 	"github.com/relayfirst/relayfirst/internal/term"
 	"github.com/relayfirst/relayfirst/internal/verification"
 )
@@ -66,6 +68,9 @@ Usage:
   relayfirst claim [--agent 0x…] [--epoch <n>] [--to 0x…]
                                          Build a points-claim proof for an agent
                                          (read-only; no key, no chain). Settle first.
+  relayfirst bind --node <nodeId>        Bind this agent to a node (once), enabling the
+                                         1.25x multiplier when the node is reliable
+  relayfirst heartbeat <record|show>     Record/read Layer 0 liveness attestations
   relayfirst session <open|close|show|grant>
                                          Emit signed A2A session events, or sign a
                                          delegation grant authorizing a session key
@@ -221,6 +226,12 @@ func run(args []string) error {
 
 	case "claim":
 		return runClaim(args[1:])
+
+	case "bind":
+		return runBind(args[1:])
+
+	case "heartbeat":
+		return runHeartbeat(args[1:])
 
 	case "observations":
 		return runObservations(args[1:])
@@ -947,7 +958,11 @@ func runSettle(args []string) error {
 	defer db.Close()
 
 	ledgers := store.NewScoringLedgers(db)
-	sink := &mining.ScoringSink{Work: ledgers.Work, Points: ledgers.Points}
+	// The node pool source supplies the Layer 0 inputs (tenure + bindings). With it set,
+	// Finalize splits the budget into a work pool and a node pool (MVP.md §6.2c); without
+	// it, the whole budget goes to work.
+	nodePool := store.NewNodePool(store.NewTenureLedger(db), store.NewBindingLedger(db))
+	sink := &mining.ScoringSink{Work: ledgers.Work, Points: ledgers.Points, Nodes: nodePool}
 
 	settled, err := sink.Finalize(epoch, time.Now())
 	if err != nil {
@@ -988,9 +1003,14 @@ func runSettle(args []string) error {
 		total += settled[a]
 	}
 
-	return printJSON(map[string]any{
+	// The node pool is reported separately, since it is a different layer and a different
+	// recipient set (node ids, which may include agents but need not).
+	nodePayouts, nodeTotal := nodePointsFor(db, epoch)
+
+	out := map[string]any{
 		"epoch":         epoch,
 		"budget":        scoring.EpochBudget(epoch),
+		"nodePoolPct":   scoring.NodePoolFraction(epoch),
 		"settledAgents": len(rows),
 		"settledTotal":  total,
 		"balanceRoot":   balanceRoot.Hex(),
@@ -999,7 +1019,60 @@ func runSettle(args []string) error {
 			"epoch: re-running this command writes nothing new. Where the total is below the " +
 			"budget, the per-agent cap withheld the surplus (that direction is safe). " +
 			"balanceRoot is the Merkle root a points claim is verified against (MVP.md §6.2b).",
-	})
+	}
+	if len(nodePayouts) > 0 {
+		out["nodePoints"] = nodePayouts
+		out["nodeTotal"] = nodeTotal
+	}
+	return printJSON(out)
+}
+
+// nodePointsFor reads the Layer 0 points credited this epoch, per node, for reporting.
+//
+// It reads the points ledger rather than recomputing the split: the ledger is the record
+// of what was actually credited, and a second computation could disagree with it. Node
+// entries carry the "settle:<epoch>:node:<node>" id.
+func nodePointsFor(db *store.DB, epoch uint64) ([]nodePointRow, float64) {
+	ledger := store.NewPointsLedger(db)
+	var (
+		rows  []nodePointRow
+		total float64
+	)
+	for _, e := range ledger.Entries() {
+		if e.Epoch != epoch {
+			continue
+		}
+		if _, scope, ok := parseSettlementID(e.ReceiptID); !ok || scope != "node" {
+			continue
+		}
+		rows = append(rows, nodePointRow{NodeID: e.AgentID, Points: e.Points})
+		total += e.Points
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].NodeID < rows[j].NodeID })
+	return rows, total
+}
+
+// nodePointRow is one Layer 0 entry in the settle report: a node's settled points.
+//
+// (Wording note: the A5 compliance guard flags currency-adjacent words like "payout" near
+// points, and it is right to -- points are not payments. This is an accounting entry.)
+type nodePointRow struct {
+	NodeID string  `json:"nodeId"`
+	Points float64 `json:"points"`
+}
+
+// parseSettlementID splits a "settle:<epoch>:<scope>:<recipient>" id, reporting whether it
+// was one.
+//
+// It uses SplitN with 4, not Split: the recipient is an agent id like
+// "agent:eip155:8453:0x...", which contains colons of its own. A plain Split would shatter
+// it into many parts and every node entry would fail to parse.
+func parseSettlementID(id string) (epochPart, scope string, ok bool) {
+	parts := strings.SplitN(id, ":", 4)
+	if len(parts) != 4 || parts[0] != "settle" {
+		return "", "", false
+	}
+	return parts[1], parts[2], true
 }
 
 // runClaim produces a points-claim proof for an agent (IMP-4, MVP.md §6.2b).
@@ -1139,6 +1212,242 @@ func hashStrings(hs []merkle.Hash) []string {
 		out = append(out, h.Hex())
 	}
 	return out
+}
+
+// runBind records a one-time PoSR binding of this agent to a node (incentive.md §4).
+//
+// # Why it needs a key
+//
+// The agent id is derived from the key, so an agent can only bind itself -- an identity
+// chosen independently would let someone bind an agent they do not control. The node
+// side's agreement is a separate message (the verifier's, via heartbeat recording); this
+// command records only the agent's half, which is the "one-binding-per-identity" fact the
+// settlement reads.
+func runBind(args []string) error {
+	f, err := parseFlags(args)
+	if err != nil {
+		return err
+	}
+
+	nodeID := f.get("node", "")
+	if nodeID == "" {
+		return errors.New("bind requires --node <nodeId> (the node this agent's work is submitted through)")
+	}
+	if _, err := agentid.Parse(nodeID); err != nil {
+		return fmt.Errorf("--node: %w", err)
+	}
+
+	key := keyFromFlags(f)
+	if key == "" {
+		return errors.New("bind requires a key (--key or RELAYFIRST_PRIVATE_KEY): the binding is signed by the agent's own identity")
+	}
+	agentID, err := agentIDFromKey(key, 8453)
+	if err != nil {
+		return err
+	}
+
+	db, err := store.Open(f.get("db", "./relayfirst.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	epoch := scoring.EpochOf(time.Now())
+	if raw := f.get("epoch", ""); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &epoch); err != nil {
+			return fmt.Errorf("--epoch must be a number, got %q", raw)
+		}
+	}
+
+	if err := store.NewBindingLedger(db).Bind(agentID, nodeID, epoch, time.Now()); err != nil {
+		return err
+	}
+	return printJSON(map[string]any{
+		"agentId": agentID,
+		"nodeId":  nodeID,
+		"epoch":   epoch,
+		"note": "one binding per identity. The 1.25x multiplier also requires the node to " +
+			"reach the tenure floor AND this agent to produce receipts (M1).",
+	})
+}
+
+// runHeartbeat records and reads Layer 0 liveness attestations (Q1=A, F1).
+//
+// Subcommands:
+//
+//	record  a node OPERATOR logs heartbeats it received, or a VERIFIER signs them
+//	show    prints a node's qualification for an epoch
+func runHeartbeat(args []string) error {
+	f, err := parseFlags(args)
+	if err != nil {
+		return err
+	}
+	if len(args) == 0 {
+		return errors.New("heartbeat requires a subcommand: record | show")
+	}
+
+	switch args[0] {
+	case "record":
+		return runHeartbeatRecord(f)
+	case "show":
+		return runHeartbeatShow(f)
+	default:
+		return fmt.Errorf("unknown heartbeat action %q (want record or show)", args[0])
+	}
+}
+
+// runHeartbeatRecord ingests signed heartbeats for an epoch and, if the node qualifies,
+// writes the tenure flag.
+//
+// It takes either:
+//
+//   - --sign-heartbeats: a VERIFIER signs one attestation per slot with its key, for the
+//     node named by --node. This is the production path; the verifier is a separate party.
+//   - --attestations <file>: a JSON array of already-signed heartbeats, which the node's
+//     operator collected. Used when the verifier signs elsewhere.
+//
+// The A != B check runs on whichever path, via heartbeat.Qualified, so a verifier key that
+// IS the node's operator is refused here just as it is in the library.
+func runHeartbeatRecord(f *flags) error {
+	nodeID := f.get("node", "")
+	if nodeID == "" {
+		return errors.New("heartbeat record requires --node <nodeId>")
+	}
+	nodeAddr, err := heartbeat.OperatorAddress(nodeID)
+	if err != nil {
+		return fmt.Errorf("--node: %w", err)
+	}
+
+	epoch := scoring.EpochOf(time.Now())
+	if raw := f.get("epoch", ""); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &epoch); err != nil {
+			return fmt.Errorf("--epoch must be a number, got %q", raw)
+		}
+	}
+	spec := heartbeat.DefaultSpec()
+
+	var atts []heartbeat.Attestation
+	switch {
+	case f.get("sign-heartbeats", "") != "":
+		key := keyFromFlags(f)
+		if key == "" {
+			return errors.New("--sign-heartbeats requires a verifier key (--key or RELAYFIRST_PRIVATE_KEY)")
+		}
+		verifierID, err := agentIDFromKey(key, 8453)
+		if err != nil {
+			return err
+		}
+		// Sign every slot the operator reports as seen. --slots lists them; the default is
+		// a fully-online epoch, which is the honest input for a node that was up.
+		slots, err := slotsArg(f, spec)
+		if err != nil {
+			return err
+		}
+		for _, slot := range slots {
+			a := heartbeat.Attestation{NodeID: nodeID, Epoch: epoch, Slot: slot, VerifierID: verifierID}
+			if err := a.Sign(key, 8453); err != nil {
+				return err
+			}
+			atts = append(atts, a)
+		}
+
+	case f.get("attestations", "") != "":
+		raw, err := os.ReadFile(f.get("attestations", ""))
+		if err != nil {
+			return fmt.Errorf("read attestations: %w", err)
+		}
+		if err := json.Unmarshal(raw, &atts); err != nil {
+			return fmt.Errorf("parse attestations: %w", err)
+		}
+
+	default:
+		return errors.New("heartbeat record needs --sign-heartbeats (verifier signs) or --attestations <file>")
+	}
+
+	qualified, err := heartbeat.Qualified(nodeAddr, atts, spec)
+	if err != nil {
+		return err
+	}
+
+	db, err := store.Open(f.get("db", "./relayfirst.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if _, err := store.NewTenureLedger(db).Record(nodeID, epoch, qualified, time.Now()); err != nil {
+		return err
+	}
+
+	return printJSON(map[string]any{
+		"nodeId":    nodeID,
+		"epoch":     epoch,
+		"attested":  len(atts),
+		"qualified": qualified,
+		"spec": map[string]any{
+			"slotsPerEpoch": spec.SlotsPerEpoch,
+			"requiredPct":   spec.RequiredOnline,
+			"maxGap":        spec.MaxGap,
+		},
+	})
+}
+
+// runHeartbeatShow prints a node's tenure and its qualification for an epoch.
+func runHeartbeatShow(f *flags) error {
+	nodeID := f.get("node", "")
+	if nodeID == "" {
+		return errors.New("heartbeat show requires --node <nodeId>")
+	}
+	if _, err := agentid.Parse(nodeID); err != nil {
+		return fmt.Errorf("--node: %w", err)
+	}
+
+	epoch := scoring.EpochOf(time.Now())
+	if raw := f.get("epoch", ""); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &epoch); err != nil {
+			return fmt.Errorf("--epoch must be a number, got %q", raw)
+		}
+	}
+
+	db, err := store.Open(f.get("db", "./relayfirst.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	tl := store.NewTenureLedger(db)
+	state, err := tl.Tenure(nodeID, epoch)
+	if err != nil {
+		return err
+	}
+	return printJSON(map[string]any{
+		"nodeId":     nodeID,
+		"epoch":      epoch,
+		"tenure":     state.Tenure,
+		"tier":       tenure.Tier(state.Tenure),
+		"eligible":   state.Tenure >= tenure.MinTenure,
+		"minTenure":  tenure.MinTenure,
+		"missStreak": state.MissStreak,
+	})
+}
+
+// slotsArg parses --slots "a,b,c" into slot indices, or defaults to a fully-attested epoch.
+func slotsArg(f *flags, spec heartbeat.Spec) ([]uint32, error) {
+	raw := f.get("slots", "")
+	slots := make([]uint32, 0, spec.SlotsPerEpoch)
+	if raw == "" {
+		for s := 0; s < spec.SlotsPerEpoch; s++ {
+			slots = append(slots, uint32(s))
+		}
+		return slots, nil
+	}
+	for _, part := range strings.Split(raw, ",") {
+		var n uint32
+		if _, err := fmt.Sscanf(strings.TrimSpace(part), "%d", &n); err != nil {
+			return nil, fmt.Errorf("--slots %q: each value must be a slot number", part)
+		}
+		slots = append(slots, n)
+	}
+	return slots, nil
 }
 
 // reportVerdict prints the outcome of scoring one receipt.

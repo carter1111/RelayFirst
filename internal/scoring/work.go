@@ -61,6 +61,13 @@ type WorkLedger interface {
 	// ForAgent returns one agent's work records for an epoch, in record order, for audit.
 	ForAgent(agentID string, epoch uint64) ([]WorkRecord, error)
 
+	// Counts returns the number of work records per agent in an epoch.
+	//
+	// It is distinct from Totals because the M1 multiplier gates on whether an agent
+	// produced ANY receipt, not on how much work: an agent could in principle have work
+	// recorded with a zero total, and "did they work at all" is a count question.
+	Counts(epoch uint64) (map[string]int, error)
+
 	// Count returns the number of work records, for tests and reporting.
 	Count() int
 }
@@ -113,6 +120,21 @@ func (l *MemWorkLedger) Totals(epoch uint64) (map[string]float64, error) {
 			continue
 		}
 		out[r.AgentID] += r.Work
+	}
+	return out, nil
+}
+
+// Counts returns records per agent for an epoch.
+func (l *MemWorkLedger) Counts(epoch uint64) (map[string]int, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	out := map[string]int{}
+	for _, id := range l.order {
+		r := l.byID[id]
+		if r.Epoch != epoch {
+			continue
+		}
+		out[r.AgentID]++
 	}
 	return out, nil
 }

@@ -18,6 +18,18 @@ type ReceiptLister interface {
 	ByAgent(agentID string, epoch uint64) ([]*receipt.Receipt, error)
 }
 
+// NodePoolSource supplies the Layer 0 settlement inputs for an epoch.
+//
+// It is an interface rather than the concrete store types so the mining package keeps no
+// dependency on how tenure or bindings are persisted; store satisfies it.
+type NodePoolSource interface {
+	// NodeTenures is each node's tenure count as of the epoch.
+	NodeTenures(epoch uint64) (map[string]int, error)
+
+	// Bindings maps an agent id to the node id it is bound to, as of the epoch.
+	Bindings(epoch uint64) (map[string]string, error)
+}
+
 // ScoringSink persists receipts *and* credits the points they earn.
 //
 // # Why this exists
@@ -72,6 +84,11 @@ type ScoringSink struct {
 	// Required only for finalization; a miner that never finalizes (or has no points
 	// ledger) still records work.
 	Points scoring.PointsLedger
+
+	// Nodes supplies the Layer 0 inputs at finalization: each node's tenure count and
+	// the agent->node bindings. Optional; when nil, no node pool is paid and the whole
+	// budget goes to the work pool (the pre-Layer-0 behaviour).
+	Nodes NodePoolSource
 
 	// Clock is injected for tests. Nil means time.Now.
 	Clock func() time.Time
@@ -186,33 +203,73 @@ func (s *ScoringSink) Finalize(epoch uint64, at time.Time) (map[string]float64, 
 	if err != nil {
 		return nil, fmt.Errorf("mining: read work totals for epoch %d: %w", epoch, err)
 	}
+	counts, err := s.Work.Counts(epoch)
+	if err != nil {
+		return nil, fmt.Errorf("mining: read work counts for epoch %d: %w", epoch, err)
+	}
+
+	in := scoring.Inputs{Work: totals, ReceiptCounts: counts}
+	if s.Nodes != nil {
+		if in.NodeTenures, err = s.Nodes.NodeTenures(epoch); err != nil {
+			return nil, fmt.Errorf("mining: read node tenures for epoch %d: %w", epoch, err)
+		}
+		if in.Bindings, err = s.Nodes.Bindings(epoch); err != nil {
+			return nil, fmt.Errorf("mining: read bindings for epoch %d: %w", epoch, err)
+		}
+	}
+
 	settled, err := scoring.Settle(epoch, totals)
 	if err != nil {
 		return nil, fmt.Errorf("mining: settle epoch %d: %w", epoch, err)
 	}
 
-	// Write one entry per agent. The entry id is derived from the epoch and agent, NOT
-	// from a receipt — settlement is per agent, and the points ledger's idempotency key
-	// is what makes a re-run of Finalize a no-op rather than a double credit.
+	// Two-pool split (MVP.md §6.2c): Layer 1 (work) and Layer 0 (nodes). Without a node
+	// source there is no Layer 0, so the whole budget goes to work -- the single-pool
+	// result, which is what `settled` already holds.
+	layer0 := map[string]float64{}
+	if s.Nodes != nil {
+		split, err := scoring.SettleEpoch(epoch, in)
+		if err != nil {
+			return nil, fmt.Errorf("mining: settle epoch %d: %w", epoch, err)
+		}
+		settled = split.Work
+		layer0 = split.Node
+	}
+
+	// Write one SCOPE-TAGGED entry per recipient. The entry id is derived from the
+	// epoch, agent and scope -- settlement is per (agent, scope), and the points
+	// ledger's idempotency key is what makes a re-run of Finalize a no-op rather than a
+	// double credit. An agent can appear twice (once for work, once for a node); the
+	// scope keeps the two entries from colliding on one id.
 	for agent, points := range settled {
 		if points <= 0 {
 			continue
 		}
-		if _, err := s.Points.Credit(settlementEntryID(epoch, agent), agent, epoch, points, at); err != nil {
-			return settled, fmt.Errorf("mining: credit settled points for %s epoch %d: %w", agent, epoch, err)
+		if _, err := s.Points.Credit(settlementEntryID(epoch, "work", agent), agent, epoch, points, at); err != nil {
+			return settled, fmt.Errorf("mining: credit work points for %s epoch %d: %w", agent, epoch, err)
+		}
+	}
+	for node, points := range layer0 {
+		if points <= 0 {
+			continue
+		}
+		if _, err := s.Points.Credit(settlementEntryID(epoch, "node", node), node, epoch, points, at); err != nil {
+			return settled, fmt.Errorf("mining: credit node points for %s epoch %d: %w", node, epoch, err)
 		}
 	}
 	return settled, nil
 }
 
-// settlementEntryID is the points-ledger idempotency key for an (epoch, agent)
+// settlementEntryID is the points-ledger idempotency key for an (epoch, scope, recipient)
 // settlement.
 //
 // It is derived rather than random so a second Finalize of the same epoch collides with
 // the first and is ignored, which is what makes finalization safe to re-run after a
-// crash. The "settle:" prefix keeps it from ever colliding with a receipt id.
-func settlementEntryID(epoch uint64, agent string) string {
-	return fmt.Sprintf("settle:%d:%s", epoch, agent)
+// crash. The "settle:" prefix keeps it from ever colliding with a receipt id. The scope
+// ("work" or "node") is what lets one identity hold both a work entry and a node entry in
+// the same epoch without the two crowding each other out of the ledger.
+func settlementEntryID(epoch uint64, scope, recipient string) string {
+	return fmt.Sprintf("settle:%d:%s:%s", epoch, scope, recipient)
 }
 
 // reportError surfaces a swallowed scoring failure when a reporter is configured.

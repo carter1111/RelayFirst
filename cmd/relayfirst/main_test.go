@@ -845,3 +845,126 @@ func TestAnchorAudit_RequiresBothInputs(t *testing.T) {
 		t.Error("audit without --manifest must error")
 	}
 }
+
+// TestLayer0_EndToEnd_NodePoolPaidAndAliveAloneEarnsNoBonus is the Layer 0 acceptance:
+// settle splits the budget, pays the node pool, and does NOT pay a Layer 1 bonus for a
+// node that is merely alive. A farm's machines are alive; "alive" must not buy the bonus.
+func TestLayer0_EndToEnd_NodePoolPaidAndAliveAloneEarnsNoBonus(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "s.db")
+
+	const (
+		worker = "agent:eip155:8453:0x00000000000000000000000000000000000000a1" // works
+		idle   = "agent:eip155:8453:0x00000000000000000000000000000000000000a2" // bound+alive, no work
+		node1  = "agent:eip155:8453:0x00000000000000000000000000000000000000b1"
+		node2  = "agent:eip155:8453:0x00000000000000000000000000000000000000b2"
+	)
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	ledgers := store.NewScoringLedgers(db)
+	now := time.Unix(1791090000, 0)
+
+	// Only the worker produced a receipt this epoch.
+	if _, err := ledgers.Work.Record(scoring.WorkRecord{
+		ReceiptID: "0x0000000000000000000000000000000000000000000000000000000000000001",
+		AgentID:   worker, Epoch: 7, Work: 10,
+		ArtifactKey: "sha256:aa", RecordedAt: now,
+	}); err != nil {
+		t.Fatalf("record work: %v", err)
+	}
+
+	// Both agents are bound; both nodes are alive with tenure past the floor.
+	bl := store.NewBindingLedger(db)
+	if err := bl.Bind(worker, node1, 7, now); err != nil {
+		t.Fatalf("bind worker: %v", err)
+	}
+	if err := bl.Bind(idle, node2, 7, now); err != nil {
+		t.Fatalf("bind idle: %v", err)
+	}
+	tl := store.NewTenureLedger(db)
+	for e := uint64(1); e <= 5; e++ {
+		if _, err := tl.Record(node1, e, true, now); err != nil {
+			t.Fatalf("tenure node1: %v", err)
+		}
+		if _, err := tl.Record(node2, e, true, now); err != nil {
+			t.Fatalf("tenure node2: %v", err)
+		}
+	}
+	_ = db.Close()
+
+	out := captureStdout(t, func() {
+		if err := runSettle([]string{"--db", dbPath, "--epoch", "7"}); err != nil {
+			t.Fatalf("settle: %v", err)
+		}
+	})
+
+	var decoded struct {
+		NodePoolPct float64 `json:"nodePoolPct"`
+		Points      []struct {
+			AgentID string  `json:"agentId"`
+			Points  float64 `json:"points"`
+		} `json:"points"`
+		NodePoints []struct {
+			NodeID string  `json:"nodeId"`
+			Points float64 `json:"points"`
+		} `json:"nodePoints"`
+	}
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("settle JSON: %v\n%s", err, out)
+	}
+
+	// Phase 1: the node pool is half the budget.
+	if decoded.NodePoolPct != 0.50 {
+		t.Errorf("nodePoolPct = %v, want 0.50 at epoch 7", decoded.NodePoolPct)
+	}
+
+	// The node pool was actually paid: both alive nodes appear.
+	nodePaid := map[string]float64{}
+	for _, n := range decoded.NodePoints {
+		nodePaid[n.NodeID] = n.Points
+	}
+	if nodePaid[node1] <= 0 || nodePaid[node2] <= 0 {
+		t.Fatalf("both alive nodes must receive Layer 0 points, got %v", nodePaid)
+	}
+
+	// Layer 1: the worker appears; the idle agent does NOT. A bound, alive node does not
+	// by itself earn a work bonus -- that is the M1 property, at the settlement level.
+	workPaid := map[string]float64{}
+	for _, p := range decoded.Points {
+		workPaid[p.AgentID] = p.Points
+	}
+	if workPaid[worker] <= 0 {
+		t.Errorf("the worker must receive Layer 1 points, got %v", workPaid)
+	}
+	if _, present := workPaid[idle]; present {
+		t.Errorf("an agent with no receipts must not receive a work bonus for being bound to "+
+			"an alive node; it got %v", workPaid[idle])
+	}
+
+	// The node pool was paid for liveness (Layer 0) while the idle AGENT got no Layer 1:
+	// alive != work, which is exactly the M1 point.
+	if nodePaid[node2] > 0 && len(workPaid) == 0 {
+		t.Error("sanity: worker should have some Layer 1 points")
+	}
+}
+
+// TestBind_IsOneBindingPerIdentity: rebinding must be refused.
+func TestBind_IsOneBindingPerIdentity(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "s.db")
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+
+	bl := store.NewBindingLedger(db)
+	const agent = "agent:eip155:8453:0x00000000000000000000000000000000000000a1"
+	if err := bl.Bind(agent, "agent:eip155:8453:0x00000000000000000000000000000000000000b1", 7, time.Now()); err != nil {
+		t.Fatalf("first bind: %v", err)
+	}
+	if err := bl.Bind(agent, "agent:eip155:8453:0x00000000000000000000000000000000000000b2", 8, time.Now()); err == nil {
+		t.Error("a second binding for the same identity must be refused")
+	}
+}

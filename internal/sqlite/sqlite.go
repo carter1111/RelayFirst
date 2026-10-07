@@ -221,6 +221,20 @@ CREATE TABLE IF NOT EXISTS node_tenure (
 
 CREATE INDEX IF NOT EXISTS node_tenure_epoch_idx ON node_tenure (epoch);
 
+-- One PoSR binding per agent identity (incentive.md §4, one-binding-per-identity).
+--
+-- Keyed by agent_id so a second bind for the same identity is refused by the primary key
+-- rather than silently replacing the first: the binding is what a 1.25x multiplier rests
+-- on, and "last write wins" would let an agent rebind to whatever node is convenient.
+-- The epoch records when the binding was made, so a settlement uses only bindings that
+-- already existed.
+CREATE TABLE IF NOT EXISTS node_bindings (
+    agent_id    TEXT    PRIMARY KEY,
+    node_id     TEXT    NOT NULL,
+    epoch       INTEGER NOT NULL,
+    recorded_at INTEGER NOT NULL
+);
+
 -- Receipts produced by mining (S2-8).
 --
 -- The canonical JSON is stored verbatim alongside a few indexed columns. Storing
