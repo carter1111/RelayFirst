@@ -280,7 +280,7 @@ mine --once --relay http://127.0.0.1:9（全部不可达）
 
 | id | 任务 | 依赖 | 验收 | 状态 |
 |---|---|---|---|---|
-| S6-1 | `relayfirst init`（生成/导入 EVM 钱包 → 输出 agentId） | S1-8 | 30 秒内完成 | ⛔ **被阻断** — 生成并**落盘私钥**属凭据处理，守卫以 `POL-SECRETS-1` 阻止（`userCanOverride:false`）。**代理不做密钥落盘**（`CODING_RULES.md` §8）。当前路径：用户自备 key，经 `RELAYFIRST_PRIVATE_KEY` 注入；`--help` 中已如实写明 `init` 尚未实现 |
+| **S6-1** | `relayfirst init`（生成/导入 EVM 钱包 → 输出 agentId） | S1-8 | 30 秒内完成 | ⛔ **被阻断（两层）** — ① **`POL-SECRETS-1`**：生成并**落盘私钥**属凭据处理，守卫阻止（`userCanOverride:false`）；**代理不做密钥落盘**（`CODING_RULES.md §8`）。② **D2** 待批（推翻 no-init，L0）。当前路径：用户自备 key 经 `RELAYFIRST_PRIVATE_KEY` 注入；`--help` 已如实写明 `init` 未实现。**登记于 `§15 R-D2`** |
 | S6-2 | `relayfirst config set --provider/--api-key` | S2-6 | 三种 provider 可配 | 🟡 **部分** — `config set/get/show` **已实现**（provider / model / source / relay / semantic，0600 落盘，**拒绝任何密钥形状的值**）；**`--api-key` 被刻意移除**：密钥只从 `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` 读取 |
 | S6-3 | `relayfirst mine`（守护进程启动） | S2-7 | 立刻出分 | ✅ **done** — 无 flag 亦可运行（配置补默认值）；实测 3 条回执即出分 |
 | S6-4 | **实时反馈**（本 epoch 积分 / 任务数 / 有效 anchor） | S6-3 | 农民**立刻看到分数在涨** | ✅ **done** — `liveProgress`；数字**从账本读回**而非本地计数（避免与实际记账漂移）；`anchors` 排除 inline 合成 anchor |
@@ -947,7 +947,7 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 | id | 项 | 卡什么 |
 |---|---|---|
 | **R-P0SINK** | **Relay ID / 命名空间注册 burn** | **S10-0 已 ✅**，真正缺的是 **namespace 收费机制 + 收费方**（`incentive.md §10.13`）；burn 表已建，接上即可 |
-| **R-D2** | `relayfirst init` / keystore / signer / `bind` | **D2 待批**（推翻 no-init，L0）；且 `ADR-0009` 已裁定 **v2 延后** |
+| **R-D2** | **registration flow / 身份**：`relayfirst init` / keystore / signer / `bind`（对应 **S6-1** + 本表）| **两层阻塞**：① **`POL-SECRETS-1`** —— **agent 不得落盘密钥**（`CODING_RULES.md §8`，`userCanOverride:false`），**连 D2 批了也不够**；② **D2 待批**（推翻 no-init，L0）。且 `ADR-0009` 已裁定 **v2 延后**。当前路径：用户自备 key 经 env 注入 |
 | **R-DISC** | **发现层 G1–G5 / Explorer** | **用户 2026-10-07 已批准"要做"**（`planning.md §D`）；**未排期** —— 需先改 `MVP.md` 定范围（大工程：独立 indexer/explorer 二进制）|
 
 ### B. 等平台币设计（经济数值）
