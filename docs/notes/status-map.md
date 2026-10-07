@@ -102,3 +102,5 @@
 > **到 UAT：三层基础线里，激励线【代码闭合】、身份线【入口可用（BYO key）】、判据线【5 绿 / 3 部分 / 2 真人】。**
 > **关键路径 = BLK-2（真实消费方）+ ①③ 真人计时。** 其余（⑧⑨、发布、BLK-3）**并行**，且**不是代码**。
 > **token/r 等不在 UAT 线内** —— 那是平台币设计，别和"上线"混。
+>
+> **执行材料（据实，非编）**：BLK-2 → [`../gtm/blk-2-outreach-kit.md`](../gtm/blk-2-outreach-kit.md)；①③ 计时 → [`../ops/timing-script.md`](../ops/timing-script.md)；发布 → [`../ops/release-checklist.md`](../ops/release-checklist.md)；⑨ → [`../ops/chain-deploy.md`](../ops/chain-deploy.md)。
