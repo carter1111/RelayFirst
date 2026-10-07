@@ -100,6 +100,7 @@ MVP.md          = 现在要造的东西     →  唯一有工期
 | [`docs/notes/impl-assessment.md`](docs/notes/impl-assessment.md) | — | **规划**（→ planning） | **激励机制落地评估**（Stage 2）：D1 结算现状 + 文档/代码不一致清单（A..J）+ 风险 + P0 工作量 | 实现前 |
 | [`docs/notes/impl-planning.md`](docs/notes/impl-planning.md) | — | **规划**（→ planning） | **激励落地范围切分**（Stage 3）：P0/P1/BLOCKED + 每 P0 的改文件与接口 | 实现前 |
 | [`docs/notes/impl-tasks.md`](docs/notes/impl-tasks.md) | — | **规划**（→ planning） | **激励落地任务清单**（Stage 4）：DOC/L0/PRE/IMP/TEST 可派任务 + 依赖图 + 验收 | 派工时 |
+| [`docs/notes/l0-mvp-wording-draft.md`](docs/notes/l0-mvp-wording-draft.md) | — | **规划**（→ planning） | **L0-1/L0-2 `MVP.md` 措辞稿**（两 root 命名 + 双池/phase）：**待批准，未应用** | 待批 |
 | [`docs/mvp-2.0-proposal.md`](docs/mvp-2.0-proposal.md) | 611 | **决策依据** | **MVP 2.0 提案（已 accepted）** —— 论证过程；范围权威在 `MVP.md` v2.0 | 已归档（合并完成） |
 | [`docs/archive/mvp-1.0.md`](docs/archive/mvp-1.0.md) | 884 | **归档** | **MVP 1.0 原文逐字副本**（SHA-256 `259469ad…`）—— 仓库无 git 历史，故显式归档 | 不再更新 |
 | [`docs/decisions/ADR-0001-*.md`](docs/decisions/ADR-0001-eip712-in-house-thin-layer.md) | — | **决策** | EIP-712 用自研薄层而非 `apitypes`（S1-4） | 已 accepted |

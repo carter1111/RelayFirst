@@ -1382,11 +1382,35 @@ func runStatus(args []string) error {
 		out["next"] = advices
 	}
 
+	// The pending estimate is computed ONLY for the terminal view and is deliberately
+	// NOT added to `out`. The piped JSON is frozen (U1): scripts and the docs read
+	// these fields, and a new one would change that contract. It is also here rather
+	// than in the renderer because it is a query, and the renderer is meant to only
+	// draw what it is handed.
+	var pending map[string]float64
+	if term.IsTTY(os.Stdout) {
+		totals, err := ledgers.Work.Totals(epoch)
+		if err != nil {
+			return err
+		}
+		allocated, err := scoring.Allocate(epoch, totals)
+		if err != nil {
+			return err
+		}
+		// Not capped: this is a projection of what the settle step would pay, and the
+		// cap is applied there. Showing the uncapped share here would overstate a
+		// whale's pending number, so apply the same cap the settle applies.
+		pending = scoring.CapAllocation(epoch, allocated)
+		if pending == nil {
+			pending = map[string]float64{}
+		}
+	}
+
 	// On a terminal, render a readable dashboard; piped, emit the JSON that scripts and
 	// the docs already depend on. The JSON object above is the SAME data either way — the
 	// human view is a rendering of it, never a second query, so the two cannot disagree.
 	if term.IsTTY(os.Stdout) {
-		printStatusDashboard(out, agents, advices)
+		printStatusDashboard(out, agents, advices, pending)
 		return nil
 	}
 	return printJSON(out)
@@ -1396,7 +1420,11 @@ func runStatus(args []string) error {
 //
 // It reads from the same `out` map that the JSON path emits, so a field can never
 // appear in one and not the other. Colour is used for the numbers a miner looks at.
-func printStatusDashboard(out map[string]any, agents []agentOut, advices []string) {
+//
+// `pending` is the one input not in `out`: this epoch's UNSETTLED estimate, in points,
+// keyed by agent. It is passed separately precisely because it must not enter the
+// frozen JSON, and it is labelled "pending" to keep it distinct from settled points.
+func printStatusDashboard(out map[string]any, agents []agentOut, advices []string, pending map[string]float64) {
 	bold := func(s string) string { return term.Paint(s, term.Bold, true) }
 	dim := func(s string) string { return term.Paint(s, term.Dim, true) }
 	cyan := func(s string) string { return term.Paint(s, term.Cyan, true) }
@@ -1419,8 +1447,16 @@ func printStatusDashboard(out map[string]any, agents []agentOut, advices []strin
 		fmt.Printf("  %s\n", bold("by agent"))
 		for _, a := range agents {
 			fmt.Printf("    %s\n", shortID(a.AgentID))
-			fmt.Printf("      points  %s lifetime · %s this epoch\n",
+			fmt.Printf("      settled %s lifetime · %s this epoch\n",
 				cyan(fmt.Sprintf("%.4f", a.PointsLifetime)), fmt.Sprintf("%.4f", a.PointsEpoch))
+			// The pending line is this epoch's unsettled estimate. It is shown as a
+			// separate, labelled number because it is a projection over current work,
+			// not a settled balance: it will change as more work arrives, and only a
+			// settlement (and its Merkle root) makes it final.
+			if est, ok := pending[a.AgentID]; ok {
+				fmt.Printf("      pending %s this epoch %s\n",
+					cyan(fmt.Sprintf("%.4f", est)), dim("(unsettled estimate)"))
+			}
 			fmt.Printf("      work    %d receipt(s), %d credited, %d anchored\n", a.Receipts, a.Credited, a.Anchors)
 		}
 		fmt.Println()

@@ -80,6 +80,56 @@ func TestSettle_AppliesThePerAgentCap(t *testing.T) {
 	}
 }
 
+// TestSettle_CapSurplusIsBurnedNotRedistributed is the "cap remainder is destroyed"
+// decision (incentive.md v0.21 §10.4; MVP.md §6.3).
+//
+// When the per-agent cap bites, the withheld surplus must vanish: a fixed budget is a
+// ceiling on issuance, not a pool to be re-shared. If the surplus were redistributed,
+// the total emitted would climb back to the budget -- every epoch would mint the full
+// amount, and the emission curve would be a rate rather than a bound.
+//
+// The witness is a two-agent epoch where one agent's proportional share is above the
+// cap. Its surplus is large enough that any redistribution into the other agent would
+// be visible, so the other agent's amount staying at its proportional share is the
+// proof there was none.
+func TestSettle_CapSurplusIsBurnedNotRedistributed(t *testing.T) {
+	const epoch = 0
+	budget := EpochBudget(epoch)
+
+	// 99 : 1. The whale's proportional share is 0.99*budget = 19.8% of the budget,
+	// well above the 5% cap, so a large surplus is withheld.
+	settled, err := Settle(epoch, map[string]float64{"whale": 99, "honest": 1})
+	if err != nil {
+		t.Fatalf("Settle: %v", err)
+	}
+
+	// The whale lands exactly on the cap.
+	if math.Abs(settled["whale"]-PerAgentCap(epoch)) > 1e-6 {
+		t.Errorf("whale = %v, want the cap %v", settled["whale"], PerAgentCap(epoch))
+	}
+
+	// The honest agent keeps its proportional share: 1% of the budget, NOT a larger
+	// amount that would appear if the withheld surplus were handed back.
+	wantHonest := budget * 0.01
+	if math.Abs(settled["honest"]-wantHonest) > 1e-6 {
+		t.Errorf("honest = %v, want its proportional %v (surplus must not be redistributed)",
+			settled["honest"], wantHonest)
+	}
+
+	// And the epoch as a whole under-emits: the burned surplus is the difference.
+	total := TotalAllocated(settled)
+	if total >= budget {
+		t.Errorf("emitted total %v is not below the budget %v — the surplus was not burned",
+			total, budget)
+	}
+	// The gap is exactly the withheld surplus (0.99 - 0.05 of the budget). Asserting
+	// the size, not merely "less than", pins that nothing else was paid out.
+	wantBurned := budget * (0.99 - PerAgentCapFraction)
+	if math.Abs((budget-total)-wantBurned) > 1e-6 {
+		t.Errorf("burned %v, want %v", budget-total, wantBurned)
+	}
+}
+
 // TestSettle_DecayMakesEarlyEpochsWorthMore is the head-start property: the same work
 // settles to fewer points in a later epoch.
 func TestSettle_DecayMakesEarlyEpochsWorthMore(t *testing.T) {

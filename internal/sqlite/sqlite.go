@@ -204,6 +204,23 @@ CREATE TABLE IF NOT EXISTS work_records (
 CREATE INDEX IF NOT EXISTS work_records_agent_idx ON work_records (agent_id, epoch);
 CREATE INDEX IF NOT EXISTS work_records_epoch_idx ON work_records (epoch);
 
+-- Per-epoch node liveness flags (incentive.md §3, Layer 0 tenure).
+--
+-- Only the raw "did this node qualify in this epoch" flag is stored. The tenure count
+-- and tier are DERIVED by folding these flags through internal/tenure, not stored: a
+-- derived state that is also persisted can disagree with its inputs, and the fold is a
+-- pure function, so there is nothing to gain from caching it. Keyed by (node_id, epoch)
+-- so re-reporting an epoch is a no-op rather than a double count.
+CREATE TABLE IF NOT EXISTS node_tenure (
+    node_id     TEXT    NOT NULL,
+    epoch       INTEGER NOT NULL,
+    qualified   INTEGER NOT NULL,
+    recorded_at INTEGER NOT NULL,
+    PRIMARY KEY (node_id, epoch)
+);
+
+CREATE INDEX IF NOT EXISTS node_tenure_epoch_idx ON node_tenure (epoch);
+
 -- Receipts produced by mining (S2-8).
 --
 -- The canonical JSON is stored verbatim alongside a few indexed columns. Storing

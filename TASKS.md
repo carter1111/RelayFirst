@@ -894,10 +894,10 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 | id | 任务 | 依赖 | 验收 | 状态 |
 |---|---|---|---|---|
 | **IMP-1** | **settled map → Merkle root 接线**（`RootFromSettled`） | L0-1 | 确定性可复算；叶 `keccak256(agentId‖total_micro‖epoch)` 对齐合约；agent 排序；跨 epoch 同 leaf 不同 root | ⬜ todo |
-| **IMP-2** | **5% cap + 销毁 显式断言** | — | cap 触发时 `TotalAllocated < EpochBudget`；重跑不重复写 | ⬜ todo |
-| **IMP-3** | **tenure 状态机 + tier 权重**（记账，非分配） | PRE-1 | +1/降档/连续两次清零；边界 3/6/12；持久化幂等；包无 crypto | ⬜ todo |
+| **IMP-2** | **5% cap + 销毁 显式断言** | — | cap 触发时 `TotalAllocated < EpochBudget`；重跑不重复写 | ✅ **done** — 新增 `TestSettle_CapSurplusIsBurnedNotRedistributed`（99:1，whale 落 cap、honest 保持比例、**烧毁量 == 0.99−0.05 预算**）；**变异验证**：去掉截断 → FAIL。幂等由 `TestScoringSink_FinalizeIsIdempotent` 覆盖 |
+| **IMP-3** | **tenure 状态机 + tier 权重**（记账，非分配） | PRE-1(a) | +1/降档/连续两次清零；边界 3/6/12；持久化幂等；包无 crypto | ✅ **done** — 新 `internal/tenure`（纯叶子，**无 crypto**）+ `internal/store/tenure.go`（表 `node_tenure`）。**变异验证**："连续两次清零"→"每次清零" → FAIL。只吃外部布尔（PRE-1(a)），slot 测量属 P1 |
 | **IMP-4** | **`relayfirst claim`**（证明生成 + 展示，不碰 key） | IMP-1 | proof 过 `merkle.Verify`；非 TTY JSON 稳定；不经 signer | ⬜ todo |
-| **IMP-5** | **`status` 待结算预估**（显示层） | — | 非 TTY 保持今天 JSON；TTY 标"未结算"；读路径无写 | ⬜ todo |
+| **IMP-5** | **`status` 待结算预估**（显示层） | — | 非 TTY 保持今天 JSON；TTY 标"未结算"；读路径无写 | ✅ **done** — `runStatus` TTY 分支加 pending（`Allocate`+`CapAllocation`，**不写账本**）；渲染 `pending … (unsettled estimate)`。**非 TTY JSON 未加字段**：`TestStatus_NonTTYHasNoPendingEstimate` + `TestStatusDashboard_ShowsPendingAsUnsettled` |
 | **TEST-1** | **全量门禁** | IMP-1..5 | `go test`/`-race`/`ci.sh` 全绿；导入图门禁仍成立 | ⬜ todo |
 
 **P1（待设计，不进本批工时）**：liveness challenge 协议 + slot 参数；**VPS farm ROI 建模（launch-blocking）**；SBT 发放/吊销规则；omission 机制。

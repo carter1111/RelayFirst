@@ -390,3 +390,73 @@ func TestLiveProgress_PipedIsOneLinePerIteration(t *testing.T) {
 		t.Errorf("the piped line must keep its fields, got %q", out)
 	}
 }
+
+// captureStdout runs fn with os.Stdout on a pipe and returns what it wrote.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	fn()
+	_ = w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	_ = r.Close()
+	return buf.String()
+}
+
+// TestStatusDashboard_ShowsPendingAsUnsettled: the terminal view must show this
+// epoch's unsettled estimate, labelled so it is not mistaken for settled points.
+func TestStatusDashboard_ShowsPendingAsUnsettled(t *testing.T) {
+	out := map[string]any{
+		"epoch":             uint64(7),
+		"epochEndsAt":       "2026-10-15T00:00:00Z",
+		"receipts":          2,
+		"distinctArtifacts": 2,
+		"totalPoints":       12.5,
+		"note":              "x",
+	}
+	agents := []agentOut{{
+		AgentID:        "agent:eip155:8453:0xabc",
+		PointsLifetime: 12.5,
+		PointsEpoch:    0,
+		Receipts:       2,
+		Credited:       2,
+	}}
+	pending := map[string]float64{"agent:eip155:8453:0xabc": 3.5}
+
+	got := captureStdout(t, func() { printStatusDashboard(out, agents, nil, pending) })
+
+	if !strings.Contains(got, "pending") {
+		t.Errorf("the dashboard must show the pending estimate, got:\n%s", got)
+	}
+	if !strings.Contains(got, "unsettled") {
+		t.Errorf("the pending line must be labelled unsettled, got:\n%s", got)
+	}
+	if !strings.Contains(got, "3.5") {
+		t.Errorf("the pending estimate value must appear, got:\n%s", got)
+	}
+	// The settled line must still be present and distinct.
+	if !strings.Contains(got, "settled") {
+		t.Errorf("the settled line must remain, got:\n%s", got)
+	}
+}
+
+// TestStatus_NonTTYHasNoPendingEstimate pins that the pending estimate did NOT leak
+// into the frozen JSON: it is a live projection, not a settled balance, and the piped
+// contract must not gain a field.
+func TestStatus_NonTTYHasNoPendingEstimate(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "s.db")
+	out := captureStdout(t, func() {
+		if err := runStatus([]string{"--db", dbPath}); err != nil {
+			t.Fatalf("status: %v", err)
+		}
+	})
+	if strings.Contains(out, "pending") {
+		t.Errorf("the piped status JSON must not carry a pending estimate, got:\n%s", out)
+	}
+}
