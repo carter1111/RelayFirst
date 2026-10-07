@@ -63,6 +63,34 @@ type corpus struct {
 	NodeRule    string       `json:"nodeRule"`
 	EmptyRoot   string       `json:"emptyRoot"`
 	Trees       []treeVector `json:"trees"`
+
+	// BalanceLeaves pin the claim-leaf preimage against contracts/RelayPoints.sol,
+	// which is a DIFFERENT leaf from the receipt tree above (MVP.md §6.2b). They are
+	// here because invariant A4 requires cross-language agreement to be gated, and a
+	// leaf that is wrong by one byte still verifies against itself.
+	BalanceLeafRule string          `json:"balanceLeafRule"`
+	BalanceLeaves   []balanceVector `json:"balanceLeaves"`
+}
+
+// balanceVector is one settled (agent, total, epoch) with its claim leaf.
+type balanceVector struct {
+	AgentID    string `json:"agentId"`    // canonical agent:eip155:<chain>:<addr>
+	AgentHash  string `json:"agentHash"`  // keccak256(chainId || address)
+	TotalMicro int64  `json:"totalMicro"` // settled total in micro-points
+	Epoch      uint64 `json:"epoch"`
+	Leaf       string `json:"leaf"` // keccak256(agentHash || total || epoch)
+}
+
+// balanceCases are deterministic stand-ins for real claims: two addresses on one
+// chain, and a second chain for the same address, so the chainId is exercised.
+var balanceCases = []struct {
+	agent      string
+	totalMicro int64
+	epoch      uint64
+}{
+	{"agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8", 140_000_000_000, 0},
+	{"agent:eip155:8453:0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc", 42_000_000_000, 7},
+	{"agent:eip155:1:0x70997970c51812dc3a010c7d01b50e0d17dc79c8", 1_000_000, 12},
 }
 
 // vectorID derives a deterministic, distinct receipt id.
@@ -92,6 +120,26 @@ func run() error {
 		LeafRule:  "keccak256(0x00 || id)",
 		NodeRule:  "keccak256(0x01 || left || right)",
 		EmptyRoot: merkle.EmptyRoot().Hex(),
+		BalanceLeafRule: "keccak256(agentHash || uint256 total || uint64 epoch), " +
+			"agentHash = keccak256(uint64 chainId || 20-byte address)",
+	}
+
+	for _, bc := range balanceCases {
+		agentHash, err := merkle.AgentID(bc.agent)
+		if err != nil {
+			return fmt.Errorf("agent id %q: %w", bc.agent, err)
+		}
+		leaf, err := merkle.BalanceLeaf(agentHash, bc.totalMicro, bc.epoch)
+		if err != nil {
+			return fmt.Errorf("balance leaf %q: %w", bc.agent, err)
+		}
+		c.BalanceLeaves = append(c.BalanceLeaves, balanceVector{
+			AgentID:    bc.agent,
+			AgentHash:  agentHash.Hex(),
+			TotalMicro: bc.totalMicro,
+			Epoch:      bc.epoch,
+			Leaf:       leaf.Hex(),
+		})
 	}
 
 	for _, n := range vecLeafCounts {
@@ -219,6 +267,25 @@ func writeSolidity(c corpus) error {
 	// The indexed getter the test loops over.
 	fmt.Fprintf(&b, "    uint256 internal constant TREE_COUNT = %d;\n", len(c.Trees))
 	fmt.Fprintf(&b, "    bytes32 internal constant EMPTY_ROOT = %s;\n\n", c.EmptyRoot)
+
+	// Balance-leaf vectors (MVP.md §6.2b): a different leaf from the trees above,
+	// pinned so the Go encoder and RelayPoints.sol agree.
+	fmt.Fprintf(&b, "    uint256 internal constant BALANCE_COUNT = %d;\n\n", len(c.BalanceLeaves))
+	b.WriteString("    /// @notice One settled claim leaf vector.\n")
+	b.WriteString("    struct BalanceVector {\n")
+	b.WriteString("        bytes32 agentHash;\n")
+	b.WriteString("        uint256 totalMicro;\n")
+	b.WriteString("        uint64 epoch;\n")
+	b.WriteString("        bytes32 leaf;\n")
+	b.WriteString("    }\n\n")
+	b.WriteString("    /// @notice Returns the balance-leaf vectors.\n")
+	b.WriteString("    function balanceVectors() internal pure returns (BalanceVector[] memory v) {\n")
+	fmt.Fprintf(&b, "        v = new BalanceVector[](%d);\n", len(c.BalanceLeaves))
+	for i, bl := range c.BalanceLeaves {
+		fmt.Fprintf(&b, "        v[%d] = BalanceVector(%s, %d, %d, %s);\n",
+			i, bl.AgentHash, bl.TotalMicro, bl.Epoch, bl.Leaf)
+	}
+	b.WriteString("    }\n")
 
 	b.WriteString("    /// @notice Returns one tree's vectors by index.\n")
 	b.WriteString("    function tree(uint256 i) internal pure returns (\n")

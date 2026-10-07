@@ -885,20 +885,20 @@ S10-5 与 S10-6 已实现 `internal/assertion`（见上表）：**可归因验�
 > - ✅ **DOC-1**（清单 A）**已裁决 = (iii)**：`ADR-0009 D7` 已改写收录（delegation-1 意向 + assertion-1 确认，不改 policy）；两处引用现有效；无独立文档。
 > - ✅ **DOC-2**：`incentive.md` 头版本已改 v0.21。
 > - ✅ **PRE-1** **已裁决 = (a)**：tenure 只吃外部"合格 epoch"布尔；slot 门槛放 P1。**IMP-3 已解除阻塞。**
-> - ⬜ **L0-1**：`MVP.md` 明确**两个 root 命名分职**（balance root → claim；receipt root → 包含性）。
-> - ⬜ **L0-2**：`MVP.md` 明确双池 + phase 比例（若实现 Layer 0 **分配**；纯同步）。
+> - ✅ **L0-1** **已应用（2026-10-08）**：`MVP.md §6.2b` 明确**两个 root 命名分职**（balance root → claim；receipt root → 包含性）；`§S7` 加"名字澄清"。**IMP-1 已据此接线。**
+> - ✅ **L0-2** **已应用**：`MVP.md §6.2c` 双池 + phase 比例（50/75/90 ∶ 50/25/10）；§6.3 补"余量销毁"。
 >
 > **BLOCKED（D2 未批不得开工）**：`relayfirst init` / keystore / signer daemon / `relayfirst bind`
 > —— **推翻 no-init 是 L0 决策**，`ADR-0009` 状态 = proposed。
 
 | id | 任务 | 依赖 | 验收 | 状态 |
 |---|---|---|---|---|
-| **IMP-1** | **settled map → Merkle root 接线**（`RootFromSettled`） | L0-1 | 确定性可复算；叶 `keccak256(agentId‖total_micro‖epoch)` 对齐合约；agent 排序；跨 epoch 同 leaf 不同 root | ⬜ todo |
+| **IMP-1** | **settled map → Merkle root 接线**（`RootFromSettled`） | L0-1 ✅ | 确定性可复算；叶 `keccak256(agentId‖total_micro‖epoch)` 对齐合约；agent 排序；跨 epoch 同 leaf 不同 root | ✅ **done** — `internal/merkle/balance.go`（`AgentID`/`BalanceLeaf`/`BalanceRootFromTotals`/`BalanceProof`）；`relayfirst settle` 输出 `balanceRoot`（`main.go`）。**跨语言 A4 三向门禁**：Go `vectors_test` + Solidity `BalanceVectors.t.sol` + viem 脚本（3 balance 向量）。**agent 排序**（canonical，防 map 乱序同名坑）|
 | **IMP-2** | **5% cap + 销毁 显式断言** | — | cap 触发时 `TotalAllocated < EpochBudget`；重跑不重复写 | ✅ **done** — 新增 `TestSettle_CapSurplusIsBurnedNotRedistributed`（99:1，whale 落 cap、honest 保持比例、**烧毁量 == 0.99−0.05 预算**）；**变异验证**：去掉截断 → FAIL。幂等由 `TestScoringSink_FinalizeIsIdempotent` 覆盖 |
 | **IMP-3** | **tenure 状态机 + tier 权重**（记账，非分配） | PRE-1(a) | +1/降档/连续两次清零；边界 3/6/12；持久化幂等；包无 crypto | ✅ **done** — 新 `internal/tenure`（纯叶子，**无 crypto**）+ `internal/store/tenure.go`（表 `node_tenure`）。**变异验证**："连续两次清零"→"每次清零" → FAIL。只吃外部布尔（PRE-1(a)），slot 测量属 P1 |
-| **IMP-4** | **`relayfirst claim`**（证明生成 + 展示，不碰 key） | IMP-1 | proof 过 `merkle.Verify`；非 TTY JSON 稳定；不经 signer | ⬜ todo |
+| **IMP-4** | **`relayfirst claim`**（证明生成 + 展示，不碰 key） | IMP-1 ✅ | proof 过 `merkle.Verify`；非 TTY JSON 稳定；不经 signer | ⬜ **可开工**（IMP-1 已解锁）|
 | **IMP-5** | **`status` 待结算预估**（显示层） | — | 非 TTY 保持今天 JSON；TTY 标"未结算"；读路径无写 | ✅ **done** — `runStatus` TTY 分支加 pending（`Allocate`+`CapAllocation`，**不写账本**）；渲染 `pending … (unsettled estimate)`。**非 TTY JSON 未加字段**：`TestStatus_NonTTYHasNoPendingEstimate` + `TestStatusDashboard_ShowsPendingAsUnsettled` |
-| **TEST-1** | **全量门禁** | IMP-1..5 | `go test`/`-race`/`ci.sh` 全绿；导入图门禁仍成立 | ⬜ todo |
+| **TEST-1** | **全量门禁** | IMP-1..5 | `go test`/`-race`/`ci.sh` 全绿；导入图门禁仍成立 | 🟡 **部分** — IMP-1/2/3/5 已过全量 + `-race` + `ci.sh`（含 forge 47 项、viem A4）；待 IMP-4 后终验 |
 
 **P1（待设计，不进本批工时）**：liveness challenge 协议 + slot 参数；**VPS farm ROI 建模（launch-blocking）**；SBT 发放/吊销规则；omission 机制。
 

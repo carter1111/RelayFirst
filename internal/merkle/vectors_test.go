@@ -11,11 +11,22 @@ import (
 
 // vectorCorpus mirrors testdata/merkle-vectors.json.
 type vectorCorpus struct {
-	Hash      string       `json:"hash"`
-	LeafRule  string       `json:"leafRule"`
-	NodeRule  string       `json:"nodeRule"`
-	EmptyRoot string       `json:"emptyRoot"`
-	Trees     []vectorTree `json:"trees"`
+	Hash            string          `json:"hash"`
+	LeafRule        string          `json:"leafRule"`
+	NodeRule        string          `json:"nodeRule"`
+	EmptyRoot       string          `json:"emptyRoot"`
+	Trees           []vectorTree    `json:"trees"`
+	BalanceLeafRule string          `json:"balanceLeafRule"`
+	BalanceLeaves   []balanceVector `json:"balanceLeaves"`
+}
+
+// balanceVector mirrors one claim-leaf vector (MVP.md §6.2b).
+type balanceVector struct {
+	AgentID    string `json:"agentId"`
+	AgentHash  string `json:"agentHash"`
+	TotalMicro int64  `json:"totalMicro"`
+	Epoch      uint64 `json:"epoch"`
+	Leaf       string `json:"leaf"`
 }
 
 type vectorTree struct {
@@ -153,10 +164,43 @@ func TestVectors_DeclaredRulesAreAccurate(t *testing.T) {
 	if c.NodeRule != "keccak256(0x01 || left || right)" {
 		t.Errorf("corpus node rule = %q", c.NodeRule)
 	}
+	if c.BalanceLeafRule == "" {
+		t.Error("corpus must declare the balance leaf rule (MVP.md §6.2b)")
+	}
 
 	// And the declared empty root must be the real one.
 	if got, want := merkle.EmptyRoot().Hex(), c.EmptyRoot; got != want {
 		t.Errorf("emptyRoot = %s, corpus says %s", got, want)
+	}
+}
+
+// TestVectors_BalanceLeavesMatchCommittedCorpus is the Go half of invariant A4 for
+// the points claim leaf (MVP.md §6.2b). The same vectors are compiled into the
+// Solidity test and recomputed by the viem script; a leaf that is wrong by a byte
+// would still verify against itself, so only cross-language agreement catches it.
+func TestVectors_BalanceLeavesMatchCommittedCorpus(t *testing.T) {
+	c := loadVectors(t)
+	if len(c.BalanceLeaves) == 0 {
+		t.Fatal("the corpus holds no balance vectors")
+	}
+
+	for _, b := range c.BalanceLeaves {
+		agentHash, err := merkle.AgentID(b.AgentID)
+		if err != nil {
+			t.Fatalf("AgentID(%q): %v", b.AgentID, err)
+		}
+		if got := agentHash.Hex(); got != b.AgentHash {
+			t.Errorf("AgentID(%q) = %s, corpus says %s", b.AgentID, got, b.AgentHash)
+		}
+
+		leaf, err := merkle.BalanceLeaf(agentHash, b.TotalMicro, b.Epoch)
+		if err != nil {
+			t.Fatalf("BalanceLeaf(%q): %v", b.AgentID, err)
+		}
+		if got := leaf.Hex(); got != b.Leaf {
+			t.Errorf("BalanceLeaf(%q, %d, %d) = %s, corpus says %s",
+				b.AgentID, b.TotalMicro, b.Epoch, got, b.Leaf)
+		}
 	}
 }
 

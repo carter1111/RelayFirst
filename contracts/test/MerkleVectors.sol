@@ -641,6 +641,23 @@ library MerkleVectors {
     uint256 internal constant TREE_COUNT = 10;
     bytes32 internal constant EMPTY_ROOT = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470;
 
+    uint256 internal constant BALANCE_COUNT = 3;
+
+    /// @notice One settled claim leaf vector.
+    struct BalanceVector {
+        bytes32 agentHash;
+        uint256 totalMicro;
+        uint64 epoch;
+        bytes32 leaf;
+    }
+
+    /// @notice Returns the balance-leaf vectors.
+    function balanceVectors() internal pure returns (BalanceVector[] memory v) {
+        v = new BalanceVector[](3);
+        v[0] = BalanceVector(0xcd69045c1510efbedfebcfc85cb77162f1749bd697a0dd223bb028c1f4e67855, 140000000000, 0, 0xa91eeab5a209f082fd1ecc633c67db491c8b76dbc7585725141faa7e5de6576c);
+        v[1] = BalanceVector(0xd56ab08216c9dfd3bb3df9eb48717f38836f0b826d9f019236582ab906247f6f, 42000000000, 7, 0x110a123360c6f4b924492ac6bbcc45b78fbda0214078d6367a042d62f6c435a0);
+        v[2] = BalanceVector(0x781d2761e30af3cde76503f583b385c1fb6805a9ddeb350bf7a06ca388421c35, 1000000, 12, 0xe73fb320da5908d4e49dda93fd045c8328dd6d5e5ed1ba93211ecbd571c47252);
+    }
     /// @notice Returns one tree's vectors by index.
     function tree(uint256 i) internal pure returns (
         bytes32[] memory leaves,

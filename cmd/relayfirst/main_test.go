@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/relayfirst/relayfirst/internal/merkle"
 	"github.com/relayfirst/relayfirst/internal/mining"
 	"github.com/relayfirst/relayfirst/internal/receipt"
 	"github.com/relayfirst/relayfirst/internal/scoring"
@@ -409,7 +410,144 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
-// TestStatusDashboard_ShowsPendingAsUnsettled: the terminal view must show this
+// TestBalanceRootFromSettled_BindsPointsAndAgent: the settle command's balance root
+// must be a pure function of the settled numbers and the agents, matching the leaf a
+// claim verifies against (MVP.md §6.2b).
+func TestBalanceRootFromSettled_BindsPointsAndAgent(t *testing.T) {
+	settled := map[string]float64{
+		"agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8": 140,
+		"agent:eip155:8453:0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc": 42,
+	}
+
+	r1, err := balanceRootFromSettled(7, settled)
+	if err != nil {
+		t.Fatalf("balanceRootFromSettled: %v", err)
+	}
+	r2, err := balanceRootFromSettled(7, settled)
+	if err != nil {
+		t.Fatalf("balanceRootFromSettled (2): %v", err)
+	}
+	if r1 != r2 {
+		t.Error("the balance root must be deterministic for the same settlement")
+	}
+
+	// Changing one agent's points must change the root.
+	moved := map[string]float64{}
+	for k, v := range settled {
+		moved[k] = v
+	}
+	moved["agent:eip155:8453:0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc"] = 43
+	r3, err := balanceRootFromSettled(7, moved)
+	if err != nil {
+		t.Fatalf("balanceRootFromSettled (moved): %v", err)
+	}
+	if r1 == r3 {
+		t.Error("a different settled total must change the balance root")
+	}
+
+	// A different epoch must change it too (the epoch is inside the leaf).
+	r4, err := balanceRootFromSettled(8, settled)
+	if err != nil {
+		t.Fatalf("balanceRootFromSettled (epoch): %v", err)
+	}
+	if r1 == r4 {
+		t.Error("a different epoch must change the balance root")
+	}
+
+	// And a real claim proof must verify against it.
+	agent, err := merkle.AgentID("agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8")
+	if err != nil {
+		t.Fatalf("agent id: %v", err)
+	}
+	totals := map[merkle.Hash]int64{agent: 140_000_000_000}
+	proof, err := merkle.BalanceProof(7, totals, agent)
+	if err != nil {
+		t.Fatalf("BalanceProof: %v", err)
+	}
+	if !merkle.Verify(proof) {
+		t.Error("a proof built from the settled totals must verify against a balance root")
+	}
+}
+
+// TestSettle_EmitsBalanceRoot is the end-to-end for IMP-1: after work is recorded and
+// settled, `relayfirst settle` must emit the balance root a claim is verified against.
+func TestSettle_EmitsBalanceRoot(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "s.db")
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	ledgers := store.NewScoringLedgers(db)
+	agents := []string{
+		"agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+		"agent:eip155:8453:0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+	}
+	for i, a := range agents {
+		if _, err := ledgers.Work.Record(scoring.WorkRecord{
+			ReceiptID:   fmt.Sprintf("0x%064x", i+1),
+			AgentID:     a,
+			Epoch:       7,
+			Work:        float64(10 * (i + 1)),
+			ArtifactKey: fmt.Sprintf("sha256:%02x", i+1),
+			RecordedAt:  time.Now(),
+		}); err != nil {
+			t.Fatalf("Record work: %v", err)
+		}
+	}
+	_ = db.Close()
+
+	out := captureStdout(t, func() {
+		if err := runSettle([]string{"--db", dbPath, "--epoch", "7"}); err != nil {
+			t.Fatalf("settle: %v", err)
+		}
+	})
+
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("settle output must be JSON, got:\n%s\nerr: %v", out, err)
+	}
+	root, ok := decoded["balanceRoot"].(string)
+	if !ok || root == "" {
+		t.Fatalf("settle must emit a balanceRoot, got:\n%s", out)
+	}
+
+	// The emitted root must equal the one recomputed from the settled points, so a
+	// claimant can reproduce what the command printed.
+	settled := map[string]float64{}
+	if rows, ok := decoded["points"].([]any); ok {
+		for _, r := range rows {
+			m := r.(map[string]any)
+			settled[m["agentId"].(string)] = m["points"].(float64)
+		}
+	}
+	want, err := balanceRootFromSettled(7, settled)
+	if err != nil {
+		t.Fatalf("recompute: %v", err)
+	}
+	if root != want.Hex() {
+		t.Errorf("emitted balanceRoot %s != recomputed %s", root, want.Hex())
+	}
+}
+func TestBalanceRootFromSettled_OmitsZeroTotals(t *testing.T) {
+	with, err := balanceRootFromSettled(7, map[string]float64{
+		"agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8": 140,
+		"agent:eip155:8453:0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc": 0,
+	})
+	if err != nil {
+		t.Fatalf("with zero: %v", err)
+	}
+	without, err := balanceRootFromSettled(7, map[string]float64{
+		"agent:eip155:8453:0x70997970c51812dc3a010c7d01b50e0d17dc79c8": 140,
+	})
+	if err != nil {
+		t.Fatalf("without zero: %v", err)
+	}
+	if with != without {
+		t.Error("a zero-total agent must not change the balance root")
+	}
+}
+
 // epoch's unsettled estimate, labelled so it is not mistaken for settled points.
 func TestStatusDashboard_ShowsPendingAsUnsettled(t *testing.T) {
 	out := map[string]any{

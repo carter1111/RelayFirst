@@ -261,6 +261,7 @@ mapping(uint256 epoch => bytes32 receiptsRoot) public epochRoot;
 - 回执集 → Merkle tree → 每天提交一个 root 到 L2。
 - 任何人可用 Merkle proof 证明"我的回执在 epoch N 里"。
 - **不需要合约逻辑，只是一个 mapping。** 约 50 行 Solidity。
+- **⚠️ 名字澄清（2026-10-08）**：本节的 root 是 **receipt root**（回执包含性）。积分的 **balance root**（`keccak256(agentId‖total‖epoch)`，用于 claim）是**另一个 root**，见 §6.2b。**两者不共用同一个 mapping。**
 
 ---
 
@@ -558,6 +559,40 @@ epoch n 结束时（结算步骤）：
 | **通胀可控** | 总预算阶跃衰减（每 4 个 epoch −15%），不会无限膨胀；**总量有纪律**（不是按回执印） |
 | **抗鲸鱼** | per-agent 上限 `B(n) × 5%`（§6.3）—— **"5% of 预算"才有定义**；按回执印的模型回答不了"5% of what" |
 
+### 6.2b 两个 Merkle root（**不同物，不同用途**）
+
+> **来源：`incentive.md` + 两 root 裁决（2026-10-08）；详见 `docs/notes/impl-planning.md §0.2`。**
+
+积分系统产生**两个** Merkle root。它们是**不同的物**，**不得混为一个**：
+
+| 名称 | 叶 | 输入 | 用途 |
+|---|---|---|---|
+| **balance root** | `keccak256(agentId ‖ total_micro ‖ epoch)` | 某 epoch 的 **settled 数字**（§6.2 结算的输出）| 用户凭 proof **claim 积分**（`RelayPoints.sol` 即用此公式）|
+| **receipt root** | `receiptId` | 某 epoch 的**回执集** | 证明"我的回执**在** epoch N 里"（**包含性**）|
+
+- **balance root** 在 `relayfirst settle` 后由 settled map 确定性计算（agent 排序；含 epoch → 防跨期重放）。
+- **receipt root** 是 §S7 已定义的 `mapping(epoch => receiptsRoot)`，用于**发现**遗漏。
+- **不在同一 root 里表达两件事**：claim 只需 balance；omission 检测只需 receipt。
+- **完整性 ≠ 真实性**：root 保证"结算结果未被改"，**不**保证"输入回执为真"（后者由 work 函数 + verifier 负责）。
+
+> **省略（omission）的边界**：receipt root 只给**包含**证明。证明某回执**不在** epoch 中需排序树 + 非包含证明，或"重算 root 不符"的争议路径，属 P1（`incentive.md §10.10`）。
+
+### 6.2c epoch 预算的拆分（Layer 0 / Layer 1）
+
+> **来源：`incentive.md` §2/§3/§4（2026-10-07 定）；本节为 L0 同步。**
+
+每 epoch 预算 `B(n)` 拆为**两池**，比例按 **epoch 高度预定、自动切换**（无治理投票）：
+
+| 阶段 | Epoch | Work pool（Layer 1）| Node pool（Layer 0）|
+|---|---|---|---|
+| Phase 1 | 0–25（约 6 个月）| 50% | 50% |
+| Phase 2 | 26–51（约 6 个月）| 75% | 25% |
+| Phase 3 | 52 起 | 90% | 10% |
+
+- **Layer 1（工作池）**：`share_i = work_i × m_i / Σ(work_j × m_j)`，`m_i = 1.25`（绑定）/ `1.0`；per-agent 上限 **5%**，**余量销毁**（未分配预算不增发）。
+- **Layer 0（节点池）**：**tenure-tier 加权** `share_i = weight_i / Σ(weights)`；权重 1×（3–5 epoch）/ 1.1×（6–11）/ 1.25×（12+）；**资格 tenure ≥ 3**；**无资格者权重 0，不稀释池子**。
+- **资格与测量**：Layer 0 要求"连续在线"（slot 心跳 + liveness 抽查）——**协议属 P1 设计**；P0 只落地 **tenure 记账**（吃外部"合格 epoch"布尔，见 `internal/tenure`）。
+
 ### 6.3 Per-agent 上限
 
 ```text
@@ -565,6 +600,7 @@ epoch n 结束时（结算步骤）：
 ```
 
 **理由：** 防止一个大户用大量订阅额度独占产出，把散户挤走。**散户体验是这个 play 的命脉** —— 他们走了，叙事就没了。
+**余量处理（2026-10-08 定）：销毁** —— cap 使 Σ份额 < 预算时，未分配预算**直接不增发**（不滚存、不重分配），发行量可预测。
 
 ### 6.4 为什么用积分而不是直接发币（在这个策略下）
 

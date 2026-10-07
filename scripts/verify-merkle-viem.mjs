@@ -129,6 +129,35 @@ function main() {
     }
   }
 
+  // Balance leaves (MVP.md §6.2b): a DIFFERENT leaf from the receipt trees above.
+  // leaf = keccak256(agentHash || uint256 total || uint64 epoch), and the agent hash is
+  // keccak256(uint64 chainId || 20-byte address) -- recomputed here from the canonical
+  // agent id so the agent-id derivation is checked too, not only the final leaf.
+  let balanceChecked = 0;
+  if (Array.isArray(corpus.balanceLeaves)) {
+    for (const b of corpus.balanceLeaves) {
+      balanceChecked++;
+
+      const [, rest] = b.agentId.split("agent:eip155:");
+      const [chainStr, addr] = rest.split(":");
+      const chainId = BigInt(chainStr);
+
+      const chainHex = "0x" + chainId.toString(16).padStart(16, "0");
+      const agentHash = keccak256(concatHex([chainHex, addr.toLowerCase()]));
+      if (agentHash !== b.agentHash) {
+        failures.push(`balance ${b.agentId}: viem agentHash ${agentHash} != corpus ${b.agentHash}`);
+        continue;
+      }
+
+      const totalHex = "0x" + BigInt(b.totalMicro).toString(16).padStart(64, "0");
+      const epochHex = "0x" + BigInt(b.epoch).toString(16).padStart(16, "0");
+      const leaf = keccak256(concatHex([agentHash, totalHex, epochHex]));
+      if (leaf !== b.leaf) {
+        failures.push(`balance ${b.agentId} epoch ${b.epoch}: viem leaf ${leaf} != corpus ${b.leaf}`);
+      }
+    }
+  }
+
   if (failures.length > 0) {
     console.error("verify-merkle-viem: FAIL");
     for (const f of failures) console.error(`  ${f}`);
@@ -141,7 +170,7 @@ function main() {
   }
 
   console.log(
-    `verify-merkle-viem: PASS (${rootsChecked} roots, ${proofsChecked} proofs agree across Go, Solidity and viem)`,
+    `verify-merkle-viem: PASS (${rootsChecked} roots, ${proofsChecked} proofs, ${balanceChecked} balance leaves agree across Go, Solidity and viem)`,
   );
 }
 

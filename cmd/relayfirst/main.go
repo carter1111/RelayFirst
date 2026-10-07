@@ -941,6 +941,15 @@ func runSettle(args []string) error {
 		return err
 	}
 
+	// Build the epoch's BALANCE root from the settled numbers (MVP.md §6.2b). This is a
+	// different root from the receipt root `anchor root` produces: a claim is verified
+	// against this one. It is built here, from the same `settled` map that was just
+	// credited, so the root and the credited points cannot disagree.
+	balanceRoot, err := balanceRootFromSettled(epoch, settled)
+	if err != nil {
+		return err
+	}
+
 	// Report what was settled, in a stable order, so an operator can see each agent's
 	// emitted points rather than only a total.
 	agents := make([]string, 0, len(settled))
@@ -965,10 +974,12 @@ func runSettle(args []string) error {
 		"budget":        scoring.EpochBudget(epoch),
 		"settledAgents": len(rows),
 		"settledTotal":  total,
+		"balanceRoot":   balanceRoot.Hex(),
 		"points":        rows,
 		"note": "settled points are derived from accumulated work and are idempotent per " +
 			"epoch: re-running this command writes nothing new. Where the total is below the " +
-			"budget, the per-agent cap withheld the surplus (that direction is safe).",
+			"budget, the per-agent cap withheld the surplus (that direction is safe). " +
+			"balanceRoot is the Merkle root a points claim is verified against (MVP.md §6.2b).",
 	})
 }
 
@@ -1482,6 +1493,32 @@ func ledgerTotal(entries []scoring.Entry) float64 {
 		total += e.Points
 	}
 	return total
+}
+
+// balanceRootFromSettled builds an epoch's balance Merkle root from the settled points
+// (MVP.md §6.2b): the root a points claim is verified against.
+//
+// It converts each agent's float total to an integer micro-count, because the leaf
+// carries `uint256 total` and a float would round differently here and on-chain. The
+// conversion is the same one the points ledger uses (`MicroPerPoint`), so a claimed
+// total is exactly the credited total.
+//
+// An agent whose settled total rounds to zero is omitted: it has no claim to make, and
+// including a zero leaf would put an unclaimable entry in the tree.
+func balanceRootFromSettled(epoch uint64, settled map[string]float64) (merkle.Hash, error) {
+	totals := make(map[merkle.Hash]int64, len(settled))
+	for agent, points := range settled {
+		micro := int64(points*scoring.MicroPerPoint + 0.5)
+		if micro <= 0 {
+			continue
+		}
+		id, err := merkle.AgentID(agent)
+		if err != nil {
+			return merkle.Hash{}, fmt.Errorf("settle: agent id %q: %w", agent, err)
+		}
+		totals[id] = micro
+	}
+	return merkle.BalanceRootFromTotals(epoch, totals)
 }
 
 // ---------------------------------------------------------------- receipts
