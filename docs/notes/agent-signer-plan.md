@@ -1,7 +1,29 @@
 # 修正版规格：Agent 密钥管理 + out-of-process signer
 
-> **状态：提案（待 ADR-0009 批准）** —— 未写代码。这是对外部提案的**修正版**，逐条解决其七处问题。
->
+> **状态：⏸ 延后到 v2（2026-10-07 裁定）** —— **不是上线必需**，**未写代码**。
+> 本文件是外部提案的**修正版**，逐条解决其七处问题；保留只为**未来**参考。
+
+---
+
+## ⚠️ 必要性裁定（先读这段，否则会把它当待办）
+
+**实据：今天 LLM 是【远程 HTTPS API】，不是本地进程。**
+（`internal/llm/openai.go` · `anthropic.go` = `http.NewRequestWithContext` POST 出去；
+`mine` / CLI 里**无 `exec.Command`** → 没有本地 agent 子进程拿 `env`。）
+
+→ **LLM 读不到本地内存/env，只看到 HTTP 请求体；密钥不在里面。**
+→ 本规格防的是**未来**场景：**本地 agent 拿到工具权限、能调 CLI**。**今天不存在。**
+
+| 层 | 内容 | 今天必需？ |
+|---|---|---|
+| **Tier 1** | 把 key 从 **env** 移进 0600 文件/keychain | ⚠️ 半必需（**通用**密钥卫生，与 LLM 无关；且**还要推翻 no-init**）|
+| **Tier 2** | signer daemon + domain policy + mine 接线 + MCP HTTP + token | ❌ **未来**（仅当"本地 agent 挖矿"）|
+| **Tier 3** | PoSR / bind | ❌ **不要**（已拆出）|
+
+**裁定：整个延后到 v2。** 理由：为不存在的威胁写多日项目，还会牵出 daemon、依赖、运维复杂度。
+
+---
+
 > 相关：[`ADR-0009`](../decisions/ADR-0009-agent-key-management.md)（为什么这样做的决策）、
 > ADR-0004（分角色）、ADR-0007（回执不可委派）、ADR-0008（MCP 零密码学）。
 
@@ -119,7 +141,7 @@ MCP 只多一个【本地 HTTP 客户端】→ 调 signer
 
 | id | 任务 | 依赖 | 备注 |
 |---|---|---|---|
-| **AS-1** | BIP-39 依赖 + 两密钥 keygen（独立） | D6 | 库，不手写 |
+| **AS-1** | **keygen 原语**（助记词 → 两把可复现密钥）。**注**：secp256k1 **已有依赖**（`decred/…/secp256k1`）→ 只缺 BIP-39/32 **小库**（不手写，A1）；**一把助记词 + 两条 BIP-44 路径**（非两把助记词 —— 原提案的"熵独立"是为不存在的 PoSR 服务的）| D6 | 纯函数，不写盘、不签名 |
 | **AS-2** | `relayfirst init`（keystore + mnemonic 确认 + 幂等） | AS-1, **D2 批准** | 0600 / OS keychain |
 | **AS-3** | signer 进程（本地 API + token 认证 + 无导出） | — | 或扩展 verifier |
 | **AS-4** | **per-key domain 白名单** + 日志 | AS-3 | **security-critical**；变异验证 |

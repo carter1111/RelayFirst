@@ -41,11 +41,11 @@
 | [`blk-1-verification-plan.md`](blk-1-verification-plan.md) | ✅ **已核实**（PARTIAL） | Codex 可行 / Claude Code 不可 |
 | [`mcp-setup.md`](mcp-setup.md) | **已实现**（S12-5/6/7） | 属**how-to 参考**，不是规划 |
 
-### 0A2. **待 ADR 批准**（proposed，未开工）
+### 0A2. **v2 延后（近期不做）**
 
-| 文档 | 一句话 | 卡在哪 |
+| 文档 | 一句话 | 为何延后 |
 |---|---|---|
-| [`agent-signer-plan.md`](agent-signer-plan.md) + [`ADR-0009`](../decisions/ADR-0009-agent-key-management.md) | **Agent 密钥管理 + out-of-process signer + per-key domain 策略** | **待你批准 D2（推翻 `relayfirst init` 的 no-init 决策）** |
+| [`agent-signer-plan.md`](agent-signer-plan.md) + [`ADR-0009`](../decisions/ADR-0009-agent-key-management.md) | **Agent 密钥管理 + out-of-process signer + per-key domain 策略** | **不解决今天存在的威胁** —— LLM 是**远程 API**（读不到本地密钥），无本地 agent 子进程。本规格防的是**未来**"本地 agent 能调 CLI"场景。**Tier 2/3 全非必需**；Tier 1（key 出 env）也还要推翻 no-init |
 
 ### 0C. 参考 / 索引（**非任务**）
 
